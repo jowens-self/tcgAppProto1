@@ -95,7 +95,12 @@ If asked to add scraping, say what it risks before writing it.
 - **`product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
 - **Percent change returns null on a zero or negative starting price.** Do not
-  "fix" this to return 0 or infinity — see `Change.percent`.
+  "fix" this to return 0 or infinity. Every return-calculation query so far
+  has been ad-hoc SQL (`CASE WHEN start_price > 0 THEN ... ELSE NULL END`,
+  see DEVELOPMENT_HISTORY.md Part 12) - there's no Java implementation of
+  this yet (`Change.percent` existed briefly with zero call sites and was
+  removed 2026-08-13; reintroduce it if/when percent-change logic actually
+  moves into application code instead of interactive SQL).
 
 ## Mirror etiquette
 
@@ -177,10 +182,16 @@ whether *yesterday* has a successful run under either source
 (`tcgcsv` live or `tcgcsv-archive`) - if not, it calls
 `BackfillArchive.run(EARLIEST_ARCHIVE, yesterday, repo)` before doing
 today's live pull. That call is cheap even though the range looks huge:
-`run()` already skips any day with a prior successful run via one indexed
-lookup, so on the normal steady-state day (no gap) this whole block is
+`run()` already skips any day with a prior successful run via one lookup
+per day, so on the normal steady-state day (no gap) this whole block is
 skipped entirely, and even when it does run, only the genuinely missing
 days trigger a real download.
+**Correction, 2026-08-13:** that lookup was claimed "indexed" here from the
+start, but no index actually existed until the full-codebase review in
+DEVELOPMENT_HISTORY.md Part 13 caught it - `EXPLAIN` showed a full
+`Seq Scan`. Fixed with `idx_ingest_runs_source_date_status` on
+`ingest_runs(source, snapshot_date, status)`; the claim above is accurate
+now, it just wasn't when originally written.
 **Verified end-to-end 2026-08-13**, not just by code review. Spun up a second,
 fully isolated Postgres container (`cardtracker-db-test`, port 5433, same
 `sql/schema.sql`, no shared volume with the real `cardtracker-db`), seeded

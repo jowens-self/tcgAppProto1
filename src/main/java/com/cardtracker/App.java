@@ -5,6 +5,7 @@ import com.cardtracker.model.Category;
 import com.cardtracker.model.Group;
 import com.cardtracker.model.PriceSnapshot;
 import com.cardtracker.model.Product;
+import com.cardtracker.source.PriceSource;
 import com.cardtracker.source.tcgcsv.TcgCsvPriceSource;
 import com.cardtracker.source.tcgcsv.TcgCsvUrls;
 import com.cardtracker.source.tcgcsv.Throttle;
@@ -31,11 +32,11 @@ public class App {
         // and the container's own clock. See CLAUDE.md "local-vs-UTC".
         LocalDate snapshotDate = LocalDate.now(ZoneOffset.UTC);
 
-        String url = env("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
-        String user = env("CARDTRACKER_DB_USER", "cardtracker");
-        String pass = env("CARDTRACKER_DB_PASS", "localdev");
+        String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
+        String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
+        String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
 
-        TcgCsvPriceSource source = new TcgCsvPriceSource(Throttle.politeDefault());
+        PriceSource source = new TcgCsvPriceSource(Throttle.politeDefault());
 
         try (Connection conn = DriverManager.getConnection(url, user, pass)) {
             PriceRepository repo = new PriceRepository(conn);
@@ -45,18 +46,22 @@ public class App {
                 return;
             }
 
-            LocalDate yesterday = snapshotDate.minusDays(1);
-            boolean yesterdayCovered = repo.hasSuccessfulRun(source.name(), yesterday)
-                    || repo.hasSuccessfulRun(BackfillArchive.SOURCE, yesterday);
-            if (!yesterdayCovered) {
-                System.out.printf("No data for %s yet - catching up via archive backfill first...%n", yesterday);
-                BackfillArchive.run(BackfillArchive.EARLIEST_ARCHIVE, yesterday, repo);
-            }
-
+            // Created before any of the risky work below (including the gap
+            // catch-up) so a failure anywhere in this run - not just in the
+            // main pull loop - still lands a "failed" row in ingest_runs
+            // instead of vanishing as an uncaught exception with no trace.
             long runId = repo.startRun(source.name(), snapshotDate);
             int totalRows = 0;
 
             try {
+                LocalDate yesterday = snapshotDate.minusDays(1);
+                boolean yesterdayCovered = repo.hasSuccessfulRun(source.name(), yesterday)
+                        || repo.hasSuccessfulRun(BackfillArchive.SOURCE, yesterday);
+                if (!yesterdayCovered) {
+                    System.out.printf("No data for %s yet - catching up via archive backfill first...%n", yesterday);
+                    BackfillArchive.run(BackfillArchive.EARLIEST_ARCHIVE, yesterday, repo);
+                }
+
                 Category category = source.categories().stream()
                         .filter(c -> c.categoryId() == categoryId)
                         .findFirst()
@@ -102,11 +107,6 @@ public class App {
                 throw e;
             }
         }
-    }
-
-    private static String env(String key, String fallback) {
-        String v = System.getenv(key);
-        return (v == null || v.isBlank()) ? fallback : v;
     }
 
     private static String truncate(String s, int max) {

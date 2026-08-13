@@ -111,3 +111,11 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
     rows_written   INTEGER NOT NULL DEFAULT 0,
     notes          TEXT
 );
+
+-- hasSuccessfulRun() filters on exactly these three columns, and
+-- BackfillArchive calls it once per day in its range - up to ~900 times in
+-- one gap-catchup call. Without this, every one of those calls is a full
+-- table scan (verified via EXPLAIN before adding this - see
+-- DEVELOPMENT_HISTORY.md).
+CREATE INDEX IF NOT EXISTS idx_ingest_runs_source_date_status
+    ON ingest_runs(source, snapshot_date, status);

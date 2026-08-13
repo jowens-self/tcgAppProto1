@@ -29,9 +29,10 @@ origin through that date, then continuing forward from there).
 10. [Part 10 — Testing rigor: proving the gap catch-up really works](#part-10--testing-rigor-proving-the-gap-catch-up-really-works)
 11. [Part 11 — Version control and publishing](#part-11--version-control-and-publishing)
 12. [Part 12 — First real analytics, and the code-card discovery](#part-12--first-real-analytics-and-the-code-card-discovery)
-13. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-14. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-15. [What's still open](#whats-still-open)
+13. [Part 13 — Full codebase review and cleanup](#part-13--full-codebase-review-and-cleanup)
+14. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+15. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+16. [What's still open](#whats-still-open)
 
 ---
 
@@ -725,6 +726,83 @@ This is the second time in this same stretch of work that a number which
 was *technically* computed correctly turned out to be answering a
 different, less useful question than intended, once someone actually
 looked hard at what was being counted.
+
+---
+
+## Part 13 — Full codebase review and cleanup
+
+**A different kind of pass.** Everything up to this point was feature work
+or bug-fixing driven by a specific question or a specific number looking
+wrong. This was the first time the whole codebase - every source file, the
+schema, the build config - was read fresh and reviewed on its own terms,
+not in service of a particular feature. Eight real issues surfaced, all
+fixed in the same pass:
+
+- **The gap catch-up call could fail invisibly.** `App`'s yesterday
+  catch-up (calling `BackfillArchive.run()`) happened *before*
+  `repo.startRun()` created today's `ingest_runs` row. If the catch-up
+  itself threw - a full disk, a transient DB error - the exception would
+  escape `main()` with zero record in `ingest_runs`, exactly the "silent
+  gap" `ingest_runs` exists to prevent (see CLAUDE.md's own stated
+  purpose for the table). Fixed by moving `startRun()` before the catch-up
+  and wrapping both the catch-up and the main pull in the same
+  try/catch/finishRun("failed", ...) block.
+- **`ingest_runs` had no index behind its most-used query.** CLAUDE.md
+  itself claimed the gap-catchup skip-check was "one indexed lookup, not a
+  download" - that claim was false. `EXPLAIN` showed a full `Seq Scan`;
+  `\d ingest_runs` showed only the primary key. This query runs once per
+  day in `BackfillArchive`'s range - up to ~900 times in a single
+  catch-up call. Fixed with `CREATE INDEX idx_ingest_runs_source_date_status
+  ON ingest_runs(source, snapshot_date, status)`, verified live:
+  `EXPLAIN` now shows `Index Only Scan`, cost dropped from 27.73 to 8.30.
+- **`App` depended on the concrete `TcgCsvPriceSource`, not the
+  `PriceSource` interface it was supposed to depend on.** CLAUDE.md's own
+  "Architecture intent" says "nothing above [PriceSource] should know the
+  mirror exists," but `App` declared `TcgCsvPriceSource source = ...` and
+  called `categories()`/`groups()`/`products()`, none of which were on the
+  interface - the abstraction existed on paper but wasn't actually usable.
+  Fixed by adding those methods (plus `requestsUsed()`) to `PriceSource`
+  and changing `App`'s declared type.
+- **`ProductPullTest` had fully outlived its purpose and skipped the
+  code-card exclusion invariant.** Its own docstring said it existed to
+  prove the products path worked "before it's wired into the daily App
+  run" - that happened back in Part 4. Worse, it called `upsertProduct`
+  unconditionally, with no exclusion check, unlike `App` - a latent way to
+  reintroduce excluded products if ever pointed at one. Deleted.
+- **Three separate reuse gaps**, all fixed the same way: extract a shared
+  piece instead of trusting three copies to stay in sync. The identical
+  `env(key, fallback)` helper, copy-pasted in `App`, `BackfillArchive`, and
+  `ProductPullTest`, became a single `Env.get()` utility. The
+  `USER_AGENT` constant, independently defined in both
+  `TcgCsvPriceSource` and `BackfillArchive`, became one `public` constant
+  on `TcgCsvPriceSource` that `BackfillArchive` references directly -
+  since both send this header to the same tcgcsv.com infrastructure, and
+  the constant is explicitly meant to be bumped when behavior changes, two
+  independent copies were a real drift risk, not just duplication for its
+  own sake.
+- **Two stale/dead-code cleanups.** `Change.percent()` had zero call
+  sites anywhere - every percent-change calculation in this project so
+  far has been ad-hoc SQL, not this Java utility - so it was deleted
+  rather than left as an untested, unreferenced "maybe someday." CLAUDE.md's
+  own reference to it was updated to point at the actual current
+  implementation location (ad-hoc SQL `CASE WHEN`) instead. `TcgCsvUrls`'s
+  class comment claimed the endpoints were "not checked against a live
+  response yet" - false for a long time; README's own "Still to verify"
+  section had already become "Verified against live data," and these
+  exact URLs have carried the entire 37M+ row backfill.
+
+**Method.** Rather than review a diff (there wasn't one - everything was
+already committed and pushed), every source file was read fresh in full,
+checked against what CLAUDE.md and the schema actually claim, and
+cross-referenced against real behavior where a claim was checkable (the
+index claim was verified with `EXPLAIN`, not just inferred from the code).
+Each fix was compiled and smoke-tested before being called done: the
+restructured `App` was re-run and still correctly hit its "already have
+today" fast path; the `BackfillArchive` refactor was re-run standalone
+against an already-covered day and still produced "1 already had, 0
+backfilled, 0 failed"; a final grep swept for any dangling reference to
+the deleted files or the old duplicated patterns. Nothing was left
+half-fixed or merely reported without being applied.
 
 ---
 

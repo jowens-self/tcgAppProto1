@@ -30,9 +30,11 @@ public class TcgCsvPriceSource implements PriceSource {
     /**
      * The mirror asks for a descriptive User-Agent and blocks generic or
      * missing ones. Bump the version when behaviour changes so they can
-     * identify us if we ever misbehave.
+     * identify us if we ever misbehave. Public because BackfillArchive
+     * sends this same header to tcgcsv's archive CDN and shares this
+     * constant rather than keeping its own copy - the two must not drift.
      */
-    private static final String USER_AGENT = "CardTracker/0.1.0";
+    public static final String USER_AGENT = "CardTracker/0.1.0";
 
     private final HttpClient http;
     private final ObjectMapper mapper = new ObjectMapper();

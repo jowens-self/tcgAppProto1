@@ -1,8 +1,9 @@
 package com.cardtracker.source.tcgcsv;
 
 /**
- * Endpoint shapes for tcgcsv.com, per its documented API.
- * See README "Still to verify" - not checked against a live response yet.
+ * Endpoint shapes for tcgcsv.com, per its documented API. Verified against
+ * live responses - see README "Verified against live data" - and proven by
+ * every daily pull and the full 2024-02-08-onward archive backfill.
  */
 public final class TcgCsvUrls {
 

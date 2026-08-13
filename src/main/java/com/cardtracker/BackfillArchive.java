@@ -41,16 +41,15 @@ public final class BackfillArchive {
     public static final String SOURCE = "tcgcsv-archive";
     public static final LocalDate EARLIEST_ARCHIVE = LocalDate.of(2024, 2, 8);
     private static final int CATEGORY_ID = TcgCsvUrls.POKEMON;
-    private static final String USER_AGENT = "CardTracker/0.1.0";
 
     public static void main(String[] args) throws Exception {
         LocalDate start = args.length > 0 ? LocalDate.parse(args[0]) : EARLIEST_ARCHIVE;
         // UTC, not host-local - matches App's snapshot_date convention.
         LocalDate end = args.length > 1 ? LocalDate.parse(args[1]) : LocalDate.now(ZoneOffset.UTC).minusDays(1);
 
-        String url = env("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
-        String user = env("CARDTRACKER_DB_USER", "cardtracker");
-        String pass = env("CARDTRACKER_DB_PASS", "localdev");
+        String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
+        String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
+        String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
 
         try (Connection conn = DriverManager.getConnection(url, user, pass)) {
             run(start, end, new PriceRepository(conn));
@@ -140,7 +139,7 @@ public final class BackfillArchive {
     private static void downloadArchive(HttpClient http, LocalDate date, Path dest) throws Exception {
         String archiveUrl = "https://tcgcsv.com/archive/tcgplayer/prices-" + date + ".ppmd.7z";
         HttpRequest req = HttpRequest.newBuilder(URI.create(archiveUrl))
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", TcgCsvPriceSource.USER_AGENT)
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
@@ -175,8 +174,4 @@ public final class BackfillArchive {
         }
     }
 
-    private static String env(String key, String fallback) {
-        String v = System.getenv(key);
-        return (v == null || v.isBlank()) ? fallback : v;
-    }
 }
