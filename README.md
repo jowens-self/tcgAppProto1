@@ -113,18 +113,24 @@ you write one new class.
 `sql/functions.sql` (loaded automatically alongside `schema.sql`) has four
 parameterized SQL functions - the reusable analytical building blocks
 worked out by hand in DEVELOPMENT_HISTORY.md Part 12, formalized in Part
-13 so they don't need retyping per question. All verified to match the
+14 so they don't need retyping per question. All verified to match the
 hand-computed numbers exactly before being trusted.
 
+`item_return`/`item_all_time_high` work on any individual product - card
+or sealed, since the math is the same either way - and deliberately return
+`name`/`is_sealed` alongside the numbers so the category is always visible
+in the result, not something you have to already know.
+
 ```sql
--- Return for one item (card or sealed) between two exact dates.
-SELECT * FROM card_return(534919, 'Holofoil', '2024-02-08', '2026-08-13');
--- start_price | end_price | pct_return
---      137.00 |   1013.78 |     639.99
+-- Return for one item between two exact dates.
+SELECT * FROM item_return(534919, 'Holofoil', '2024-02-08', '2026-08-13');
+-- name              | is_sealed | start_price | end_price | pct_return
+-- Mew ex - 232/091  | f         |      137.00 |   1013.78 |     639.99
 
 -- All-time high for one item, market->mid->low fallback.
-SELECT card_all_time_high(534919, 'Holofoil');
--- 1089.18
+SELECT * FROM item_all_time_high(534919, 'Holofoil');
+-- name              | is_sealed | all_time_high
+-- Mew ex - 232/091  | f         |       1089.18
 
 -- Portfolio-style set return: singles only, always - see CLAUDE.md
 -- "A set's price/return is defined over its singles only".
@@ -139,7 +145,7 @@ SELECT * FROM set_value(23353);
 ```
 
 Sealed product is still fully trackable - just as an individual item, not
-folded into a set total: `SELECT * FROM card_return(528040, 'Normal',
+folded into a set total: `SELECT * FROM item_return(528040, 'Normal',
 '2024-02-08', '2026-08-13')` (the Paldean Fates Elite Trainer Box) works
 the same as any single card.
 

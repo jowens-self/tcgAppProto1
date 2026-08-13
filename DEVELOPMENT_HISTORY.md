@@ -866,6 +866,20 @@ called directly (the Elite Trainer Box, reproducing +952.10%), confirming
 individual-item tracking and set-level exclusion coexist correctly rather
 than one accidentally breaking the other.
 
+**Renamed shortly after, same day.** The owner pushed back on
+`card_return` accepting sealed items at all - not on the behavior itself
+(splitting the math into two near-identical functions for card vs. sealed
+would have been pure duplication, since the calculation doesn't differ by
+category), but on the *name* implying "cards only" while silently
+returning sealed results too. Renamed `card_return` → `item_return` and
+`card_all_time_high` → `item_all_time_high`, and both now return
+`name`/`is_sealed` as part of their output - the category is visible in
+every result instead of something the caller has to already know or look
+up separately. Verified again after the rename: same exact numbers for
+both a single (Mew ex) and a sealed item (Elite Trainer Box) called
+through the new names, old function names confirmed dropped from the live
+database rather than left as orphaned duplicates.
+
 ---
 
 ## Key design decisions — quick reference
@@ -888,7 +902,7 @@ than one accidentally breaking the other.
 | Exclusion tracking | Standalone `excluded_products` table, independent of `products` | `BackfillArchive` only ever sees a bare `product_id`, never a name — it needs a record that survives after the excluded product's row is deleted; see Part 12 |
 | Set-level return | Sum of all prices on day A vs. sum on day B (portfolio-style), not average of individual returns | Value-weighted, matches "what happened to the set's total worth" rather than "what did a typical card do"; see Part 12 |
 | `is_sealed` classification | Presence of a `Number` field in `extendedData` | Data-driven, not name-pattern guessing; verified across 1999 Base Set through 2026 sets before trusting it; see Part 12 |
-| Set-level price/return and sealed product | Sealed product hardcoded out of `set_return()`/`set_value()` - not a default, no parameter to override it | A set's value is categorically about its singles; sealed items stay trackable individually via `card_return()`/`card_all_time_high()`; see Part 14 |
+| Set-level price/return and sealed product | Sealed product hardcoded out of `set_return()`/`set_value()` - not a default, no parameter to override it | A set's value is categorically about its singles; sealed items stay trackable individually via `item_return()`/`item_all_time_high()`; see Part 14 |
 | All-time-high formula | `MAX(COALESCE(market_price, mid_price, low_price))`, not plain `MAX(market_price)` | Reconciled with the general trending-fallback rule; a MAX() over all history doesn't carry the anchor-bias risk a two-point comparison does; see Part 14 |
 
 ---

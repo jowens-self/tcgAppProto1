@@ -84,7 +84,7 @@ If asked to add scraping, say what it risks before writing it.
   `mid` then `low` as fallback (see `PriceSnapshot.trendablePrice`).
 - **Our own "all-time high" is computed on demand, not tracked in a table.**
   Decided 2026-08-12: `MAX(...) GROUP BY product_id, sub_type_name` against
-  `price_snapshots`, run whenever it's needed - see `card_all_time_high()`
+  `price_snapshots`, run whenever it's needed - see `item_all_time_high()`
   in `sql/functions.sql`. Deliberately not an incrementally-updated table:
   this is unrelated to tcgcsv's noisy `high_price` column above. A
   running-high table only compares against new incoming rows, so a later
@@ -96,21 +96,21 @@ If asked to add scraping, say what it risks before writing it.
   which quietly contradicted the general trending rule right above this one
   ("Trend on `market_price`, with `mid` then `low` as fallback"). Reconciled
   to `MAX(COALESCE(market_price, mid_price, low_price))` when
-  `card_all_time_high()` was built - a MAX() over the whole history doesn't
+  `item_all_time_high()` was built - a MAX() over the whole history doesn't
   have the anchor-bias risk that point-to-point comparisons do (see Part 12's
   return-calculation bug), so there's no reason to withhold the fallback
-  here the way `card_return`/`set_return` deliberately do for their
+  here the way `item_return`/`set_return` deliberately do for their
   start/end anchors.
 - **A set's price/return is defined over its singles only - never sealed
   product.** Decided 2026-08-13, after finding sealed product (booster
   boxes, ETBs, tins, cases) was dominating set-level numbers once
   `is_sealed` became real - one ~$8,441 booster bundle display case alone
-  was a third of one set's "total value" (see Part 12 and Part 13). This is
+  was a third of one set's "total value" (see Part 12 and Part 14). This is
   not a caller-adjustable default - `set_return()`/`set_value()` in
   `sql/functions.sql` hardcode `is_sealed = FALSE` internally, no parameter
   for it, the same way code-card exclusion is baked into ingestion rather
   than left as a query-time filter. Sealed product is still fully
-  trackable as an individual item via `card_return()`/`card_all_time_high()`
+  trackable as an individual item via `item_return()`/`item_all_time_high()`
   (those work on any product_id regardless of category) - it just never
   contributes to a set-level aggregate. "The set" and "sealed product
   belonging to that set" are two categorically different things, tracked

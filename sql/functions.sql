@@ -7,49 +7,66 @@
 -- Hard rule baked in here, not left as caller-adjustable: a set's price or
 -- return is defined ONLY over its singles (is_sealed = FALSE). Sealed
 -- product is a fully separate category - it's trackable individually via
--- card_return()/card_all_time_high() same as any product, but it never
+-- item_return()/item_all_time_high() same as any product, but it never
 -- contributes to a set-level aggregate. See CLAUDE.md.
 
--- Return for one specific product+variant between two exact dates. Empty
--- result (no row) if either date has no recorded price for that item -
--- deliberately not "nearest available date," so a caller never silently
--- gets a different day than the one they asked for.
-CREATE OR REPLACE FUNCTION card_return(
+-- Return for one specific product+variant between two exact dates - a
+-- card OR a sealed item, deliberately, since the math is identical either
+-- way and a product_id already has a fixed category the moment you pick
+-- it. Named item_*, not card_*, and returns name/is_sealed alongside the
+-- numbers specifically so the category is always visible in the result
+-- rather than something the caller has to already know or look up
+-- separately. Empty result (no row) if either date has no recorded price
+-- for that item - deliberately not "nearest available date," so a caller
+-- never silently gets a different day than the one they asked for.
+CREATE OR REPLACE FUNCTION item_return(
     p_product_id INTEGER,
     p_sub_type_name TEXT,
     p_start_date DATE,
     p_end_date DATE
 ) RETURNS TABLE (
+    name TEXT,
+    is_sealed BOOLEAN,
     start_price NUMERIC,
     end_price NUMERIC,
     pct_return NUMERIC
 ) AS $$
     SELECT
+        p.name,
+        p.is_sealed,
         s.market_price,
         e.market_price,
         CASE WHEN s.market_price > 0
              THEN ROUND(((e.market_price - s.market_price) / s.market_price) * 100, 2)
              ELSE NULL END
-    FROM
+    FROM products p,
         (SELECT market_price FROM price_snapshots
           WHERE product_id = p_product_id AND sub_type_name = p_sub_type_name
             AND snapshot_date = p_start_date AND market_price IS NOT NULL) s,
         (SELECT market_price FROM price_snapshots
           WHERE product_id = p_product_id AND sub_type_name = p_sub_type_name
-            AND snapshot_date = p_end_date AND market_price IS NOT NULL) e;
+            AND snapshot_date = p_end_date AND market_price IS NOT NULL) e
+    WHERE p.product_id = p_product_id;
 $$ LANGUAGE sql STABLE;
 
--- All-time high for one product+variant. Uses the market->mid->low
+-- All-time high for one product+variant, card or sealed - same naming and
+-- visibility reasoning as item_return above. Uses the market->mid->low
 -- fallback (see PriceSnapshot.trendablePrice / CLAUDE.md "Data invariants")
 -- since this is a MAX() over the whole history, not a two-point comparison -
 -- the anchor-bias risk from Part 12 doesn't apply here the same way.
-CREATE OR REPLACE FUNCTION card_all_time_high(
+CREATE OR REPLACE FUNCTION item_all_time_high(
     p_product_id INTEGER,
     p_sub_type_name TEXT
-) RETURNS NUMERIC AS $$
-    SELECT MAX(COALESCE(market_price, mid_price, low_price))
-    FROM price_snapshots
-    WHERE product_id = p_product_id AND sub_type_name = p_sub_type_name;
+) RETURNS TABLE (
+    name TEXT,
+    is_sealed BOOLEAN,
+    all_time_high NUMERIC
+) AS $$
+    SELECT p.name, p.is_sealed, MAX(COALESCE(ps.market_price, ps.mid_price, ps.low_price))
+    FROM price_snapshots ps
+    JOIN products p ON p.product_id = ps.product_id
+    WHERE ps.product_id = p_product_id AND ps.sub_type_name = p_sub_type_name
+    GROUP BY p.name, p.is_sealed;
 $$ LANGUAGE sql STABLE;
 
 -- Portfolio-style set return: sum every single card's price on start_date,
