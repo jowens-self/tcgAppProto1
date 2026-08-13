@@ -12,7 +12,9 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Writes price history.
@@ -169,6 +171,38 @@ public class PriceRepository {
             String cleaned = isoLocal.endsWith("Z") ? isoLocal.substring(0, isoLocal.length() - 1) : isoLocal;
             ps.setObject(idx, LocalDateTime.parse(cleaned));
         }
+    }
+
+    // --- excluded products ---------------------------------------------------
+    //
+    // Products we deliberately never ingest or compute on (e.g. code cards -
+    // see DEVELOPMENT_HISTORY.md). Independent of `products` on purpose:
+    // BackfillArchive only ever sees a bare product_id, never a name, so it
+    // needs this table to still answer "is this excluded" even after the
+    // product's row is gone from `products`.
+
+    private static final String UPSERT_EXCLUDED_PRODUCT = """
+            INSERT INTO excluded_products (product_id, name, reason)
+            VALUES (?, ?, ?)
+            ON CONFLICT (product_id) DO NOTHING
+            """;
+
+    public void upsertExcludedProduct(int productId, String name, String reason) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(UPSERT_EXCLUDED_PRODUCT)) {
+            ps.setInt(1, productId);
+            ps.setString(2, name);
+            ps.setString(3, reason);
+            ps.executeUpdate();
+        }
+    }
+
+    public Set<Integer> excludedProductIds() throws Exception {
+        Set<Integer> ids = new HashSet<>();
+        try (PreparedStatement ps = conn.prepareStatement("SELECT product_id FROM excluded_products");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) ids.add(rs.getInt(1));
+        }
+        return ids;
     }
 
     // --- run logging -------------------------------------------------------

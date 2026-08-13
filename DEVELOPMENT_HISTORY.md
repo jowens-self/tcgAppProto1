@@ -28,9 +28,10 @@ origin through that date, then continuing forward from there).
 9. [Part 9 — Making on-demand actually efficient](#part-9--making-on-demand-actually-efficient)
 10. [Part 10 — Testing rigor: proving the gap catch-up really works](#part-10--testing-rigor-proving-the-gap-catch-up-really-works)
 11. [Part 11 — Version control and publishing](#part-11--version-control-and-publishing)
-12. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-13. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-14. [What's still open](#whats-still-open)
+12. [Part 12 — First real analytics, and the code-card discovery](#part-12--first-real-analytics-and-the-code-card-discovery)
+13. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+14. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+15. [What's still open](#whats-still-open)
 
 ---
 
@@ -542,6 +543,121 @@ private, one clean commit, correct authorship, `main` tracking
 
 ---
 
+## Part 12 — First real analytics, and the code-card discovery
+
+**The long-term vision, stated concretely.** Up to this point, everything
+built had been infrastructure — no one had actually looked at what the
+37.7 million rows of price history could answer. The owner articulated a
+concrete long-term goal: eventually, a user-facing system for running
+flexible analytical queries at will — "what's the % return of this set vs.
+this single over a 3-year history" was the example given. Rather than jump
+straight to building a query API or front end for that, the agreed-upon
+approach was to prototype the actual analytical building blocks as raw SQL
+against Postgres first — cheap to do, and it reveals what the real query
+shapes need to look like before committing to any API or UI design.
+
+**Building block one: single-card % return.** Using Mew ex #232/091 (the
+same card from the very first end-to-end test in Part 2) as a concrete
+example, a query was built computing `(end_price - start_price) /
+start_price * 100` between a card's first and last available snapshot,
+using `COALESCE(market_price, mid_price, low_price)` to respect the
+existing trendable-price fallback convention from CLAUDE.md. Result: a
+639.99% return from 2024-02-08 ($137.00) to 2026-08-13 ($1,013.78). Before
+trusting it, the days immediately surrounding both endpoints were checked
+to rule out a single-day price-parking artifact — both ends turned out to
+be part of a real, stable trend, not a fluke.
+
+**Building block two: set-level aggregate return.** The same calculation
+was extended across every (product_id, sub_type_name) pair in the Paldean
+Fates group (376 of them), producing a mean (+96.91%) and median (+48.33%)
+— a meaningful gap worth noticing on its own, since it means a handful of
+big winners were pulling the average well above what a typical card in the
+set actually did. The extremes (-99.11% and +952.10%) were checked by name
+rather than taken at face value: the top end was real (an Elite Trainer
+Box and its case, sealed product appreciating as the set ages — a
+well-known real phenomenon), and the bottom end turned out to be a
+different kind of product entirely: "Code Card" listings, a separate
+TCGplayer catalog entry for the digital online-redemption code packed
+inside some sealed product, not a physical card at all.
+
+**Pushback on the -99.11% number, and finding a second, real bug.** The
+owner pushed back on the -99.11% figure — not because the math looked
+wrong, but because it didn't match their own memory of that card's price
+history. That instinct turned out to be right, and led to a second real
+data-quality finding (distinct from the code-card discovery itself):
+pulling the full day-by-day price history for that specific product
+showed its very first recorded value ($4.50) was itself an outlier — the
+price cratered to $0.95 the very next day and kept drifting down before
+settling into a stable band, and `market_price` (TCGplayer's more
+reliable, sales-informed figure) was completely blank for that product's
+first two weeks of tracking, with only thin, listing-based `mid`/`low`
+data available. The $4.50 anchor was a real recorded value, not a bug in
+the query — but it was recorded before the market for that brand-new
+listing had actually found its footing, making it a poor choice of
+starting baseline. Re-anchored to the first day `market_price` actually
+existed ($0.20, three weeks later), the "true" decline was -80%, not
+-99.11% — still a real, large loss (code cards do genuinely bleed value
+once redeemed), just not as extreme as the naive first-snapshot
+calculation suggested. This is the same "point-to-point boundary risk"
+that had been flagged as a caveat back when building block one was first
+built, now caught actually happening in practice on a real card, once the
+owner's own memory of the market provided a check.
+
+**Decision: exclude code cards entirely, not just filter them at query
+time.** Once it was clear code cards were a structurally different kind of
+product (a digital redemption, not a card), the owner made the call to
+exclude them completely — not searchable, not included in any
+calculation, going forward and retroactively. This raised a genuine
+technical question worth answering carefully rather than assuming: would
+filtering "at the request" reduce compute cost compared to filtering
+later? The answer, worked out from how the pipeline actually calls
+tcgcsv's API: **no** — both `App` and `BackfillArchive` always fetch an
+entire group in one response; tcgcsv has no mechanism to request a
+filtered subset, so the network cost is identical either way. What
+filtering *before insertion* actually saves is write cost — skipping the
+database `INSERT`/`upsert` calls for code-card rows — and it keeps every
+future query simpler by not needing a `NOT ILIKE 'Code Card%'` clause
+forever.
+
+**The design wrinkle: `BackfillArchive` can't see names.** This connects
+directly back to the finding from Part 6 — tcgcsv's archives only ever
+contain a `prices` file, never a `products` file, so `BackfillArchive` has
+no way to classify a product by name; it only ever sees a bare
+`product_id`. That meant a simple in-memory name check (sufficient for
+`App`, which fetches real product names live every day) wasn't enough on
+its own — deleting a code-card product's row from `products` would
+permanently destroy `BackfillArchive`'s only way of knowing to skip it in
+the future. The fix: a new, standalone `excluded_products` table
+(`product_id`, `name`, `reason`, `excluded_at`), deliberately independent
+of `products`, so the exclusion record survives even after the excluded
+product's own row is gone. `App` classifies by name live and writes to
+this table as a side effect (`upsertExcludedProduct`, `ON CONFLICT DO
+NOTHING`); `BackfillArchive.run()` reads the accumulated ID set once per
+call and filters against it before inserting. This is a small, general
+mechanism — the `reason` column is free text specifically so a future
+exclusion category (sealed product, once `is_sealed` is real; anything
+else that turns out not to belong) can reuse the same table rather than
+needing a new one invented from scratch.
+
+**Verifying before deleting anything.** Rather than trust the new Java
+filtering logic by code review alone, it was tested directly against a
+live tcgcsv API response — via `jshell`, no database involved — for the
+Paldean Fates group specifically, since it was already known to contain
+code cards. Result: 295 products fetched, 13 correctly identified as code
+cards (an exact match to the earlier SQL-based count for that same group),
+and 375 price rows correctly reduced to 362. Only after that real
+verification did the actual cleanup proceed: the current 1,253 known
+code-card products were recorded into `excluded_products`, then
+**810,451** price rows and **1,253** product rows were deleted outright.
+As a closing check, the set-level aggregate for Paldean Fates was rerun
+with *no* filtering clause at all (since the rows were simply gone) and
+produced an exact match to the query-time-filtered version from just
+before the cleanup — 361 variants, mean +103.26%, median +50.06%, range
+-66.67% to +952.10% — confirming the deletion hadn't silently changed
+anything it shouldn't have.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -557,6 +673,9 @@ private, one clean commit, correct authorship, `main` tracking
 | Scheduling model | On-demand (run when opened), not a background daemon | No front-end exists yet to justify standing infrastructure; revisit once one does; see Part 8 |
 | Gap detection | Reuse `BackfillArchive`'s existing skip-logic rather than new code | One indexed lookup per already-covered day is nearly free; see Part 9 |
 | GitHub repo visibility | Private | Matches CLAUDE.md's stated "nothing public" intent; see Part 11 |
+| Return-calculation anchor | First/last day `market_price` actually exists, not just first/last day *any* price exists | `mid`/`low` alone on a brand-new listing are unreliable — a real bug caught by the owner questioning a suspicious number; see Part 12 |
+| Code cards | Excluded entirely (ingestion-time, not query-time; existing rows deleted) | Digital redemptions, not real cards — they skew set-level aggregates and aren't meaningful to search; see Part 12 |
+| Exclusion tracking | Standalone `excluded_products` table, independent of `products` | `BackfillArchive` only ever sees a bare `product_id`, never a name — it needs a record that survives after the excluded product's row is deleted; see Part 12 |
 
 ---
 
@@ -592,11 +711,29 @@ able to name, not just recognize:
   pre-UTC-fix data artifact in Part 5 is the clearest example: the
   "correct" thing to do was leave slightly awkward data alone, because the
   design principle exists precisely for moments like that one.
+- **An instinct that a number is wrong is worth investigating, not
+  defending against.** In Part 12, the owner questioning the -99.11%
+  return — not from a data expert's position, just "that doesn't match
+  what I remember" — led directly to finding a real, second bug (a bad
+  return-calculation anchor point) that code review alone hadn't caught.
+  The first response to "that looks wrong" should be to go check, not to
+  re-explain why the math is technically correct.
 
 ---
 
 ## What's still open
 
+- **Reusable SQL for the analytical building blocks** — the return
+  calculation and set-aggregate queries from Part 12 are still hand-typed
+  each time; formalizing them as views/functions (with the market_price
+  anchor fix and code-card exclusion baked in) is the natural next step
+  before building any API or UI on top.
+- **Product categorization beyond code cards** — `is_sealed` is still
+  unimplemented (always `FALSE`), which means there's currently no way to
+  slice "singles vs. sealed product" the way code cards were split out in
+  Part 12. The `excluded_products` mechanism is general enough to extend,
+  but sealed-vs-single isn't exclusion, it's a category — probably wants
+  its own column/table rather than reusing `excluded_products`.
 - **Inventory CSV ingestion** — `InventorySource` is an interface with no
   implementation, intentionally, until a real Seller Portal export sample
   exists to design against.
@@ -610,4 +747,5 @@ able to name, not just recognize:
   actually on, since it matters more if scheduling is ever reinstated.
 - **Front end** — the long-term architecture intent (see CLAUDE.md) is an
   Angular front end talking to a future API, never directly to the
-  tcgcsv mirror. Not started.
+  tcgcsv mirror, eventually exposing the kind of flexible "% return of X
+  vs. Y" querying described at the start of Part 12. Not started.

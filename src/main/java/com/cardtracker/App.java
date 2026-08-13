@@ -13,7 +13,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Daily price pull.
@@ -68,16 +70,24 @@ public class App {
                     repo.upsertGroup(g);
 
                     List<Product> products = source.products(categoryId, g.groupId());
+                    Set<Integer> excludedInGroup = new HashSet<>();
                     for (Product p : products) {
+                        if (isExcluded(p.name())) {
+                            repo.upsertExcludedProduct(p.productId(), p.name(), "code_card");
+                            excludedInGroup.add(p.productId());
+                            continue;
+                        }
                         repo.upsertProduct(p);
                     }
 
-                    List<PriceSnapshot> prices =
-                            source.pricesForGroup(categoryId, g.groupId(), snapshotDate);
+                    List<PriceSnapshot> prices = source.pricesForGroup(categoryId, g.groupId(), snapshotDate)
+                            .stream()
+                            .filter(ps -> !excludedInGroup.contains(ps.productId()))
+                            .toList();
                     int written = repo.insertBatch(prices);
                     totalRows += written;
                     System.out.printf("  %-45s %5d products, %5d prices, %5d new%n",
-                            truncate(g.name(), 45), products.size(), prices.size(), written);
+                            truncate(g.name(), 45), products.size() - excludedInGroup.size(), prices.size(), written);
                 }
 
                 repo.finishRun(runId, "ok", source.requestsUsed(), totalRows, null);
@@ -102,5 +112,16 @@ public class App {
     private static String truncate(String s, int max) {
         if (s == null) return "";
         return s.length() <= max ? s : s.substring(0, max - 1) + "\u2026";
+    }
+
+    /**
+     * Digital code-card redemptions - a separate TCGplayer catalog listing
+     * for the online code packed inside some sealed product, not a physical
+     * card. Behaves nothing like a real card price-wise (see
+     * DEVELOPMENT_HISTORY.md) so it's excluded everywhere, not just filtered
+     * at query time.
+     */
+    private static boolean isExcluded(String name) {
+        return name != null && name.regionMatches(true, 0, "Code Card", 0, "Code Card".length());
     }
 }

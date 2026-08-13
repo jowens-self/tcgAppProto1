@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * One-time (or resumable) backfill from tcgcsv's daily archives, covering
@@ -71,6 +72,10 @@ public final class BackfillArchive {
                 .build();
         ObjectMapper mapper = new ObjectMapper();
         Path workDir = Files.createTempDirectory("cardtracker-backfill");
+        // Archives only ever carry a bare product_id, never a name (see
+        // DEVELOPMENT_HISTORY.md), so exclusion here can only go by ID -
+        // sourced from what App has already recorded via upsertExcludedProduct.
+        Set<Integer> excludedIds = repo.excludedProductIds();
 
         int skipped = 0, done = 0, failed = 0;
         try {
@@ -99,7 +104,10 @@ public final class BackfillArchive {
                                 if (!root.path("success").asBoolean(false)) continue;
 
                                 List<PriceSnapshot> snapshots =
-                                        TcgCsvPriceSource.toPriceSnapshots(root.path("results"), date);
+                                        TcgCsvPriceSource.toPriceSnapshots(root.path("results"), date)
+                                                .stream()
+                                                .filter(ps -> !excludedIds.contains(ps.productId()))
+                                                .toList();
                                 rowsForDay += repo.insertBatch(snapshots);
                             }
                         }

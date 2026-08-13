@@ -238,6 +238,51 @@ Desktop's own Settings > General before relying on any scheduled job again.
    Caveat: this only tests 2024-02-08 vs now (the earliest archive available)
    and only within Pokemon. Good enough to stop treating this as an open risk.
 
+## Excluded products
+
+**Code cards are excluded entirely, everywhere - decided 2026-08-13.** While
+building the first real analytical queries (% return over time, per card and
+per set), digital "Code Card" products (separate TCGplayer listings for the
+online redemption code packed inside sealed product - see DEVELOPMENT_HISTORY.md
+for the full investigation) turned out to skew set-level return calculations
+badly: they crater toward $0 once redeemed, dragging the low end of any
+aggregate way down, and they're not a real physical card anyone would want
+to search for or trend anyway.
+
+Excluded means excluded from ingestion, not just filtered at query time -
+they're never written to `products` or `price_snapshots` going forward, and
+the 1,253 that had already been backfilled (810,451 price rows) were deleted
+outright. Classification is by name prefix ("Code Card...", case-insensitive),
+checked live in `App` against each day's real product names.
+
+A standalone `excluded_products` table (`product_id`, `name`, `reason`,
+`excluded_at`) tracks what's been excluded and why, **independent of**
+`products` - this matters because `BackfillArchive` only ever sees a bare
+`product_id` from tcgcsv's archives, never a name (archives never carry
+product metadata, only prices), so once an excluded product's row is gone
+from `products`, archive backfill would have no way left to know to skip
+it. `App` writes to `excluded_products` as a side effect of its live,
+name-based classification (`upsertExcludedProduct`, `ON CONFLICT DO NOTHING`);
+`BackfillArchive.run()` reads the accumulated set once per call
+(`excludedProductIds()`) and filters by ID before inserting. This also means
+a code card from a set that hasn't had a live pull yet can't be excluded
+during backfill until `App` has seen it once - acceptable since backfill only
+ever targets recent past days in the on-demand model, and those days get
+caught up by `App` itself (see the gap catch-up logic above).
+
+Verified before deleting anything: filter logic tested live (via jshell)
+against Paldean Fates' real API response - 295 products, 13 correctly
+identified as code cards, 375 price rows correctly reduced to 362. After
+cleanup, re-ran the set-level aggregate for Paldean Fates with no filter
+clause at all (since the rows were simply gone) and got an exact match
+against the query-time-filtered version: 361 variants, mean +103.26%,
+median +50.06%, range -66.67% to +952.10%.
+
+If another category of product turns out to need the same treatment later
+(sealed product once `is_sealed` is real, something else entirely), reuse
+this same table and mechanism rather than inventing a new one - `reason` is
+already a free-text column for exactly that.
+
 ## Backlog
 
 - ~~Verify field mappings against a live response~~ done 2026-08-12

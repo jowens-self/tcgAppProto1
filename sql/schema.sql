@@ -84,6 +84,20 @@ CREATE TABLE IF NOT EXISTS inventory_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_inventory_date ON inventory_snapshots(snapshot_date);
 
+-- Products deliberately excluded from ingestion and all calculations - e.g.
+-- digital code-card redemptions, which behave nothing like a physical card
+-- and skew set-level return calculations (see DEVELOPMENT_HISTORY.md).
+-- Kept as its own table, independent of `products`, because BackfillArchive
+-- only ever sees a bare product_id from tcgcsv's archives - never a name -
+-- so it needs somewhere to look up "is this excluded" that still works
+-- after the product's row is removed from `products` entirely.
+CREATE TABLE IF NOT EXISTS excluded_products (
+    product_id    INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    reason        TEXT NOT NULL,
+    excluded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Operational log. Lets you answer "did the pull run, and did it run clean?"
 -- without reading application logs.
 CREATE TABLE IF NOT EXISTS ingest_runs (
