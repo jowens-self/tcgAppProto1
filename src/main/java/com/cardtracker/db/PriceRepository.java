@@ -1,0 +1,222 @@
+package com.cardtracker.db;
+
+import com.cardtracker.model.Category;
+import com.cardtracker.model.Group;
+import com.cardtracker.model.PriceSnapshot;
+import com.cardtracker.model.Product;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * Writes price history.
+ *
+ * The insert is ON CONFLICT DO NOTHING rather than DO UPDATE, on purpose.
+ * Re-running today's pull is then harmless, but a bad run can never overwrite
+ * a good observation that is already recorded. History is the asset; it is
+ * append-only.
+ */
+public class PriceRepository {
+
+    private static final String INSERT = """
+            INSERT INTO price_snapshots
+                (product_id, sub_type_name, snapshot_date,
+                 market_price, low_price, mid_price, high_price, direct_low_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (product_id, sub_type_name, snapshot_date) DO NOTHING
+            """;
+
+    private final Connection conn;
+
+    public PriceRepository(Connection conn) {
+        this.conn = conn;
+    }
+
+    public int insertBatch(List<PriceSnapshot> snapshots) throws Exception {
+        if (snapshots.isEmpty()) return 0;
+
+        boolean previousAutoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try (PreparedStatement ps = conn.prepareStatement(INSERT)) {
+            for (PriceSnapshot s : snapshots) {
+                ps.setInt(1, s.productId());
+                ps.setString(2, s.subTypeName());
+                ps.setObject(3, s.snapshotDate());
+                setDecimal(ps, 4, s.marketPrice());
+                setDecimal(ps, 5, s.lowPrice());
+                setDecimal(ps, 6, s.midPrice());
+                setDecimal(ps, 7, s.highPrice());
+                setDecimal(ps, 8, s.directLowPrice());
+                ps.addBatch();
+            }
+            int written = 0;
+            for (int r : ps.executeBatch()) {
+                if (r > 0) written += r;
+            }
+            conn.commit();
+            return written;
+        } catch (Exception e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(previousAutoCommit);
+        }
+    }
+
+    private static void setDecimal(PreparedStatement ps, int idx, java.math.BigDecimal v)
+            throws Exception {
+        if (v == null) {
+            ps.setNull(idx, Types.NUMERIC);
+        } else {
+            ps.setBigDecimal(idx, v);
+        }
+    }
+
+    // --- catalog (categories / groups / products) --------------------------
+    //
+    // Unlike price_snapshots, these describe the catalog itself rather than a
+    // day's observation, so they're upserted (ON CONFLICT DO UPDATE) instead
+    // of append-only. products.group_id and products.category_id are foreign
+    // keys, so a category and its group must be upserted before the product.
+
+    private static final String UPSERT_CATEGORY = """
+            INSERT INTO categories (category_id, name, modified_on)
+            VALUES (?, ?, ?)
+            ON CONFLICT (category_id) DO UPDATE
+                SET name = EXCLUDED.name, modified_on = EXCLUDED.modified_on
+            """;
+
+    public void upsertCategory(Category c) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(UPSERT_CATEGORY)) {
+            ps.setInt(1, c.categoryId());
+            ps.setString(2, c.name());
+            setTimestamp(ps, 3, c.modifiedOn());
+            ps.executeUpdate();
+        }
+    }
+
+    private static final String UPSERT_GROUP = """
+            INSERT INTO groups
+                (group_id, category_id, name, abbreviation, is_supplemental, published_on, modified_on)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (group_id) DO UPDATE
+                SET name = EXCLUDED.name, abbreviation = EXCLUDED.abbreviation,
+                    is_supplemental = EXCLUDED.is_supplemental,
+                    published_on = EXCLUDED.published_on, modified_on = EXCLUDED.modified_on
+            """;
+
+    public void upsertGroup(Group g) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(UPSERT_GROUP)) {
+            ps.setInt(1, g.groupId());
+            ps.setInt(2, g.categoryId());
+            ps.setString(3, g.name());
+            ps.setString(4, g.abbreviation());
+            ps.setBoolean(5, g.isSupplemental());
+            setTimestamp(ps, 6, g.publishedOn());
+            setTimestamp(ps, 7, g.modifiedOn());
+            ps.executeUpdate();
+        }
+    }
+
+    private static final String UPSERT_PRODUCT = """
+            INSERT INTO products
+                (product_id, group_id, category_id, name, clean_name, image_url, url,
+                 is_sealed, extended_data, modified_on)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+            ON CONFLICT (product_id) DO UPDATE
+                SET name = EXCLUDED.name, clean_name = EXCLUDED.clean_name,
+                    image_url = EXCLUDED.image_url, url = EXCLUDED.url,
+                    extended_data = EXCLUDED.extended_data, modified_on = EXCLUDED.modified_on
+            """;
+
+    /**
+     * is_sealed is always false here - sealed-vs-single detection isn't
+     * implemented yet (see CLAUDE.md "Known unknowns"), so every product
+     * upserted today is treated as a single card.
+     */
+    public void upsertProduct(Product p) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(UPSERT_PRODUCT)) {
+            ps.setInt(1, p.productId());
+            ps.setInt(2, p.groupId());
+            ps.setInt(3, p.categoryId());
+            ps.setString(4, p.name());
+            ps.setString(5, p.cleanName());
+            ps.setString(6, p.imageUrl());
+            ps.setString(7, p.url());
+            ps.setBoolean(8, false);
+            ps.setString(9, p.extendedDataJson());
+            setTimestamp(ps, 10, p.modifiedOn());
+            ps.executeUpdate();
+        }
+    }
+
+    /**
+     * Mirror's timestamps are usually naive ISO strings, but a just-modified
+     * one can come back with a trailing 'Z' (seen live 2026-08-12, on the
+     * most-recently-modified group). 'Z' means zero UTC offset, and we're
+     * not doing timezone conversion either way, so it's just stripped.
+     */
+    private static void setTimestamp(PreparedStatement ps, int idx, String isoLocal) throws Exception {
+        if (isoLocal == null) {
+            ps.setNull(idx, Types.TIMESTAMP);
+        } else {
+            String cleaned = isoLocal.endsWith("Z") ? isoLocal.substring(0, isoLocal.length() - 1) : isoLocal;
+            ps.setObject(idx, LocalDateTime.parse(cleaned));
+        }
+    }
+
+    // --- run logging -------------------------------------------------------
+
+    /**
+     * Lets a batch job (BackfillArchive) skip a day without downloading or
+     * parsing anything for it. Only "ok" counts - a day that previously
+     * failed partway through is retried in full, not resumed mid-day.
+     */
+    public boolean hasSuccessfulRun(String source, LocalDate snapshotDate) throws Exception {
+        String sql = "SELECT 1 FROM ingest_runs WHERE source = ? AND snapshot_date = ? AND status = 'ok' LIMIT 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, source);
+            ps.setObject(2, snapshotDate);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    public long startRun(String source, LocalDate snapshotDate) throws Exception {
+        String sql = "INSERT INTO ingest_runs (source, snapshot_date) VALUES (?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, source);
+            ps.setObject(2, snapshotDate);
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                keys.next();
+                return keys.getLong(1);
+            }
+        }
+    }
+
+    public void finishRun(long runId, String status, int requests, int rows, String notes)
+            throws Exception {
+        String sql = """
+                UPDATE ingest_runs
+                   SET finished_at = now(), status = ?, request_count = ?,
+                       rows_written = ?, notes = ?
+                 WHERE id = ?
+                """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, status);
+            ps.setInt(2, requests);
+            ps.setInt(3, rows);
+            ps.setString(4, notes);
+            ps.setLong(5, runId);
+            ps.executeUpdate();
+        }
+    }
+}
