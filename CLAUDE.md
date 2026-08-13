@@ -283,6 +283,54 @@ If another category of product turns out to need the same treatment later
 this same table and mechanism rather than inventing a new one - `reason` is
 already a free-text column for exactly that.
 
+## Sealed product (`is_sealed`) is now real, not a placeholder
+
+**Implemented 2026-08-13**, immediately after the code-card work above.
+Set-level aggregates were still badly skewed even after excluding code
+cards, because sealed product (booster boxes, ETBs, tins, cases, bundles)
+was still mixed in with real singles - a single $8,441 booster bundle
+display case was a third of one set's entire "total value." Unlike code
+cards, sealed product isn't something to exclude outright - it's a real,
+legitimate thing to track, just a different category that needs to be
+filterable, which is exactly what `products.is_sealed` was always meant
+for (see its schema comment) but had never been implemented - every row
+was hardcoded `FALSE`.
+
+**Classifier: presence of a `Number` field in `extendedData`.** A real
+single card always carries its card number as a structured field; sealed
+product never does - it only ever has a `CardText` marketing blurb, if
+anything. This is data-driven, not a name-pattern guess like the code-card
+check. Verified before trusting it: checked Paldean Fates in full (37
+sealed / 245 singles, zero misclassifications either direction on
+inspection), checked 1999 Base Set specifically to make sure the field
+name is stable across the oldest and newest data in the archive (booster
+boxes/theme decks/starter sets correctly `f`, singles including an
+error-print variant and Trainer cards correctly `t`), then a 20-item
+random sample across a wide range of sets after the retroactive fix -
+19/20 singles correctly `false`, the one sealed item (a Sword & Shield
+theme deck) correctly `true`.
+
+Computed once in `TcgCsvPriceSource.products()` (where the raw
+`extendedData` JSON is already being read) and carried on `Product.isSealed`
+from construction onward - not reverse-engineered from the name later, and
+not computed in SQL, so the same value is available for both product
+metadata and set-level query filtering without re-deriving it. `is_sealed`
+is now in `PriceRepository`'s `ON CONFLICT DO UPDATE` clause too, same as
+every other real field on `products` - it wasn't before, since there was
+no point updating a hardcoded constant.
+
+**Existing catalog corrected retroactively**, same pattern as the code-card
+cleanup: `UPDATE products SET is_sealed = NOT (extended_data @> '[{"name":
+"Number"}]'::jsonb)` across the whole table (31,294 products at the time) -
+27,807 came back singles, 3,487 sealed.
+
+**Impact, concretely (Paldean Fates, singles only vs. previously mixed):**
+current set value dropped from $25,100.93 to $2,792.05; set return dropped
+from +369.53% to +137.07%. Sealed product wasn't minor noise in these
+numbers, it was the dominant factor - any set-level query going forward
+should filter on `is_sealed` explicitly rather than assume "the group" means
+"the singles."
+
 ## Backlog
 
 - ~~Verify field mappings against a live response~~ done 2026-08-12

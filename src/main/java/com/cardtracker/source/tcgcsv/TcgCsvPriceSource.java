@@ -90,6 +90,7 @@ public class TcgCsvPriceSource implements PriceSource {
         JsonNode results = getResults(TcgCsvUrls.products(categoryId, groupId));
         List<Product> out = new ArrayList<>();
         for (JsonNode n : results) {
+            JsonNode extendedData = n.path("extendedData");
             out.add(new Product(
                     n.path("productId").asInt(),
                     groupId,
@@ -99,9 +100,24 @@ public class TcgCsvPriceSource implements PriceSource {
                     n.path("imageUrl").asText(null),
                     n.path("url").asText(null),
                     n.path("modifiedOn").asText(null),
-                    mapper.writeValueAsString(n.path("extendedData"))));
+                    !hasCardNumber(extendedData),
+                    mapper.writeValueAsString(extendedData)));
         }
         return out;
+    }
+
+    /**
+     * A real single card always carries a "Number" field (its card number)
+     * in extendedData; sealed product (boxes, packs, tins, cases, bundles)
+     * never does. See Product's Javadoc for how this was verified.
+     */
+    private static boolean hasCardNumber(JsonNode extendedData) {
+        for (JsonNode field : extendedData) {
+            if ("Number".equals(field.path("name").asText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

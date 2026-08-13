@@ -134,14 +134,10 @@ public class PriceRepository {
             ON CONFLICT (product_id) DO UPDATE
                 SET name = EXCLUDED.name, clean_name = EXCLUDED.clean_name,
                     image_url = EXCLUDED.image_url, url = EXCLUDED.url,
+                    is_sealed = EXCLUDED.is_sealed,
                     extended_data = EXCLUDED.extended_data, modified_on = EXCLUDED.modified_on
             """;
 
-    /**
-     * is_sealed is always false here - sealed-vs-single detection isn't
-     * implemented yet (see CLAUDE.md "Known unknowns"), so every product
-     * upserted today is treated as a single card.
-     */
     public void upsertProduct(Product p) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement(UPSERT_PRODUCT)) {
             ps.setInt(1, p.productId());
@@ -151,7 +147,7 @@ public class PriceRepository {
             ps.setString(5, p.cleanName());
             ps.setString(6, p.imageUrl());
             ps.setString(7, p.url());
-            ps.setBoolean(8, false);
+            ps.setBoolean(8, p.isSealed());
             ps.setString(9, p.extendedDataJson());
             setTimestamp(ps, 10, p.modifiedOn());
             ps.executeUpdate();

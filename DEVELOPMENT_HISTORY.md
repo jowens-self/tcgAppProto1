@@ -656,6 +656,76 @@ before the cleanup — 361 variants, mean +103.26%, median +50.06%, range
 -66.67% to +952.10% — confirming the deletion hadn't silently changed
 anything it shouldn't have.
 
+**A different definition of "set return" entirely.** The owner then
+redefined what "the set's % return" should even mean: not an average
+(equal-weighted or otherwise) of individual cards' returns, but a
+portfolio-style number — sum every card's price on day A, sum every
+card's price on day B, compute the % change between the two totals. This
+is a genuinely different question than the mean/median approach answered:
+it's value-weighted, so an expensive card or an appreciating sealed item
+moves the number proportionally to its dollar size, rather than counting
+the same as a 3-cent bulk common. Implemented carefully to stay
+apples-to-apples: rather than summing "whatever's available" on each day
+independently (which would conflate real price movement with tcgcsv
+simply tracking more products over time), the sum is restricted to the
+basket of (product, variant) pairs present with a real `market_price` on
+*both* days being compared. This surfaced a companion concept the owner
+asked for directly — "price of the set" as its own standalone idea (just
+the current total, not a comparison between two dates), which doesn't
+need the common-basket restriction at all, since there's no second date to
+stay consistent with.
+
+**Investigating the "9 extra" cards led to the real issue.** Checking why
+9 more variants had a price today than had one on day one (360 vs. 351)
+turned up a list dominated by sealed/bundle products — International
+Tins, a Booster Bundle Display Case, Premium Collections — plus one real
+single card. The owner immediately identified the actual problem this
+exposed: **every set-level calculation so far had been mixing sealed
+product in with real singles**, not just these 9. This wasn't a new,
+separate bug — it was the same category of issue as the code-card
+discovery, just for a different kind of non-single product, and it had
+been quietly distorting numbers since the very first set-level aggregate
+in this Part (the Elite Trainer Box's +952% return, which had been
+flagged as "real, not an artifact" back then, was real, but it also should
+never have been mixed into the same statistic as an actual card).
+
+**Implementing `is_sealed` for real.** Unlike code cards, sealed product
+isn't something to exclude outright — it's legitimate data, just a
+different category that needs to be filterable. The `products.is_sealed`
+column already existed in the schema for exactly this purpose (its own
+comment said so) but had never been implemented; every row was hardcoded
+`FALSE`. The fix: a real classifier, based on data rather than name
+patterns this time — a genuine single card always carries a `Number`
+field (its card number) in tcgcsv's `extendedData`, while sealed product
+never does. This was verified in stages before being trusted: checked
+against the full Paldean Fates catalog (37 sealed / 245 singles, manually
+inspected on both sides), then specifically checked against 1999 Base
+Set — the *oldest* data in the whole archive — to make sure the signal
+holds across more than two decades of catalog history (booster
+boxes/theme decks/starter sets correctly flagged, singles including an
+error-print variant and Trainer-type cards correctly flagged the other
+way), and finally spot-checked with a 20-item random sample spanning many
+different sets after the retroactive database fix. Implemented once, at
+the point where `Product` objects are actually built from tcgcsv's raw
+JSON (`TcgCsvPriceSource.products()`), so the same computed value flows
+through to both the stored `is_sealed` column and anything that needs it
+in memory — not reverse-engineered from a name string later, and not
+duplicated as separate SQL logic. The existing catalog (31,294 products at
+the time) was corrected retroactively with a single `UPDATE`, the same
+pattern used for the code-card cleanup: 27,807 came back singles, 3,487
+sealed.
+
+**The impact was not small.** Recomputing Paldean Fates' numbers
+singles-only against the same portfolio-style methodology: current set
+value dropped from $25,100.93 to **$2,792.05**, and the set's % return
+dropped from +369.53% to **+137.07%**. Sealed product hadn't been a minor
+contaminant in these statistics — a single ~$8,441 booster bundle display
+case alone had accounted for roughly a third of the entire "set value."
+This is the second time in this same stretch of work that a number which
+was *technically* computed correctly turned out to be answering a
+different, less useful question than intended, once someone actually
+looked hard at what was being counted.
+
 ---
 
 ## Key design decisions — quick reference
@@ -676,6 +746,8 @@ anything it shouldn't have.
 | Return-calculation anchor | First/last day `market_price` actually exists, not just first/last day *any* price exists | `mid`/`low` alone on a brand-new listing are unreliable — a real bug caught by the owner questioning a suspicious number; see Part 12 |
 | Code cards | Excluded entirely (ingestion-time, not query-time; existing rows deleted) | Digital redemptions, not real cards — they skew set-level aggregates and aren't meaningful to search; see Part 12 |
 | Exclusion tracking | Standalone `excluded_products` table, independent of `products` | `BackfillArchive` only ever sees a bare `product_id`, never a name — it needs a record that survives after the excluded product's row is deleted; see Part 12 |
+| Set-level return | Sum of all prices on day A vs. sum on day B (portfolio-style), not average of individual returns | Value-weighted, matches "what happened to the set's total worth" rather than "what did a typical card do"; see Part 12 |
+| `is_sealed` classification | Presence of a `Number` field in `extendedData` | Data-driven, not name-pattern guessing; verified across 1999 Base Set through 2026 sets before trusting it; see Part 12 |
 
 ---
 
@@ -728,12 +800,10 @@ able to name, not just recognize:
   each time; formalizing them as views/functions (with the market_price
   anchor fix and code-card exclusion baked in) is the natural next step
   before building any API or UI on top.
-- **Product categorization beyond code cards** — `is_sealed` is still
-  unimplemented (always `FALSE`), which means there's currently no way to
-  slice "singles vs. sealed product" the way code cards were split out in
-  Part 12. The `excluded_products` mechanism is general enough to extend,
-  but sealed-vs-single isn't exclusion, it's a category — probably wants
-  its own column/table rather than reusing `excluded_products`.
+- **Further product categorization** — `is_sealed` now works (see Part
+  12), but it's binary. If finer distinctions turn out to matter later
+  (booster boxes vs. ETBs vs. tins, graded singles vs. raw, etc.), that's
+  still open.
 - **Inventory CSV ingestion** — `InventorySource` is an interface with no
   implementation, intentionally, until a real Seller Portal export sample
   exists to design against.
