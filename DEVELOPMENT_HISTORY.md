@@ -30,9 +30,10 @@ origin through that date, then continuing forward from there).
 11. [Part 11 — Version control and publishing](#part-11--version-control-and-publishing)
 12. [Part 12 — First real analytics, and the code-card discovery](#part-12--first-real-analytics-and-the-code-card-discovery)
 13. [Part 13 — Full codebase review and cleanup](#part-13--full-codebase-review-and-cleanup)
-14. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-15. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-16. [What's still open](#whats-still-open)
+14. [Part 14 — Formalizing the analytical building blocks](#part-14--formalizing-the-analytical-building-blocks)
+15. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+16. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+17. [What's still open](#whats-still-open)
 
 ---
 
@@ -806,6 +807,67 @@ half-fixed or merely reported without being applied.
 
 ---
 
+## Part 14 — Formalizing the analytical building blocks
+
+**Picking up where Part 12 left off, on a now-clean foundation.** With the
+codebase reviewed and fixed (Part 13), the natural next step was the one
+flagged as still open back in Part 12: turn the hand-typed return/set-value
+queries into something reusable instead of retyping them per question.
+
+**A hard rule surfaced immediately, before any SQL got written.** Asked
+what the formalized functions should default to for sealed product, the
+owner corrected the framing entirely: a set's price or return should
+*never* be influenced by sealed product's value at all - not a default
+that can be overridden, a categorical exclusion. Sealed items remain fully
+trackable, just as individual items, never as part of "the set." This
+mirrors the code-card decision from Part 12 almost exactly (exclude
+entirely, don't leave it as a query-time toggle someone could forget), and
+it simplified the design: no `singles_only` boolean parameter needed at
+all, since there's no scenario where a caller should be able to ask a
+set-level function to include sealed product.
+
+**Four functions, in `sql/functions.sql`, loaded the same way as
+`schema.sql`:** `card_return` and `card_all_time_high` operate on any
+individual product (single or sealed) between two exact dates or over all
+time; `set_return` and `set_value` operate on a whole group and hardcode
+`is_sealed = FALSE` internally - not as a default, as the only behavior.
+`card_return` deliberately requires an exact date match on both ends
+(empty result rather than silently substituting a "nearest available"
+date) - a deliberate choice to avoid quietly reintroducing the kind of
+anchor-bias problem found in Part 12, where a substituted date could shift
+which day's price actually gets compared without the caller realizing it.
+
+**A real inconsistency caught while building `card_all_time_high`.**
+CLAUDE.md's original all-time-high decision (2026-08-12) specified plain
+`MAX(market_price)`, with no fallback to `mid`/`low` - directly
+contradicting the general trending rule stated one line above it in the
+same document ("Trend on `market_price`, with `mid` then `low` as
+fallback"). This wasn't a deliberate exception, just an inconsistency that
+had sat undetected in the documentation for a day. Reconciled by giving
+`card_all_time_high` the fallback, on the reasoning that a `MAX()` over
+the *entire* history doesn't carry the same anchor-bias risk that a
+two-point comparison does (there's no single "wrong" day being picked as
+an anchor - more data points only ever make a MAX() more complete, never
+misleading the way an unlucky start-date pick can for a return
+calculation). For this specific card (Mew ex) the two formulas happened to
+agree ($1089.18 either way, since `market_price` has been populated for
+its entire tracked history) - the distinction matters for products with
+early coverage gaps, the same category of product that caused problems
+earlier in Part 12.
+
+**Verification before trusting any of it.** Every function was run against
+data with a already-known-correct answer from the hand-typed queries
+earlier in the session, and matched exactly: `card_return` for Mew ex
+reproduced +639.99%; `card_all_time_high` reproduced $1089.18;
+`set_return` for Paldean Fates reproduced 325 variants, $1176.92 →
+$2790.15, +137.07%; `set_value` reproduced 326 variants, $2792.05. A
+final check confirmed `card_return` also works correctly on a sealed item
+called directly (the Elite Trainer Box, reproducing +952.10%), confirming
+individual-item tracking and set-level exclusion coexist correctly rather
+than one accidentally breaking the other.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -826,6 +888,8 @@ half-fixed or merely reported without being applied.
 | Exclusion tracking | Standalone `excluded_products` table, independent of `products` | `BackfillArchive` only ever sees a bare `product_id`, never a name — it needs a record that survives after the excluded product's row is deleted; see Part 12 |
 | Set-level return | Sum of all prices on day A vs. sum on day B (portfolio-style), not average of individual returns | Value-weighted, matches "what happened to the set's total worth" rather than "what did a typical card do"; see Part 12 |
 | `is_sealed` classification | Presence of a `Number` field in `extendedData` | Data-driven, not name-pattern guessing; verified across 1999 Base Set through 2026 sets before trusting it; see Part 12 |
+| Set-level price/return and sealed product | Sealed product hardcoded out of `set_return()`/`set_value()` - not a default, no parameter to override it | A set's value is categorically about its singles; sealed items stay trackable individually via `card_return()`/`card_all_time_high()`; see Part 14 |
+| All-time-high formula | `MAX(COALESCE(market_price, mid_price, low_price))`, not plain `MAX(market_price)` | Reconciled with the general trending-fallback rule; a MAX() over all history doesn't carry the anchor-bias risk a two-point comparison does; see Part 14 |
 
 ---
 
@@ -873,11 +937,6 @@ able to name, not just recognize:
 
 ## What's still open
 
-- **Reusable SQL for the analytical building blocks** — the return
-  calculation and set-aggregate queries from Part 12 are still hand-typed
-  each time; formalizing them as views/functions (with the market_price
-  anchor fix and code-card exclusion baked in) is the natural next step
-  before building any API or UI on top.
 - **Further product categorization** — `is_sealed` now works (see Part
   12), but it's binary. If finer distinctions turn out to matter later
   (booster boxes vs. ETBs vs. tins, graded singles vs. raw, etc.), that's

@@ -108,6 +108,41 @@ always constructible.
 with no SLA and no per-condition pricing. If it disappears or you outgrow it,
 you write one new class.
 
+## Query functions
+
+`sql/functions.sql` (loaded automatically alongside `schema.sql`) has four
+parameterized SQL functions - the reusable analytical building blocks
+worked out by hand in DEVELOPMENT_HISTORY.md Part 12, formalized in Part
+13 so they don't need retyping per question. All verified to match the
+hand-computed numbers exactly before being trusted.
+
+```sql
+-- Return for one item (card or sealed) between two exact dates.
+SELECT * FROM card_return(534919, 'Holofoil', '2024-02-08', '2026-08-13');
+-- start_price | end_price | pct_return
+--      137.00 |   1013.78 |     639.99
+
+-- All-time high for one item, market->mid->low fallback.
+SELECT card_all_time_high(534919, 'Holofoil');
+-- 1089.18
+
+-- Portfolio-style set return: singles only, always - see CLAUDE.md
+-- "A set's price/return is defined over its singles only".
+SELECT * FROM set_return(23353, '2024-02-08', '2026-08-13');
+-- n_variants | total_start | total_end | pct_return
+--        325 |     1176.92 |   2790.15 |     137.07
+
+-- Current (or as-of) total value of a set. Singles only, same rule.
+SELECT * FROM set_value(23353);
+-- n_variants | total_value
+--        326 |     2792.05
+```
+
+Sealed product is still fully trackable - just as an individual item, not
+folded into a set total: `SELECT * FROM card_return(528040, 'Normal',
+'2024-02-08', '2026-08-13')` (the Paldean Fates Elite Trainer Box) works
+the same as any single card.
+
 ## Example queries
 
 Biggest 30-day movers, sealed product only:
@@ -127,28 +162,6 @@ SELECT p.name, n.sub_type_name, t.market_price AS then_price,
   JOIN products p USING (product_id)
  WHERE t.market_price > 0 AND p.is_sealed
  ORDER BY pct DESC
- LIMIT 25;
-```
-
-All-time high per card, and how far today's price is off it. Computed fresh
-from `price_snapshots` every time on purpose - see CLAUDE.md "Data
-invariants" for why this isn't a separate table:
-
-```sql
-WITH highs AS (
-  SELECT product_id, sub_type_name, MAX(market_price) AS all_time_high
-    FROM price_snapshots
-   GROUP BY product_id, sub_type_name),
-today_p AS (
-  SELECT product_id, sub_type_name, market_price
-    FROM price_snapshots WHERE snapshot_date = CURRENT_DATE)
-SELECT p.name, t.sub_type_name, t.market_price AS today_price, h.all_time_high,
-       ROUND((t.market_price - h.all_time_high) / h.all_time_high * 100, 2) AS pct_off_high
-  FROM today_p t
-  JOIN highs h USING (product_id, sub_type_name)
-  JOIN products p USING (product_id)
- WHERE h.all_time_high > 0
- ORDER BY pct_off_high ASC
  LIMIT 25;
 ```
 

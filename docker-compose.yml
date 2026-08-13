@@ -11,6 +11,7 @@ services:
     volumes:
       - cardtracker-data:/var/lib/postgresql/data
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/functions.sql:/docker-entrypoint-initdb.d/02-functions.sql:ro
 
 volumes:
   cardtracker-data:
