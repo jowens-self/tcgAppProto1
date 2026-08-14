@@ -993,6 +993,35 @@ the whole gap-catchup system (Part 9) was built for, now proven under
 real conditions instead of a constructed scratch-database scenario like
 Part 10 used.
 
+**One Piece Card Game actually added, same day.** The owner asked directly
+whether adding a real second game felt safe - a fair question to ask
+honestly rather than just assert confidence about. Before answering yes,
+One Piece's real product data was checked live: the `is_sealed` classifier
+held cleanly across two separate samples (a promo-era group and a recent
+2026 set), matching the same "sealed has no `Number` field, singles do"
+pattern already confirmed for Pokemon and Magic - three real games now,
+not an assumption extended on faith. A concern about the earliest data
+possibly predating the game's English release turned into a useful
+clarification of two facts that had been getting conflated: catalog
+metadata (`groups.published_on`) reflects a product's real release date
+and can go back decades (Pokemon's Base Set: 1999-01-09, confirmed
+directly against the live table), while the price *archive* itself has a
+hard floor of 2024-02-08 for every game regardless of when that game
+actually launched - the two aren't the same limit, and neither one was
+ever an arbitrary choice made for this project specifically. With that
+settled, a 3-day validation backfill confirmed Pokemon's already-covered
+days were correctly skipped while One Piece's were correctly processed
+from the same shared archive download - then the full range (918 days)
+backfilled clean, 0 failures, followed by a live pull to populate the
+catalog (archives never carry product names, the same limitation
+discovered for Pokemon back in Part 6). Final state: 7,261 One Piece
+products (633 sealed / 6,628 singles - nearly identical proportion to
+Pokemon's own split), and - the real proof this generalization actually
+works rather than just being designed to - `item_return()`, written and
+tested against Pokemon data only and never touched since, correctly
+computed a real return for a One Piece card with zero code changes
+required.
+
 ---
 
 ## Key design decisions — quick reference
@@ -1067,11 +1096,10 @@ able to name, not just recognize:
 
 ## What's still open
 
-- **No second game actually added yet** — the architecture supports it
-  (Part 15), but `tracked_categories` still only has Pokemon in it. Picking
-  an actual second game to track, and properly verifying `is_sealed`'s
-  classifier against a real volume of its data (not just one spot-checked
-  card), is still open.
+- **One Piece added (Part 15)** — 918 days backfilled, catalog populated,
+  `is_sealed` and the query functions all confirmed working against real
+  data. A third game (or more) would be the next test of how well this
+  generalizes further, but the architecture is no longer untested.
 - **Further product categorization** — `is_sealed` now works (see Part
   12), but it's binary. If finer distinctions turn out to matter later
   (booster boxes vs. ETBs vs. tins, graded singles vs. raw, etc.), that's

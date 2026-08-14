@@ -174,6 +174,22 @@ verification Pokemon got (1999 Base Set through 2026 sets) - worth a
 proper check the first time a new game's data actually gets pulled in
 volume, not just assumed to hold everywhere tcgcsv's schema looks similar.
 
+**One Piece Card Game (category 68) added 2026-08-14 - the first real
+second game, not just architecture.** Verified before adding: `is_sealed`
+held cleanly across two separate real samples (sealed products correctly
+empty on `extendedData`, singles correctly carrying `Number`) - three
+games for three now, not an assumption. No code-card-style quirk found in
+the samples checked, though that's a spot-check, not exhaustive. Full
+history: 918 days backfilled (2024-02-08 - the hard floor of tcgcsv's
+archive system for any game, regardless of when that game actually
+launched - through present), 0 failures, then a live pull to populate the
+catalog (archives never carry names) - 7,261 products, 633 sealed / 6,628
+singles, matching the same is_sealed split ratio Pokemon showed. Proved
+the generalization is real, not just designed: `item_return()` - written
+and tested against Pokemon only, untouched since - worked on a One Piece
+product_id with zero code changes (Monkey.D.Luffy (001) Foil: $173.45 ->
+$961.19, +454.16%).
+
 **Mechanics of how this actually works, for future reference:**
 - `ingest_runs.source` is category-scoped: `"tcgcsv-" + categoryId` for
   live pulls, `BackfillArchive.sourceFor(categoryId)` (`"tcgcsv-archive-"
