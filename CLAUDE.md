@@ -1,5 +1,20 @@
 # CardTracker
 
+A personal tool for a TCGplayer seller. Pulls daily TCG price data from a
+third-party mirror into local Postgres, append-only, to build a price history
+the owner controls. Joins against their own inventory to answer: what's up,
+what's down, what's dead stock, what's it worth this week vs last month.
+Started Pokemon-only; which games are actually tracked is controlled by the
+`tracked_categories` table, not hardcoded — see "Multi-game support" below.
+
+Not a product. No users, no auth, no server, nothing public.
+
+**Goal: one `price_snapshots` row per day for every card the owner has
+included, with no gaps.** Completeness over time is the point — a missing
+day is a defect, not a rounding error. `ingest_runs` exists so a gap is
+visible rather than silently swallowed; a failed or skipped day should be
+noticed and backfilled, not shrugged off.
+
 ## tcgcsv.com usage constraints — do not violate
 
 This app's only external dependency is `tcgcsv.com`, a free, no-SLA mirror
@@ -9,7 +24,8 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
 - **Hard ban threshold: >10,000 requests in a 24h period "may be banned."**
   A full sync should need at most 10,000 requests. Enforced in code as a
   circuit breaker in `Throttle.MAX_REQUESTS_PER_RUN` (9000) — do not raise
-  this without re-reading the docs.
+  this without re-reading the docs. If a sync starts needing more requests,
+  the sync logic is doing redundant work — fix that, don't raise the ceiling.
 - **Pacing: >=100ms between requests** is the documented minimum (the FAQ's
   own example code uses 250ms). Exceeding a reasonable req/sec rate gets the
   IP throttled for 10 minutes. `Throttle.politeDefault()` uses 750ms —
@@ -18,11 +34,11 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
   Generic or missing User-Agents may be blocked outright. Current value
   lives in `TcgCsvPriceSource.USER_AGENT` — bump the version number when
   request behavior changes.
-- **Data refreshes once daily.** There's a `last-updated.txt` you can check
-  before pulling; if the timestamp hasn't advanced since your last
-  successful run, skip the sync. Not currently implemented — a future
-  improvement, not required for ban-safety (normal usage is a few hundred
-  requests/day, far under the cap).
+- **Data refreshes once daily, around 20:00 UTC.** There's a
+  `last-updated.txt` you can check before pulling; if the timestamp hasn't
+  advanced since your last successful run, skip the sync. Not currently
+  implemented — a future improvement, not required for ban-safety (normal
+  usage is a few hundred requests/day, far under the cap).
 - **No browser requests** — tcgcsv.com has a restrictive CORS policy and is
   backend-only by design, which matches how this app calls it.
 
@@ -37,22 +53,6 @@ decisions worth not undoing" for: no scraping tcgplayer.com directly, no
 automated login, nothing public, variant-aware pricing key, append-only
 inserts, and the `PriceSource` interface boundary. Those are the load-bearing
 constraints for this project — respect them when making changes.
-
-
-# CardTracker — project context
-
-A personal tool for a TCGplayer seller. Pulls daily Pokemon price data from a
-third-party mirror into local Postgres, append-only, to build a price history
-the owner controls. Joins against their own inventory to answer: what's up,
-what's down, what's dead stock, what's it worth this week vs last month.
-
-Not a product. No users, no auth, no server, nothing public.
-
-**Goal: one `price_snapshots` row per day for every card the owner has
-included, with no gaps.** Completeness over time is the point — a missing
-day is a defect, not a rounding error. `ingest_runs` exists so a gap is
-visible rather than silently swallowed; a failed or skipped day should be
-noticed and backfilled, not shrugged off.
 
 ## Hard constraints — do not violate, do not "improve"
 
@@ -104,8 +104,8 @@ If asked to add scraping, say what it risks before writing it.
 - **A set's price/return is defined over its singles only - never sealed
   product.** Decided 2026-08-13, after finding sealed product (booster
   boxes, ETBs, tins, cases) was dominating set-level numbers once
-  `is_sealed` became real - one ~$8,441 booster bundle display case alone
-  was a third of one set's "total value" (see Part 12 and Part 14). This is
+  `is_sealed` became real - see "Sealed product" below for the concrete
+  impact, and DEVELOPMENT_HISTORY.md Part 12 and Part 14. This is
   not a caller-adjustable default - `set_return()`/`set_value()` in
   `sql/functions.sql` hardcode `is_sealed = FALSE` internally, no parameter
   for it, the same way code-card exclusion is baked into ingestion rather
@@ -117,6 +117,20 @@ If asked to add scraping, say what it risks before writing it.
   at two different granularities (individual items vs. sets as a whole).
 - **`product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
+- **"Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
+  Decided 2026-08-12. `App`, `BackfillArchive`, and `ProductPullTest` all
+  compute it this way, matching the archive backfill's own day boundary and
+  the container's default clock - so `snapshot_date` means the same thing
+  across the whole table's history, and `CURRENT_DATE` in raw SQL always
+  agrees with it. If a new place ever needs "today," use `ZoneOffset.UTC`
+  explicitly - bare `LocalDate.now()` is the bug this fixed.
+  **One pre-fix artifact, deliberately left alone:** the 2026-08-12 19:40
+  CDT live-pull run (45,156 rows) was stamped under the old host-local
+  convention; under the new rule that same moment would have been
+  2026-08-13 (UTC had already rolled over). Not corrected -
+  `price_snapshots` is append-only and that row was valid under the
+  convention in effect when it was written. A one-time, already-happened
+  quirk, not an ongoing bug; nothing later depends on it being "fixed."
 - **Percent change returns null on a zero or negative starting price.** Do not
   "fix" this to return 0 or infinity. Every return-calculation query so far
   has been ad-hoc SQL (`CASE WHEN start_price > 0 THEN ... ELSE NULL END`,
@@ -124,16 +138,6 @@ If asked to add scraping, say what it risks before writing it.
   this yet (`Change.percent` existed briefly with zero call sites and was
   removed 2026-08-13; reintroduce it if/when percent-change logic actually
   moves into application code instead of interactive SQL).
-
-## Mirror etiquette
-
-TCGCSV is one person's free project with no SLA. Their stated rules: one pull
-per 24 hours, under 10,000 requests per full sync, descriptive User-Agent
-(generic ones get blocked), ~100ms between requests. `Throttle` enforces this
-structurally. If a sync starts needing more requests, the sync logic is doing
-redundant work — fix that, don't raise the ceiling.
-
-Prices refresh around 20:00 UTC. The daily job runs 03:15 local.
 
 ## Architecture intent
 
@@ -482,27 +486,10 @@ should filter on `is_sealed` explicitly rather than assume "the group" means
 
 ## Backlog
 
-- ~~Verify field mappings against a live response~~ done 2026-08-12
-- ~~Backfill from the 2024-onward archives~~ done 2026-08-12 - `BackfillArchive`,
-  916 days, ~37.7M rows, 0 failures. Re-runnable to catch future gaps.
-- ~~Wire `products()` into the daily `App` run~~ done 2026-08-12 - `App` now
-  upserts category/groups/products every run, not just prices. Proven live:
-  217 groups, 436 requests, 32,547 products, 1,973 new price rows.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
-- ~~Open: local-vs-UTC date mismatch~~ resolved 2026-08-12 - decided UTC.
-  `App`, `BackfillArchive`, and `ProductPullTest` all compute "today" via
-  `LocalDate.now(ZoneOffset.UTC)`, not host-local. Matches the archive
-  backfill's own day boundary and the container's default clock, so
-  `snapshot_date` means the same thing across the whole table's history, and
-  `CURRENT_DATE` in raw SQL now always agrees with it. If a new place ever
-  needs "today," use `ZoneOffset.UTC` explicitly - bare `LocalDate.now()` is
-  the bug this fixed.
-  **One artifact from before the fix, deliberately left alone:** the
-  2026-08-12 19:40 CDT live-pull run (45,156 rows) was stamped under the old
-  host-local convention. Under the new rule that same moment would have been
-  2026-08-13 (UTC had already rolled over). Not corrected - `price_snapshots`
-  is append-only and that row was valid under the convention in effect when
-  it was written. It's a one-time, already-happened quirk, not an ongoing
-  bug; nothing later depends on it being "fixed."
+
+Completed items aren't tracked here - git history and
+DEVELOPMENT_HISTORY.md carry them, and DEVELOPMENT_HISTORY.md's "What's
+still open" is the fuller list of open threads.
 
