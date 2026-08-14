@@ -1102,8 +1102,16 @@ able to name, not just recognize:
   generalizes further, but the architecture is no longer untested.
 - **Further product categorization** — `is_sealed` now works (see Part
   12), but it's binary. If finer distinctions turn out to matter later
-  (booster boxes vs. ETBs vs. tins, graded singles vs. raw, etc.), that's
-  still open.
+  (booster boxes vs. ETBs vs. tins, etc.), that's still open.
+  **Checked 2026-08-13:** graded singles (PSA/BGS/CGC) are not one of
+  those distinctions — verified live against tcgcsv's full category list
+  (no dedicated "graded" category among all ~90) and ~1,830 sampled
+  Pokemon products across four groups (no product name or `extendedData`
+  field references grading anywhere). TCGplayer's marketplace sells by
+  condition (NM/LP/MP/etc.), not as graded slabs — that's a different
+  market (PSA/PWCC/eBay), not something tcgcsv carries. The earlier
+  mention of "graded singles vs. raw" here was a speculative example, not
+  a verified gap; removed.
 - **Inventory CSV ingestion** — `InventorySource` is an interface with no
   implementation, intentionally, until a real Seller Portal export sample
   exists to design against.
