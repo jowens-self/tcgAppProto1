@@ -145,6 +145,25 @@ $$ LANGUAGE sql STABLE;
 -- reports how many exist and item_variants() gives their real prices.
 -- ---------------------------------------------------------------------------
 
+-- Pull one named field out of a product's extendedData blob.
+--
+-- tcgcsv stores card metadata as an array of {name, value} objects rather
+-- than as columns, so every read of it is this same unwrap. Factored out
+-- so callers don't hand-roll the jsonb_array_elements each time and quietly
+-- disagree about it.
+--
+-- Note this is the same blob the is_sealed classifier keys on (presence of
+-- a 'Number' field) - see CLAUDE.md. Verified 2026-08-14: 'Number' and
+-- 'Rarity' are both populated for all 34,435 singles, Pokemon and One
+-- Piece alike, so they're safe to rely on rather than treat as optional.
+CREATE OR REPLACE FUNCTION extended_field(p_extended_data JSONB, p_field TEXT)
+RETURNS TEXT AS $$
+    SELECT ed->>'value'
+    FROM jsonb_array_elements(p_extended_data) ed
+    WHERE ed->>'name' = p_field
+    LIMIT 1;
+$$ LANGUAGE sql IMMUTABLE;
+
 -- Name search across products, newest-relevance first. Case-insensitive
 -- substring match, backed by the pg_trgm GIN index on products.name (see
 -- schema.sql) - without that index this is a full seq scan on every
@@ -163,6 +182,26 @@ $$ LANGUAGE sql STABLE;
 -- unlike in set_return/set_value where sealed is hardcoded out - looking
 -- something up is not a set-level aggregate, and "find me that booster
 -- box" is a legitimate search.
+--
+-- card_number and rarity come from extendedData, NOT from the name, and
+-- they are not decoration - they are frequently the only thing separating
+-- two hits. The same set routinely reprints one card at several rarities:
+-- SV03 Obsidian Flames has three "Charizard ex" (125/197 Double Rare,
+-- 215/197 Ultra Rare, 223/197 Special Illustration Rare) that trade at
+-- very different prices. TCGplayer does append the number to the name in
+-- those cases, but only sometimes - just 5,276 of 34,435 singles have a
+-- number in the name, so Base Set Charizard would come back with nothing
+-- to identify it. extendedData carries Number and Rarity for 100% of
+-- singles in both tracked games, so that's the source used here.
+-- CREATE OR REPLACE cannot change a function's return type ("cannot change
+-- return type of existing function"), so adding a column to the RETURNS
+-- TABLE below makes a plain re-run of this file fail against any database
+-- that already has the older signature. Dropping first keeps this file
+-- re-runnable, which is the whole point of it - it's loaded on fresh boot
+-- (where this is a no-op) and re-applied by hand after every edit. Signature
+-- is spelled out because item_search is overload-free but Postgres still
+-- needs the exact argument list to identify it.
+DROP FUNCTION IF EXISTS item_search(TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
 CREATE OR REPLACE FUNCTION item_search(
     p_query TEXT,
     p_category_id INTEGER DEFAULT NULL,
@@ -172,6 +211,8 @@ CREATE OR REPLACE FUNCTION item_search(
 ) RETURNS TABLE (
     product_id INTEGER,
     name TEXT,
+    card_number TEXT,
+    rarity TEXT,
     set_name TEXT,
     game TEXT,
     is_sealed BOOLEAN,
@@ -186,7 +227,7 @@ CREATE OR REPLACE FUNCTION item_search(
     -- takes 25 - measured at 722ms vs 37ms for this shape.
     WITH hits AS (
         SELECT p.product_id, p.name, p.is_sealed, p.group_id, p.category_id,
-               p.url, p.image_url,
+               p.url, p.image_url, p.extended_data,
                CASE WHEN lower(p.name) = lower(p_query) THEN 0
                     WHEN lower(p.name) LIKE lower(p_query) || '%' THEN 1
                     ELSE 2 END AS rank
@@ -203,7 +244,12 @@ CREATE OR REPLACE FUNCTION item_search(
         ORDER BY rank, length(p.name), p.name, p.product_id
         LIMIT LEAST(COALESCE(p_limit, 25), 200) OFFSET GREATEST(COALESCE(p_offset, 0), 0)
     )
-    SELECT h.product_id, h.name, g.name, c.name, h.is_sealed,
+    -- Extracted after the LIMIT, same reasoning as the variant lookup: no
+    -- point unwrapping JSON for 266 matches to return 25.
+    SELECT h.product_id, h.name,
+           extended_field(h.extended_data, 'Number'),
+           extended_field(h.extended_data, 'Rarity'),
+           g.name, c.name, h.is_sealed,
            v.variant_count, v.latest_date, h.url, h.image_url
     FROM hits h
     JOIN groups g ON g.group_id = h.group_id

@@ -1125,6 +1125,52 @@ a parse error that looked like a server bug until the harness was fixed
 to write separate files. A reminder to distrust the test before the
 system under test.)
 
+**The owner caught a real gap immediately: card number and rarity.** The
+first version of search returned name, set and game - which the data
+seemed to justify, since a check for duplicate (set, name) pairs among
+singles returned exactly zero. The owner's domain knowledge said
+otherwise: a set routinely reprints the same card at several rarities
+with different numbers. Both were true, and the reconciliation is the
+interesting part. TCGplayer *does* disambiguate, by appending the number
+to the product name - which is why the duplicate check came back empty -
+but only sometimes: just 5,276 of 34,435 singles have a number in their
+name. Base Set Charizard is simply "Charizard."
+
+Checking `extendedData` (the same blob the `is_sealed` classifier keys
+on) found `Number` and `Rarity` populated for **all** 34,435 singles
+across both tracked games - a far better source than parsing names. Both
+are now first-class fields on search and product detail, read via a new
+`extended_field()` helper so the unwrap isn't hand-rolled per caller.
+
+The concrete case, and why this was not cosmetic - SV03 Obsidian Flames
+has four cards named "Charizard ex":
+
+| # | Rarity | Market |
+|---|---|---|
+| 125/197 | Double Rare | $5.65 |
+| 215/197 | Ultra Rare | $22.35 |
+| 223/197 | Special Illustration Rare | $108.58 |
+| 228/197 | Hyper Rare | $37.37 |
+
+A 19x spread across four rows that would otherwise have rendered
+identically. This is the same pattern as the sealed-product and
+return-anchor findings in Part 12: a query that was technically correct
+against the data it was given, quietly answering a less useful question
+than the one a person actually has. It was caught by domain knowledge,
+not by review - and notably, the *first* check (zero duplicate names)
+appeared to refute it. Worth remembering that a query returning "no
+problem here" can be measuring the wrong thing.
+
+**A re-runnability bug surfaced while fixing it.** Adding two columns to
+`item_search()`'s `RETURNS TABLE` made `sql/functions.sql` fail to load
+against any database that already had the old signature - `CREATE OR
+REPLACE FUNCTION` cannot change a function's return type. Since that file
+is meant to be re-applied by hand after every edit, this would have hit
+the owner on the next pull, not just here. Fixed with an explicit
+`DROP FUNCTION IF EXISTS` ahead of that one definition (a no-op on a
+fresh boot), rather than leaving a file that only works on a virgin
+database.
+
 **Scope kept deliberately narrow.** The API is read-only - there is no
 endpoint that writes, and ingestion stays in `App`/`BackfillArchive`
 where the append-only guarantees live. CORS is scoped to
@@ -1164,6 +1210,7 @@ localhost.
 | Game-specific quirks (code cards, etc.) | Scoped explicitly to the game they were discovered in, never broadened to "all games" | Pokemon's known quirks aren't assumed to be universal trading-card facts; see Part 15 |
 | `ingest_runs.source` naming | Category-scoped (`tcgcsv-3`, `tcgcsv-archive-3`), existing rows migrated via `UPDATE` | Each tracked game needs independent idempotency/failure tracking; migrated rather than left to silently retrigger a full re-pull; see Part 15 |
 | Search result granularity | One row per product with `variant_count`, never one per (product, variant) | A single "price" per product would collapse sub-types, the oldest invariant in the project; `item_variants()` carries the real prices; see Part 16 |
+| Card number / rarity source | `extendedData` via `extended_field()`, never parsed from the product name | Only 5,276 of 34,435 singles carry a number in the name; `extendedData` has it for 100%. Same set reprints one card at several rarities across a 19x price range; see Part 16 |
 | `high_price` in the API | Not returned by `item_history()`, no field on `PricePoint` | Makes "store it, ignore it" structural instead of a rule a chart author has to remember; see Part 16 |
 | Search result ordering | `rank, length(name), name, product_id` — `product_id` as final tiebreaker | Dozens of products share an identical name; without it, `LIMIT`/`OFFSET` paging silently duplicates and skips rows; see Part 16 |
 | Product name search index | `pg_trgm` GIN index on `products.name` | Leading-wildcard `ILIKE` can't use a btree — was a full seq scan on every keystroke, ~30ms to ~1.3ms; see Part 16 |

@@ -42,8 +42,8 @@ public class QueryRepository {
     public List<ItemSearchResult> search(String query, Integer categoryId,
                                          boolean includeSealed, int limit, int offset)
             throws Exception {
-        String sql = "SELECT product_id, name, set_name, game, is_sealed, "
-                + "variant_count, latest_date, url, image_url "
+        String sql = "SELECT product_id, name, card_number, rarity, set_name, game, "
+                + "is_sealed, variant_count, latest_date, url, image_url "
                 + "FROM item_search(?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, query);
@@ -62,6 +62,8 @@ public class QueryRepository {
                     out.add(new ItemSearchResult(
                             rs.getInt("product_id"),
                             rs.getString("name"),
+                            rs.getString("card_number"),
+                            rs.getString("rarity"),
                             rs.getString("set_name"),
                             rs.getString("game"),
                             rs.getBoolean("is_sealed"),
@@ -130,7 +132,10 @@ public class QueryRepository {
      */
     public ItemSearchResult product(int productId) throws Exception {
         String sql = """
-                SELECT p.product_id, p.name, g.name AS set_name, c.name AS game,
+                SELECT p.product_id, p.name,
+                       extended_field(p.extended_data, 'Number') AS card_number,
+                       extended_field(p.extended_data, 'Rarity') AS rarity,
+                       g.name AS set_name, c.name AS game,
                        p.is_sealed, p.url, p.image_url,
                        (SELECT COUNT(DISTINCT ps.sub_type_name)::INT
                           FROM price_snapshots ps WHERE ps.product_id = p.product_id) AS variant_count,
@@ -148,6 +153,8 @@ public class QueryRepository {
                 return new ItemSearchResult(
                         rs.getInt("product_id"),
                         rs.getString("name"),
+                        rs.getString("card_number"),
+                        rs.getString("rarity"),
                         rs.getString("set_name"),
                         rs.getString("game"),
                         rs.getBoolean("is_sealed"),

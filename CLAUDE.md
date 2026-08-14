@@ -178,6 +178,18 @@ Rules it establishes, worth keeping:
   product carrying `variant_count`; `item_variants()` supplies real
   per-variant prices. Anything that puts a single "price" on a
   multi-variant product violates the sub-type invariant above.
+- **Search results must carry `card_number` and `rarity`.** Added
+  2026-08-14 after the owner pointed out a gap: a set commonly reprints
+  one card at several rarities, and those are different markets. SV03
+  Obsidian Flames has four "Charizard ex" - 125/197 Double Rare $5.65,
+  215/197 Ultra Rare $22.35, 223/197 Special Illustration Rare $108.58,
+  228/197 Hyper Rare $37.37. Without these fields a result list shows
+  four identical rows spanning a 19x price range. Read from
+  `extendedData` via `extended_field()`, **not** parsed out of the name -
+  TCGplayer appends the number to the name only sometimes (5,276 of
+  34,435 singles), while `extendedData` carries `Number` and `Rarity`
+  for 100% of singles in both tracked games (verified 2026-08-14). Any
+  new endpoint returning product identity should carry them too.
 - **CORS is scoped to `localhost:4200`.** The data isn't secret, but no
   site a browser happens to visit should be able to query it.
 

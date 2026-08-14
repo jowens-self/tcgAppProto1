@@ -182,10 +182,27 @@ and `offset`.
 
 ```bash
 curl "localhost:7070/api/items/search?q=charizard&sealed=false&limit=3"
-# [{"productId":42382,"name":"Charizard","setName":"Base Set",
-#   "game":"Pokemon","isSealed":false,"variantCount":1,
-#   "latestDate":"2026-08-14","url":"...","imageUrl":"..."}, ...]
+# [{"productId":42382,"name":"Charizard","cardNumber":"004/102",
+#   "rarity":"Holo Rare","setName":"Base Set","game":"Pokemon",
+#   "isSealed":false,"variantCount":1,"latestDate":"2026-08-14",
+#   "url":"...","imageUrl":"..."}, ...]
 ```
+
+**`cardNumber` and `rarity` are identity, not decoration.** A set routinely
+reprints the same card at several rarities, and those copies are different
+markets. All four of these are "Charizard ex" in SV03: Obsidian Flames:
+
+| # | Rarity | Market |
+|---|---|---|
+| 125/197 | Double Rare | $5.65 |
+| 215/197 | Ultra Rare | $22.35 |
+| 223/197 | Special Illustration Rare | $108.58 |
+| 228/197 | Hyper Rare | $37.37 |
+
+Both fields come from `extendedData`, not from the name — TCGplayer only
+sometimes appends the number to the name (5,276 of 34,435 singles), so
+relying on the name would leave Base Set Charizard with nothing to identify
+it. Null for sealed product, which has neither.
 
 **Search returns products, not variants** — one row per product with a
 `variantCount`, never one row per (product, sub-type). A card existing as
