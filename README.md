@@ -153,6 +153,70 @@ folded into a set total: `SELECT * FROM item_return(528040, 'Normal',
 '2024-02-08', '2026-08-13')` (the Paldean Fates Elite Trainer Box) works
 the same as any single card.
 
+## Read API
+
+A read-only JSON API over the query functions above, so a front end never
+talks to Postgres (or to tcgcsv) directly. Read-only in the strict sense:
+no endpoint here writes anything, and ingestion stays in
+`App`/`BackfillArchive`.
+
+```bash
+docker compose up -d
+mvn package
+java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
+# http://localhost:7070  (override with CARDTRACKER_API_PORT)
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Liveness check |
+| `GET /api/games` | Tracked games, for a filter dropdown |
+| `GET /api/items/search?q=` | Card / product search |
+| `GET /api/items/{id}` | One product's identity |
+| `GET /api/items/{id}/variants` | Its variants, with current price + all-time high |
+| `GET /api/items/{id}/history?subType=` | Price time series for one variant |
+
+Search takes `q` (required), plus optional `game` (category id),
+`sealed=false` to hide sealed product, `limit` (default 25, capped at 200)
+and `offset`.
+
+```bash
+curl "localhost:7070/api/items/search?q=charizard&sealed=false&limit=3"
+# [{"productId":42382,"name":"Charizard","setName":"Base Set",
+#   "game":"Pokemon","isSealed":false,"variantCount":1,
+#   "latestDate":"2026-08-14","url":"...","imageUrl":"..."}, ...]
+```
+
+**Search returns products, not variants** — one row per product with a
+`variantCount`, never one row per (product, sub-type). A card existing as
+Normal / Holofoil / Reverse Holofoil is one hit, because there is no
+single honest "price" to put on it (see "Design decisions worth not
+undoing" above). Ask `/variants` for the real per-variant numbers:
+
+```bash
+curl "localhost:7070/api/items/83514/variants"
+# [{"subTypeName":"Holofoil","firstDate":"2024-02-08","latestDate":"2026-08-14",
+#   "latestMarket":64.72,"allTimeHigh":68.29}, ...]
+```
+
+`subType` is required on `/history` and has no default — picking one for
+the caller would mean guessing which market they meant. `/variants` is
+how you find the valid values.
+
+```bash
+curl "localhost:7070/api/items/534919/history?subType=Holofoil&from=2026-08-11"
+# [{"snapshotDate":"2026-08-11","marketPrice":1013.78,"lowPrice":829.34,
+#   "midPrice":1030.0,"directLowPrice":829.34,"trendablePrice":1013.78}, ...]
+```
+
+`high_price` is deliberately absent from every API response — see the
+price-parking note above. `trendablePrice` is the documented
+market→mid→low fallback, precomputed so a chart can't apply it wrong.
+
+CORS is scoped to `http://localhost:4200` (the Angular dev server). The
+API binds locally and is meant to stay there; if it ever moves, revisit
+both that rule and the connection-per-request in `ApiServer.withRepo`.
+
 ## Example queries
 
 Biggest 30-day movers, sealed product only:

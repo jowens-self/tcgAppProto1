@@ -150,6 +150,37 @@ Future: Angular front end, then cloud. Both talk to our own API, never to the
 mirror directly (it has a restrictive CORS policy and asks that data be
 ingested server-side).
 
+**That API now exists** (`com.cardtracker.api.ApiServer`, added
+2026-08-14 - see DEVELOPMENT_HISTORY.md Part 16 and README "Read API").
+Rules it establishes, worth keeping:
+
+- **It is read-only, and should stay that way.** No endpoint writes.
+  Ingestion lives in `App`/`BackfillArchive` where the append-only
+  guarantees are; an API that can write is an API that can violate them.
+- **Handlers call SQL functions, not inline SQL.** Every method on
+  `QueryRepository` is a thin call into `sql/functions.sql`. That keeps
+  query logic verifiable directly in psql - which is how this project
+  checks its own numbers - and stops the API and hand-written analysis
+  from quietly diverging. New endpoint, new SQL function.
+- **Reads go through `QueryRepository`, not `PriceRepository`.** The
+  latter is write-only by design; keeping them apart stops ingestion and
+  the API surface from coupling.
+- **One DB connection per request** (`ApiServer.withRepo`). A JDBC
+  `Connection` is not thread-safe and Javalin is multithreaded - sharing
+  one corrupts results intermittently instead of failing cleanly. That
+  method is the single place to add a pool if this ever leaves localhost.
+- **`high_price` is absent from every response**, and `PricePoint` has no
+  field for it - the "store it, ignore it" rule made structural rather
+  than left as something a future chart author must remember. Same for
+  `trendable_price`, which is returned precomputed so the
+  market->mid->low fallback can't be re-derived wrong.
+- **Search returns products, not (product, variant) rows.** One hit per
+  product carrying `variant_count`; `item_variants()` supplies real
+  per-variant prices. Anything that puts a single "price" on a
+  multi-variant product violates the sub-type invariant above.
+- **CORS is scoped to `localhost:4200`.** The data isn't secret, but no
+  site a browser happens to visit should be able to query it.
+
 ## Multi-game support (decided 2026-08-13/14)
 
 **Not Pokemon-only anymore, by design.** This started as a Pokemon-specific
@@ -506,6 +537,10 @@ should filter on `is_sealed` explicitly rather than assume "the group" means
 
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
+- Angular front end on top of the read API - first screen is Card /
+  Product Search (the three endpoints it needs are built and verified)
+- More read endpoints: `set_return()`/`set_value()` exist but aren't
+  exposed; "biggest movers" would need its own function + endpoint
 
 Completed items aren't tracked here - git history and
 DEVELOPMENT_HISTORY.md carry them, and DEVELOPMENT_HISTORY.md's "What's

@@ -20,10 +20,34 @@
       <artifactId>jackson-databind</artifactId>
       <version>2.17.2</version>
     </dependency>
+    <!-- LocalDate <-> "2026-08-14" in API responses. Without this Jackson
+         either refuses java.time types or emits them as int arrays. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>2.17.2</version>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <version>42.7.4</version>
+    </dependency>
+    <!-- Read API (com.cardtracker.api.ApiServer). Javalin over Spring Boot
+         deliberately: this is a handful of read-only JSON endpoints over
+         existing SQL functions, and Javalin adds routing without adding a
+         framework to learn or a slower build. Pairs with the Jackson
+         already present above. -->
+    <dependency>
+      <groupId>io.javalin</groupId>
+      <artifactId>javalin</artifactId>
+      <version>6.7.0</version>
+    </dependency>
+    <!-- Javalin logs through SLF4J; without a binding it prints a loud
+         "no providers" warning on every start and swallows request errors. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.16</version>
     </dependency>
   </dependencies>
 

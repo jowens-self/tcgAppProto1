@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id);
 
+-- Name search (item_search() in functions.sql) is a leading-wildcard ILIKE,
+-- which no btree index can serve - it was a full seq scan of every product
+-- on every keystroke. Trigram GIN index takes 'charizard' across ~38.5k
+-- products from ~30ms to ~1.3ms, and unlike the seq scan it doesn't
+-- degrade as more games are added to tracked_categories.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_products_name_trgm ON products USING GIN (name gin_trgm_ops);
+
 -- The important one.
 CREATE TABLE IF NOT EXISTS price_snapshots (
     product_id       INTEGER NOT NULL,

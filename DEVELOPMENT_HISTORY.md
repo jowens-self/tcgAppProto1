@@ -1024,6 +1024,120 @@ required.
 
 ---
 
+## Part 16 — The read path: lookup primitives and an API
+
+**Choosing the first screen, and correcting its name.** With ingestion,
+backfill, multi-game support and the analytical functions all done, the
+obvious remaining gap was that the only way to see any of this data was
+typing SQL into psql. Three candidate first screens were considered
+(biggest movers, set overview, single-card lookup); the owner picked
+lookup, with an immediate correction: not "card search" but "Card /
+Product Search." That correction matters more than wording. The codebase
+had already made exactly this distinction once, renaming
+`card_return`/`card_all_time_high` to `item_*` in Part 14 because sealed
+product is looked up the same way a single is. Naming the new surface
+"card" would have quietly re-narrowed a decision already made
+deliberately, so the API is `item_*` throughout.
+
+**Building the primitives, not the screen.** The owner's framing was to
+start with "basic functionality that will for sure be needed in the
+future / for other components," which pointed at the read path rather
+than any particular UI: search, variants, history. That sequencing also
+deferred the UI-framework choice until there was something real to
+render, and made every step verifiable with `curl` instead of a browser.
+
+**The one design decision that shaped everything: search returns
+products, not variants.** A product commonly exists as Normal / Holofoil
+/ Reverse Holofoil trading at genuinely different prices, and CLAUDE.md's
+oldest invariant forbids collapsing them. That leaves two honest options:
+return three rows for one card, or return one row that doesn't pretend to
+have a single price. The second won - `item_search()` reports
+`variant_count`, and `item_variants()` supplies the real per-variant
+prices. This is also what makes `item_variants()` necessary rather than
+convenient: `item_return()` and `item_all_time_high()` both *require* a
+`sub_type_name`, and a caller genuinely cannot guess which variants a
+product has. It varies per product and changes over time - Altaria
+(83514) has a Holofoil going back to 2024-02-08 but a Normal that only
+starts 2025-03-28 - which is why `first_date` is returned rather than
+assumed.
+
+**Set and game ride on every search hit, because names are not
+identifying.** 266 Pokemon products match "charizard," and dozens are
+named exactly `Charizard`. A result list of bare names would be
+unusable, so `set_name` and `game` come back on every row.
+
+**An invariant made structural rather than documented.** `item_history()`
+deliberately does not return `high_price`, and `PricePoint` has no field
+for it. The project has always said "store it, ignore it" (sellers price-
+park, listing at absurd values so nothing sells), but that was a rule a
+future chart author had to know. Omitting it from the API entirely means
+they can't plot it by accident - the same reasoning that made
+`set_return()` hardcode sealed product out instead of offering a
+parameter. `trendable_price` is returned precomputed for the same reason:
+the market->mid->low fallback is a documented rule, so the API applies it
+rather than leaving each caller to re-derive it and one of them to get it
+wrong.
+
+**Two performance findings, both measured rather than assumed.** Search
+is a leading-wildcard `ILIKE`, which no btree index can serve - it was a
+full sequential scan of all 38,555 products on every keystroke (~30ms,
+and growing with each game added). A `pg_trgm` GIN index took that to
+~1.3ms. Separately, the first working version of `item_search()` ran
+722ms: with the per-product variant lookup inline, Postgres computed
+variant counts for all 266 matches and only then applied `LIMIT 25`.
+Applying the limit in a CTE *before* the lateral join dropped it to 37ms.
+Neither was predicted by reading the query; both came from running it.
+
+**A real bug caught by re-running the same query twice.** Between two
+otherwise identical test runs, the `charizard` results came back in a
+different order. The cause: every product named exactly "Charizard" ties
+on (rank, name length, name), leaving Postgres free to order them
+however it likes. Harmless-looking for a single query, genuinely broken
+for a paging API - `LIMIT`/`OFFSET` over a nondeterministic order
+silently duplicates and skips rows between pages. Fixed by adding
+`product_id` as a final tiebreaker, then verified directly: the same
+query three times returns an identical id list, and page 1 ends at 84188
+with page 2 starting at 84189, no overlap.
+
+**Every new function cross-checked against an already-trusted one.**
+Rather than trust the new SQL because it looked right,
+`item_variants()`'s all-time high was checked against
+`item_all_time_high()` for the same item (77.49 both ways), and
+`item_history()`'s endpoints against `item_return()`'s anchors for the
+same dates (137.00 -> 1013.78, +639.99%, matching the figures already in
+the README). Same habit as Part 14, where the formalized functions were
+checked against the hand-computed numbers before being trusted.
+
+**A concurrency decision, and then actually testing it.** A JDBC
+`Connection` is not thread-safe and Javalin serves requests on multiple
+threads, so `ApiServer` opens one connection per request rather than
+sharing one. A shared connection wouldn't fail cleanly - it would corrupt
+results intermittently under parallel use. Rather than leave that as a
+comment, 30 genuinely parallel requests across all three endpoints were
+fired at once: all returned 200, all bodies parsed as valid JSON, and all
+ten concurrent full-history responses returned the same 919 points with
+identical prices. Worth stating the limit honestly: 30 local requests is
+not load testing and wouldn't catch a subtle race needing sustained
+traffic. It shows the design isn't obviously broken, which is what it was
+for. (The first attempt at this test failed on its own plumbing - twelve
+parallel `curl`s piped into one stream interleaved mid-JSON and produced
+a parse error that looked like a server bug until the harness was fixed
+to write separate files. A reminder to distrust the test before the
+system under test.)
+
+**Scope kept deliberately narrow.** The API is read-only - there is no
+endpoint that writes, and ingestion stays in `App`/`BackfillArchive`
+where the append-only guarantees live. CORS is scoped to
+`localhost:4200` (the Angular dev server) rather than left open: the data
+isn't secret, but there's no reason any site a browser visits should be
+able to query it. Javalin was chosen over Spring Boot because this is a
+handful of read-only JSON endpoints over existing SQL functions and
+didn't warrant a framework; the connection-per-request method is
+annotated as the single place to add HikariCP if this ever leaves
+localhost.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -1049,6 +1163,12 @@ required.
 | Which games to track | `tracked_categories` table (data), not a hardcoded category ID (code) | Adding a game becomes an INSERT, not a rebuild; see Part 15 |
 | Game-specific quirks (code cards, etc.) | Scoped explicitly to the game they were discovered in, never broadened to "all games" | Pokemon's known quirks aren't assumed to be universal trading-card facts; see Part 15 |
 | `ingest_runs.source` naming | Category-scoped (`tcgcsv-3`, `tcgcsv-archive-3`), existing rows migrated via `UPDATE` | Each tracked game needs independent idempotency/failure tracking; migrated rather than left to silently retrigger a full re-pull; see Part 15 |
+| Search result granularity | One row per product with `variant_count`, never one per (product, variant) | A single "price" per product would collapse sub-types, the oldest invariant in the project; `item_variants()` carries the real prices; see Part 16 |
+| `high_price` in the API | Not returned by `item_history()`, no field on `PricePoint` | Makes "store it, ignore it" structural instead of a rule a chart author has to remember; see Part 16 |
+| Search result ordering | `rank, length(name), name, product_id` — `product_id` as final tiebreaker | Dozens of products share an identical name; without it, `LIMIT`/`OFFSET` paging silently duplicates and skips rows; see Part 16 |
+| Product name search index | `pg_trgm` GIN index on `products.name` | Leading-wildcard `ILIKE` can't use a btree — was a full seq scan on every keystroke, ~30ms to ~1.3ms; see Part 16 |
+| API DB connections | One connection per request, no pool | JDBC `Connection` isn't thread-safe and Javalin is multithreaded; a shared one corrupts intermittently rather than failing cleanly; see Part 16 |
+| API framework | Javalin, not Spring Boot | A handful of read-only JSON endpoints over existing SQL functions doesn't warrant a framework; see Part 16 |
 
 ---
 
@@ -1123,7 +1243,15 @@ able to name, not just recognize:
 - **Docker Desktop autostart** — the owner intended to enable this
   themselves in Docker Desktop's own settings; worth confirming it's
   actually on, since it matters more if scheduling is ever reinstated.
-- **Front end** — the long-term architecture intent (see CLAUDE.md) is an
-  Angular front end talking to a future API, never directly to the
-  tcgcsv mirror, eventually exposing the kind of flexible "% return of X
-  vs. Y" querying described at the start of Part 12. Not started.
+- **Front end** — the read API now exists (Part 16), so the remaining
+  piece is a UI on top of it. Framework deliberately not chosen yet;
+  CLAUDE.md's stated intent is Angular. The first screen is Card /
+  Product Search, whose three endpoints are built and verified.
+- **More read endpoints** — search/variants/history cover lookup. The
+  "biggest movers" and "set overview" screens considered in Part 16 would
+  each need their own endpoint; `set_return()`/`set_value()` already
+  exist and are unexposed.
+- **API hardening if it ever leaves localhost** — connection-per-request
+  should become a pool (`ApiServer.withRepo` is the only place to
+  change), and the CORS rule would need revisiting. Fine as-is for a
+  local single-user tool.
