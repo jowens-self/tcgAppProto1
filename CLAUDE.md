@@ -227,6 +227,24 @@ $961.19, +454.16%).
 Java 21, Maven, Postgres 16 via `docker compose up -d`. macOS. Schema loads
 from `sql/schema.sql` on first container boot.
 
+**Consider switching to a native Postgres install during development
+(2026-08-14 note - not decided, just flagged).** Docker was originally
+chosen for isolation/reproducibility (self-contained, exact version +
+schema checked into git via `docker-compose.yml`/`sql/schema.sql`, no
+manual install) and because it's a smoother path to the "then cloud" step
+in "Architecture intent" below. But on macOS, Docker containers only run
+inside a Linux VM underneath - that VM is the entire reason a "memory
+ceiling" needs managing at all (see the Docker Desktop resource discussion
+this same day). A native install (`brew install postgresql@16`, no Docker)
+would eliminate that overhead completely - just a normal Mac process using
+what it needs, no VM, no `docker compose up -d` step before running the
+app - at the cost of the reproducibility/portability Docker provides.
+Given cloud hosting is explicitly a "not started" future item (see
+DEVELOPMENT_HISTORY.md "What's still open"), that benefit isn't being used
+right now. Worth switching to native for now and migrating back to Docker
+if/when the cloud step actually starts - `schema.sql` and `functions.sql`
+would both still apply cleanly either way, so this isn't a one-way door.
+
 **Maven installed 2026-08-13** via `brew install maven` (no sudo needed,
 unlike the Docker Desktop cask). Before this, the project had no persisted
 build output anywhere - every run that session was `javac` against jars
