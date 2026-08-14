@@ -146,6 +146,66 @@ Future: Angular front end, then cloud. Both talk to our own API, never to the
 mirror directly (it has a restrictive CORS policy and asks that data be
 ingested server-side).
 
+## Multi-game support (decided 2026-08-13/14)
+
+**Not Pokemon-only anymore, by design.** This started as a Pokemon-specific
+tool (`TcgCsvUrls.POKEMON` hardcoded everywhere), but tcgcsv covers ~90
+categories (Magic, Yu-Gi-Oh!, Lorcana, One Piece, Digimon, Flesh & Blood,
+Star Wars Unlimited, and many more - checked live before committing to
+this). Generalized so tracking another game is a data change, not a code
+change: `tracked_categories` (schema.sql) lists which category_ids
+`App`/`BackfillArchive` actually pull. Add a row, the next run picks it up.
+Seeded with only Pokemon (3) so nothing changes in behavior until another
+row is added deliberately.
+
+**Do not assume Pokemon-specific quirks generalize to other games.**
+Code-card exclusion (see "Excluded products" below) is scoped to
+`categoryId == TcgCsvUrls.POKEMON` specifically in `App.pullCategory` - it
+is a Pokemon quirk (physical tins bundling a Pokemon TCG Live redemption
+code), not a general trading-card-industry thing, and nothing currently
+confirms any other game has an equivalent. When a new game turns up its own
+quirk, add it the same way - a new condition alongside the Pokemon one, own
+`reason` string in `excluded_products` - rather than broadening the
+existing check to cover categories it was never verified against.
+`is_sealed`'s classifier (presence of a `Number` field in `extendedData`)
+spot-checked fine against a Magic single (Darksteel Angel) before this
+generalization, but that's one card in one set, not the same level of
+verification Pokemon got (1999 Base Set through 2026 sets) - worth a
+proper check the first time a new game's data actually gets pulled in
+volume, not just assumed to hold everywhere tcgcsv's schema looks similar.
+
+**Mechanics of how this actually works, for future reference:**
+- `ingest_runs.source` is category-scoped: `"tcgcsv-" + categoryId` for
+  live pulls, `BackfillArchive.sourceFor(categoryId)` (`"tcgcsv-archive-"
+  + categoryId`) for archive backfills. Each tracked category gets fully
+  independent idempotency, gap-catchup, and failure tracking - one game
+  failing never blocks or masks another's success. Existing history was
+  migrated from the old bare `tcgcsv`/`tcgcsv-archive` names to
+  `tcgcsv-3`/`tcgcsv-archive-3` when this was built (a plain `UPDATE`, not
+  a delete - `ingest_runs` is operational metadata, not the append-only
+  price history, so relabeling it is fine).
+- `BackfillArchive.run()` downloads one archive per day and processes every
+  tracked category's subfolder from that same download, since archives
+  already bundle every TCG category regardless - adding a second tracked
+  game costs zero extra downloads for backfill, just more local parsing.
+- `App.main()` now always calls the gap catch-up unconditionally (no more
+  per-category "is yesterday covered" pre-check) - `BackfillArchive.run()`
+  is already cheap when nothing's missing, so a separate check was pure
+  duplication once it had to reason about multiple categories anyway. Each
+  tracked category is then pulled and isolated in its own try/catch inside
+  `main`'s loop, so a failure in one category doesn't stop the others.
+- `Throttle` stays a single shared instance across every category in one
+  run - the 9000-request circuit breaker is a whole-process safety limit,
+  not a per-category allowance, so sharing it is required for correctness,
+  not just convenience. `App` tracks each category's own request count as
+  a delta against the shared cumulative total, so `ingest_runs.request_count`
+  stays accurate per category despite the shared counter.
+- **Watch the 10,000/24h ban threshold as more categories get added.** One
+  category of Pokemon's size costs ~436 requests/day. That's nowhere near
+  the ceiling alone, but it's not unlimited headroom either - re-check the
+  math in "tcgcsv.com usage constraints" above before tracking many large
+  games at once.
+
 ## Environment
 
 Java 21, Maven, Postgres 16 via `docker compose up -d`. macOS. Schema loads
@@ -289,20 +349,26 @@ the 1,253 that had already been backfilled (810,451 price rows) were deleted
 outright. Classification is by name prefix ("Code Card...", case-insensitive),
 checked live in `App` against each day's real product names.
 
-A standalone `excluded_products` table (`product_id`, `name`, `reason`,
-`excluded_at`) tracks what's been excluded and why, **independent of**
-`products` - this matters because `BackfillArchive` only ever sees a bare
-`product_id` from tcgcsv's archives, never a name (archives never carry
-product metadata, only prices), so once an excluded product's row is gone
-from `products`, archive backfill would have no way left to know to skip
-it. `App` writes to `excluded_products` as a side effect of its live,
+A standalone `excluded_products` table (`product_id`, `category_id`, `name`,
+`reason`, `excluded_at`) tracks what's been excluded and why, **independent
+of** `products` - this matters because `BackfillArchive` only ever sees a
+bare `product_id` from tcgcsv's archives, never a name (archives never
+carry product metadata, only prices), so once an excluded product's row is
+gone from `products`, archive backfill would have no way left to know to
+skip it. `App` writes to `excluded_products` as a side effect of its live,
 name-based classification (`upsertExcludedProduct`, `ON CONFLICT DO NOTHING`);
 `BackfillArchive.run()` reads the accumulated set once per call
-(`excludedProductIds()`) and filters by ID before inserting. This also means
-a code card from a set that hasn't had a live pull yet can't be excluded
-during backfill until `App` has seen it once - acceptable since backfill only
-ever targets recent past days in the on-demand model, and those days get
-caught up by `App` itself (see the gap catch-up logic above).
+(`excludedProductIds()`, global across categories - a product_id already
+belongs to exactly one category, so filtering by category there would be
+redundant) and filters by ID before inserting. This also means a code card
+from a set that hasn't had a live pull yet can't be excluded during backfill
+until `App` has seen it once - acceptable since backfill only ever targets
+recent past days in the on-demand model, and those days get caught up by
+`App` itself (see the gap catch-up logic above).
+`category_id` was added when multi-game support was built (see "Multi-game
+support" above) specifically so an exclusion reason discovered for one game
+is never mistaken for a universal rule - code cards are a Pokemon thing
+until proven otherwise for something else.
 
 Verified before deleting anything: filter logic tested live (via jshell)
 against Paldean Fates' real API response - 295 products, 13 correctly

@@ -3,7 +3,6 @@ package com.cardtracker;
 import com.cardtracker.db.PriceRepository;
 import com.cardtracker.model.PriceSnapshot;
 import com.cardtracker.source.tcgcsv.TcgCsvPriceSource;
-import com.cardtracker.source.tcgcsv.TcgCsvUrls;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -19,28 +18,36 @@ import java.sql.DriverManager;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
 /**
  * One-time (or resumable) backfill from tcgcsv's daily archives, covering
- * 2024-02-08 onward. Each archive bundles every TCG category for one day;
- * only Pokemon (category 3) is extracted and kept - see CLAUDE.md.
+ * 2024-02-08 onward. Each archive bundles every TCG category for one day,
+ * so one download per day serves every category in `tracked_categories`,
+ * not just Pokemon - see CLAUDE.md.
  *
- * Idempotent by day: before touching a date, checks ingest_runs for a prior
- * "ok" run with source "tcgcsv-archive". If found, skips without
- * downloading anything. So re-running this after a crash, or months later
- * to catch up, only does the days it doesn't already have.
+ * Idempotent by (category, day): before touching a date for a category,
+ * checks ingest_runs for a prior "ok" run with source sourceFor(categoryId).
+ * If a day is already covered for every tracked category, it's skipped
+ * without downloading anything - so re-running this after a crash, months
+ * later to catch up, or right after a new category is added to
+ * tracked_categories, only does the (category, day) pairs it doesn't
+ * already have.
  *
  * Requires the `7z` CLI on PATH (brew install p7zip). Not part of the daily
  * App run - this is a separate, occasional batch job.
  */
 public final class BackfillArchive {
 
-    public static final String SOURCE = "tcgcsv-archive";
     public static final LocalDate EARLIEST_ARCHIVE = LocalDate.of(2024, 2, 8);
-    private static final int CATEGORY_ID = TcgCsvUrls.POKEMON;
+
+    /** Category-scoped so each tracked game gets independent idempotency/gap tracking. */
+    public static String sourceFor(int categoryId) {
+        return "tcgcsv-archive-" + categoryId;
+    }
 
     public static void main(String[] args) throws Exception {
         LocalDate start = args.length > 0 ? LocalDate.parse(args[0]) : EARLIEST_ARCHIVE;
@@ -57,14 +64,16 @@ public final class BackfillArchive {
     }
 
     /**
-     * Backfills [start, end] into repo, skipping any day that already has a
-     * successful run (see PriceRepository.hasSuccessfulRun). Safe to call
-     * with a wide range even when most of it is already covered - each
-     * already-done day costs one indexed lookup, not a download. Used both
-     * by main() for manual/full backfills and by App for its startup gap
-     * catch-up.
+     * Backfills [start, end], for every category in tracked_categories, into
+     * repo - skipping any (category, day) that already has a successful run.
+     * Safe to call with a wide range even when most of it is already
+     * covered: each already-done (category, day) costs one indexed lookup,
+     * not a download, and a day already covered for every tracked category
+     * is skipped before any download happens at all. Used both by main()
+     * for manual/full backfills and by App for its startup gap catch-up.
      */
     public static void run(LocalDate start, LocalDate end, PriceRepository repo) throws Exception {
+        List<Integer> categoryIds = repo.trackedCategoryIds();
         HttpClient http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(20))
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -74,52 +83,65 @@ public final class BackfillArchive {
         // Archives only ever carry a bare product_id, never a name (see
         // DEVELOPMENT_HISTORY.md), so exclusion here can only go by ID -
         // sourced from what App has already recorded via upsertExcludedProduct.
+        // Global across categories: a product_id belongs to exactly one
+        // category already, so this needs no per-category filtering.
         Set<Integer> excludedIds = repo.excludedProductIds();
 
         int skipped = 0, done = 0, failed = 0;
         try {
             for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-                if (repo.hasSuccessfulRun(SOURCE, date)) {
-                    skipped++;
+                List<Integer> pending = new ArrayList<>();
+                for (int categoryId : categoryIds) {
+                    if (repo.hasSuccessfulRun(sourceFor(categoryId), date)) {
+                        skipped++;
+                    } else {
+                        pending.add(categoryId);
+                    }
+                }
+                if (pending.isEmpty()) {
                     continue;
                 }
 
-                long runId = repo.startRun(SOURCE, date);
-                int rowsForDay = 0;
                 Path archive = workDir.resolve(date + ".ppmd.7z");
                 Path extractDir = workDir.resolve(date + "-extracted");
                 try {
                     downloadArchive(http, date, archive);
                     extract(archive, extractDir);
 
-                    Path categoryDir = extractDir.resolve(date.toString()).resolve(String.valueOf(CATEGORY_ID));
-                    if (Files.isDirectory(categoryDir)) {
-                        try (var groupDirs = Files.list(categoryDir)) {
-                            for (Path groupDir : (Iterable<Path>) groupDirs::iterator) {
-                                Path pricesFile = groupDir.resolve("prices");
-                                if (!Files.isRegularFile(pricesFile)) continue;
+                    for (int categoryId : pending) {
+                        long runId = repo.startRun(sourceFor(categoryId), date);
+                        int rowsForDay = 0;
+                        try {
+                            Path categoryDir = extractDir.resolve(date.toString()).resolve(String.valueOf(categoryId));
+                            if (Files.isDirectory(categoryDir)) {
+                                try (var groupDirs = Files.list(categoryDir)) {
+                                    for (Path groupDir : (Iterable<Path>) groupDirs::iterator) {
+                                        Path pricesFile = groupDir.resolve("prices");
+                                        if (!Files.isRegularFile(pricesFile)) continue;
 
-                                JsonNode root = mapper.readTree(Files.readString(pricesFile));
-                                if (!root.path("success").asBoolean(false)) continue;
+                                        JsonNode root = mapper.readTree(Files.readString(pricesFile));
+                                        if (!root.path("success").asBoolean(false)) continue;
 
-                                List<PriceSnapshot> snapshots =
-                                        TcgCsvPriceSource.toPriceSnapshots(root.path("results"), date)
-                                                .stream()
-                                                .filter(ps -> !excludedIds.contains(ps.productId()))
-                                                .toList();
-                                rowsForDay += repo.insertBatch(snapshots);
+                                        List<PriceSnapshot> snapshots =
+                                                TcgCsvPriceSource.toPriceSnapshots(root.path("results"), date)
+                                                        .stream()
+                                                        .filter(ps -> !excludedIds.contains(ps.productId()))
+                                                        .toList();
+                                        rowsForDay += repo.insertBatch(snapshots);
+                                    }
+                                }
                             }
+
+                            repo.finishRun(runId, "ok", 0, rowsForDay, null);
+                            done++;
+                            System.out.printf("%s [%d]: %d rows%n", date, categoryId, rowsForDay);
+                        } catch (Exception e) {
+                            repo.finishRun(runId, "failed", 0, rowsForDay,
+                                    e.getClass().getSimpleName() + ": " + e.getMessage());
+                            failed++;
+                            System.out.printf("%s [%d]: FAILED - %s%n", date, categoryId, e.getMessage());
                         }
                     }
-
-                    repo.finishRun(runId, "ok", 0, rowsForDay, null);
-                    done++;
-                    System.out.printf("%s: %d rows%n", date, rowsForDay);
-                } catch (Exception e) {
-                    repo.finishRun(runId, "failed", 0, rowsForDay,
-                            e.getClass().getSimpleName() + ": " + e.getMessage());
-                    failed++;
-                    System.out.printf("%s: FAILED - %s%n", date, e.getMessage());
                 } finally {
                     deleteRecursive(archive);
                     deleteRecursive(extractDir);
@@ -127,6 +149,8 @@ public final class BackfillArchive {
 
                 // Politeness pacing for the archive CDN - distinct from Throttle,
                 // which enforces tcgcsv's documented live-API limits specifically.
+                // Once per day regardless of how many categories were processed
+                // from that day's shared download.
                 Thread.sleep(300);
             }
         } finally {

@@ -16,6 +16,20 @@ CREATE TABLE IF NOT EXISTS categories (
     modified_on   TIMESTAMPTZ
 );
 
+-- Which tcgcsv categories App/BackfillArchive actually pull. Data, not
+-- code, on purpose: adding a card game is "INSERT a row," not a code
+-- change + rebuild + redeploy. Seeded with Pokemon (3) only, so nothing
+-- changes in behavior until another row is added deliberately.
+CREATE TABLE IF NOT EXISTS tracked_categories (
+    category_id INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    added_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO tracked_categories (category_id, name)
+VALUES (3, 'Pokemon')
+ON CONFLICT (category_id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS groups (
     group_id        INTEGER PRIMARY KEY,
     category_id     INTEGER NOT NULL REFERENCES categories(category_id),
@@ -91,8 +105,15 @@ CREATE INDEX IF NOT EXISTS idx_inventory_date ON inventory_snapshots(snapshot_da
 -- only ever sees a bare product_id from tcgcsv's archives - never a name -
 -- so it needs somewhere to look up "is this excluded" that still works
 -- after the product's row is removed from `products` entirely.
+--
+-- category_id is recorded (not just implied by joining to `products`, which
+-- may already be gone by the time this is read) specifically so an
+-- exclusion reason discovered for one game is never mistaken for a
+-- universal rule about trading cards in general - code cards, for example,
+-- are a Pokemon quirk, not something to assume any other game also has.
 CREATE TABLE IF NOT EXISTS excluded_products (
     product_id    INTEGER PRIMARY KEY,
+    category_id   INTEGER NOT NULL,
     name          TEXT NOT NULL,
     reason        TEXT NOT NULL,
     excluded_at   TIMESTAMPTZ NOT NULL DEFAULT now()

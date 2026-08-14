@@ -1,7 +1,10 @@
 # CardTracker
 
-A personal tool. Pulls daily Pokemon price data from the TCGCSV mirror into a
+A personal tool. Pulls daily TCG price data from the TCGCSV mirror into a
 local Postgres database, append-only, so you build a price history you own.
+Started Pokemon-only; which games are actually tracked is controlled by the
+`tracked_categories` table, not hardcoded - see "Tracking another game"
+below.
 
 ## What it deliberately does not do
 
@@ -178,12 +181,30 @@ SELECT snapshot_date, status, request_count, rows_written, notes
   FROM ingest_runs ORDER BY started_at DESC LIMIT 7;
 ```
 
+## Tracking another game
+
+`tracked_categories` (see `sql/schema.sql`) controls which tcgcsv
+categories `App`/`BackfillArchive` actually pull - seeded with just Pokemon
+(3). Adding a game is a data change, not a code change:
+
+```sql
+INSERT INTO tracked_categories (category_id, name) VALUES (1, 'Magic');
+```
+
+The next `App` run (or a manual `BackfillArchive` call) picks it up
+automatically - no rebuild needed. See tcgcsv's `/categories` endpoint or
+CLAUDE.md "Multi-game support" for the full category list and important
+caveats (Pokemon-specific quirks like code-card exclusion don't
+automatically apply to a new game - verify before assuming).
+
 ## Backfill
 
 The mirror publishes daily archives from 2024-02-08 onward at
 `https://tcgcsv.com/archive/tcgplayer/prices-YYYY-MM-DD.ppmd.7z`. Each one
-bundles every TCG category for that day; only Pokemon (category 3) is kept.
-Needs `7z` on PATH (`brew install p7zip`).
+bundles every TCG category for that day - `BackfillArchive` processes every
+category in `tracked_categories` from the same download, so tracking a
+second game costs zero extra downloads for backfill. Needs `7z` on PATH
+(`brew install p7zip`).
 
 ```bash
 mvn package
@@ -192,11 +213,12 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.BackfillArchive
 java -cp target/cardtracker-0.1.0.jar com.cardtracker.BackfillArchive 2024-02-08 2024-12-31
 ```
 
-Idempotent by day via `ingest_runs` (`source = 'tcgcsv-archive'`) — a day
-already recorded as `ok` is skipped without downloading anything, so
-re-running after an interruption (or months later, to catch up) only
-processes what's missing. Ran clean on 2026-08-12: 916 days, ~37.7M rows,
-0 failures.
+Idempotent by (category, day) via `ingest_runs`
+(`source = 'tcgcsv-archive-' || category_id`) — a day already recorded as
+`ok` for a given category is skipped without downloading anything, so
+re-running after an interruption, months later to catch up, or right after
+adding a new tracked category, only processes what's missing. Ran clean on
+2026-08-12: 916 days, ~37.7M rows, 0 failures (Pokemon only, at the time).
 
 ## Verified against live data
 

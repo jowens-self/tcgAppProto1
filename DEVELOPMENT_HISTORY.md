@@ -31,9 +31,10 @@ origin through that date, then continuing forward from there).
 12. [Part 12 — First real analytics, and the code-card discovery](#part-12--first-real-analytics-and-the-code-card-discovery)
 13. [Part 13 — Full codebase review and cleanup](#part-13--full-codebase-review-and-cleanup)
 14. [Part 14 — Formalizing the analytical building blocks](#part-14--formalizing-the-analytical-building-blocks)
-15. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-16. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-17. [What's still open](#whats-still-open)
+15. [Part 15 — Generalizing beyond Pokemon](#part-15--generalizing-beyond-pokemon)
+16. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+17. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+18. [What's still open](#whats-still-open)
 
 ---
 
@@ -882,6 +883,118 @@ database rather than left as orphaned duplicates.
 
 ---
 
+## Part 15 — Generalizing beyond Pokemon
+
+**The question that started it.** A casual "do you have anything that
+isn't Pokemon?" turned out to have a real, useful answer: no data other
+than Pokemon had ever been pulled, but the *architecture* had never
+actually hardcoded Pokemon at a deep level - `categoryId` was already a
+parameter throughout `PriceSource`, `TcgCsvUrls`, and the schema
+(`categories`/`groups`/`products` all key on `category_id` generically).
+The only thing Pokemon-specific was `App`/`BackfillArchive` always passing
+`TcgCsvUrls.POKEMON` instead of something configurable. Checked live
+against tcgcsv's real `/categories` endpoint before saying anything
+definite: it covers roughly 90 categories - Magic, Yu-Gi-Oh!, Digimon, One
+Piece, Lorcana, Flesh & Blood, Star Wars Unlimited, and many more,
+including Pokemon Japan as its own separate category from regular Pokemon.
+
+**A caution that reshaped the design before any code was written.** While
+spot-checking Magic's product data to see whether the `is_sealed`
+classifier (presence of a `Number` field) would generalize, the owner
+interrupted with an important point: code cards are a Pokemon-specific
+thing, and other games may have their own quirks that haven't been
+discovered yet. This mattered more than it might sound - it's the
+difference between building a system that assumes Pokemon's known
+peculiarities are universal trading-card-industry facts, versus one that
+treats each game's specific behavior as something to be discovered and
+recorded per-game, not assumed. The Magic spot-check (one single card,
+Darksteel Angel, correctly showing a `Number` field) was reassuring but
+explicitly documented as far short of the verification Pokemon got across
+its whole 1999-2026 history - a note for whoever actually pulls a new
+game's data in volume for the first time, not a settled fact.
+
+**The core generalization: `tracked_categories` as data, not code.** A new
+table lists which category_ids `App`/`BackfillArchive` pull - adding a
+game becomes `INSERT INTO tracked_categories`, not a code change and
+rebuild. Seeded with only Pokemon so nothing about current behavior
+changes until a second row is added deliberately. This mirrors the
+`excluded_products` pattern from Part 12/13 almost exactly: put the thing
+that changes over time in the database, not in source code.
+
+**Code-card exclusion scoped explicitly, not broadened.** Rather than
+apply the "Code Card" name check to every category (harmless in practice,
+since the string is specific, but dishonest about what's actually been
+verified), it's now gated on `categoryId == TcgCsvUrls.POKEMON` directly
+in `App.pullCategory`, with a comment explaining why and how to add a new
+game's own quirk later - a new condition alongside it, not a broadened
+one. `excluded_products` gained a `category_id` column for the same
+reason: an exclusion reason recorded for one game should never be
+mistakable for a universal rule once there's more than one game's data
+sitting in the same table.
+
+**A real efficiency insight that fell out of the design, not planned in
+advance.** tcgcsv's archive files already bundle every category for a
+given day in one download - that was known since Part 3 (it's the whole
+reason the original backfill covered the entire Pokemon category instead
+of one card, since narrowing scope saved nothing on the download). Once
+`BackfillArchive` had to handle multiple tracked categories, this fact
+became directly useful: one archive download per day now serves every
+tracked category's subfolder from that same extraction, so adding a
+second tracked game costs zero extra downloads for backfill - only more
+local file parsing, which is nearly free by comparison.
+
+**A cascading simplification in `App`.** Generalizing to multiple
+categories exposed that the old per-category "is yesterday covered"
+pre-check in `App.main` (added back in Part 9) was redundant work once
+`BackfillArchive.run()` had to loop over categories and skip already-done
+(category, day) pairs internally anyway - calling it unconditionally is
+just as cheap on a normal day as checking first and then deciding whether
+to call it. Removed the pre-check entirely; `App.main` now always calls
+the gap catch-up once for every tracked category up front, then pulls each
+category's live data in its own isolated try/catch, so one game failing
+never blocks or masks another succeeding.
+
+**A subtler correctness fix, caught while designing the isolation.**
+`Throttle` has to stay one shared instance across every tracked category
+in a single run - the 9000-request circuit breaker is a whole-process
+safety limit against tcgcsv's ban threshold, not something that should
+reset per category. But that means `requestsUsed()` is cumulative, so
+naively logging it per category into `ingest_runs.request_count` would
+have made every category after the first show an inflated, running-total
+number instead of its own actual request count. Fixed by snapshotting the
+count before each category's pull and logging the delta instead of the
+raw cumulative value.
+
+**Migrating existing history instead of losing it.** All 919 existing
+`ingest_runs` rows used the old flat `tcgcsv`/`tcgcsv-archive` source
+names. Renaming the convention to be category-scoped
+(`tcgcsv-3`/`tcgcsv-archive-3`) without migrating those rows would have
+made 916 days of already-completed backfill and 3 days of live pulls
+invisible to the new naming scheme - `hasSuccessfulRun` would have found
+nothing under the new names and silently triggered a full, unnecessary
+re-pull and re-backfill of everything already done. Fixed with a plain
+`UPDATE` renaming the existing values before the new code ever ran against
+them - not a delete, since `ingest_runs` is operational metadata rather
+than the append-only price history `price_snapshots` protects, so
+relabeling it is a different category of action than the deletions earlier
+in this project have deliberately avoided.
+
+**Verified by an accident of real time, not a staged test.** While
+testing that the rename preserved "already done" status, the live
+verification run took far longer than expected - long enough to reveal
+that real wall-clock time had quietly crossed into a new UTC day
+(2026-08-14) partway through this session. Rather than a bug, this turned
+into an unplanned, completely genuine end-to-end validation: the gap
+catch-up correctly reported "916 already had" (confirming the rename
+preserved all prior history), correctly backfilled the 2 most recent days
+that had only just become available as archives, and the live pull then
+correctly triggered only for the actual new day - exactly the behavior
+the whole gap-catchup system (Part 9) was built for, now proven under
+real conditions instead of a constructed scratch-database scenario like
+Part 10 used.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -904,6 +1017,9 @@ database rather than left as orphaned duplicates.
 | `is_sealed` classification | Presence of a `Number` field in `extendedData` | Data-driven, not name-pattern guessing; verified across 1999 Base Set through 2026 sets before trusting it; see Part 12 |
 | Set-level price/return and sealed product | Sealed product hardcoded out of `set_return()`/`set_value()` - not a default, no parameter to override it | A set's value is categorically about its singles; sealed items stay trackable individually via `item_return()`/`item_all_time_high()`; see Part 14 |
 | All-time-high formula | `MAX(COALESCE(market_price, mid_price, low_price))`, not plain `MAX(market_price)` | Reconciled with the general trending-fallback rule; a MAX() over all history doesn't carry the anchor-bias risk a two-point comparison does; see Part 14 |
+| Which games to track | `tracked_categories` table (data), not a hardcoded category ID (code) | Adding a game becomes an INSERT, not a rebuild; see Part 15 |
+| Game-specific quirks (code cards, etc.) | Scoped explicitly to the game they were discovered in, never broadened to "all games" | Pokemon's known quirks aren't assumed to be universal trading-card facts; see Part 15 |
+| `ingest_runs.source` naming | Category-scoped (`tcgcsv-3`, `tcgcsv-archive-3`), existing rows migrated via `UPDATE` | Each tracked game needs independent idempotency/failure tracking; migrated rather than left to silently retrigger a full re-pull; see Part 15 |
 
 ---
 
@@ -951,6 +1067,11 @@ able to name, not just recognize:
 
 ## What's still open
 
+- **No second game actually added yet** — the architecture supports it
+  (Part 15), but `tracked_categories` still only has Pokemon in it. Picking
+  an actual second game to track, and properly verifying `is_sealed`'s
+  classifier against a real volume of its data (not just one spot-checked
+  card), is still open.
 - **Further product categorization** — `is_sealed` now works (see Part
   12), but it's binary. If finer distinctions turn out to matter later
   (booster boxes vs. ETBs vs. tins, graded singles vs. raw, etc.), that's
