@@ -337,6 +337,21 @@ would silently break an unattended nightly pull until Docker Desktop is
 reopened by hand. Enable "Start Docker Desktop when you log in" in Docker
 Desktop's own Settings > General before relying on any scheduled job again.
 
+## Commit message style (decided 2026-08-14)
+
+Keep commit message bodies tight and scoped to *this* change - what changed
+and why, enough for `git log`/`git blame`/a bisect six months from now.
+Don't re-narrate the full reasoning journey in the commit body when
+DEVELOPMENT_HISTORY.md already carries it in more depth - that duplication
+crept in over this project's early commits (several bodies ended up
+reading like mini-essays, overlapping real estate with the dev history
+doc). Point to DEVELOPMENT_HISTORY.md's relevant Part for the deeper "how
+we got here" narrative instead of repeating it. Concrete numbers/impact
+are still worth keeping in the commit body when they exist (e.g. "810,451
+rows deleted," "$25,100.93 -> $2,792.05") - that's the kind of thing a
+diff alone won't show and is genuinely useful at commit-message scope, not
+narrative bloat.
+
 ## Known unknowns — verify before trusting
 
 1. ~~Field names in `TcgCsvPriceSource` are unverified.~~ **Verified 2026-08-12**
