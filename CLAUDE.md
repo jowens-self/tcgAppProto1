@@ -267,18 +267,36 @@ template still lives at `com.cardtracker.daily.plist` in the project root,
 ready to reinstate (`cp` it back into `~/Library/LaunchAgents` and
 `launchctl load` it) once there's an actual reason to run unattended.
 
-**On-demand pulls, not a scheduled job (decided 2026-08-13).** There's no
-app front end yet to justify a background daemon - the only thing that
-reads this data today is a person manually querying Postgres or running the
-jar. Running a background scheduled job for that is standing infrastructure
-(Docker Desktop kept resident, ~3.5GB+ RAM parked continuously on a 16GB
-Mac) in service of a use case that doesn't exist yet. Instead: run
-`docker compose up -d` and `java -jar target/cardtracker-0.1.0.jar` by hand
-whenever you actually want to look at something. Revisit real scheduling
-once there's a front end (see "Architecture intent" - Angular, then cloud)
-where "always up to date without a manual step" actually matters. Until
-then, a day with no manual pull is just a day with no new row - not a bug,
-since nothing depends on unattended completeness yet.
+**On-demand pulls, not a scheduled job (decided 2026-08-13).** The only
+thing that reads this data today is a person manually querying Postgres or
+running the jar. Running a background scheduled job for that is standing
+infrastructure (Docker Desktop kept resident, ~3.5GB+ RAM parked
+continuously on a 16GB Mac) in service of a use case that doesn't exist
+yet. Instead: run `docker compose up -d` and
+`java -jar target/cardtracker-0.1.0.jar` by hand whenever you actually
+want to look at something.
+
+**Missing a day costs nothing, which is why this is safe.** tcgcsv's daily
+archives persist and go back to 2024-02-08, so no observation is ever
+ephemeral - `App` runs the gap catch-up unconditionally on every run
+(`BackfillArchive.run(EARLIEST_ARCHIVE, yesterday, repo)`, see "App also
+catches up missing prior days" below), so skipping a week just means the
+next manual run backfills those seven days from the archives. A day with
+no manual pull is a day with no *new* row, not a lost one.
+
+**The trigger for reinstating a daemon is hosting/sharing, not a front
+end.** Clarified 2026-08-14 - the original wording here ("revisit once
+there's a front end where 'always up to date without a manual step'
+actually matters") got misread within a day of being written as "revisit
+once there's a front end," which is wrong. A local single-user front end
+changes nothing: the person opening it is right there and can trigger the
+pull, so a daemon would only buy "already fresh on open" instead of "fresh
+a few minutes after open" - convenience, not capability, given the
+backfill guarantee above. What genuinely needs unattended freshness is
+someone *other than the owner* loading the app with nobody around to run
+the jar - i.e. the hosted/shared phase in "Architecture intent." Build the
+Angular front end locally without touching scheduling; revisit the
+LaunchAgent when hosting actually starts.
 
 **`App` skips the fetch if today (UTC) is already pulled** - added
 2026-08-13, right after the on-demand decision above, because without it

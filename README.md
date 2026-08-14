@@ -29,10 +29,11 @@ Override the defaults with `CARDTRACKER_DB_URL`, `CARDTRACKER_DB_USER`,
 ## Running a pull (on-demand, for now)
 
 No scheduled job right now, by choice (see CLAUDE.md "On-demand pulls, not
-a scheduled job") — there's no app front end yet consuming this data day to
-day, so a background daemon just means Docker Desktop parked in memory for
-no one. Instead, pull fresh data whenever you actually want to look at
-something:
+a scheduled job") — nothing reads this data unattended, so a background
+daemon just means Docker Desktop parked in memory for no one. Missing a
+day costs nothing: tcgcsv's archives persist back to 2024-02-08 and every
+run backfills whatever's missing, so pull fresh data whenever you actually
+want to look at something:
 
 ```bash
 docker compose up -d                       # if Postgres isn't already running
