@@ -1,0 +1,178 @@
+<header class="head">
+  <h1>CardTracker</h1>
+  <p class="sub">Card / product search across your tracked games</p>
+</header>
+
+<form class="controls" (submit)="$event.preventDefault()">
+  <input
+    class="q"
+    type="search"
+    name="q"
+    placeholder="Search by name, or name + number — e.g. Charizard 004"
+    autocomplete="off"
+    spellcheck="false"
+    [value]="query"
+    (input)="onQueryChange($any($event.target).value)"
+    aria-label="Search by name"
+  />
+
+  <select
+    class="game"
+    [(ngModel)]="game"
+    name="game"
+    (ngModelChange)="onFilterChange()"
+    aria-label="Filter by game"
+  >
+    <option [ngValue]="null">All games</option>
+    @for (g of games(); track g.categoryId) {
+      <option [ngValue]="g.categoryId">{{ g.name }}</option>
+    }
+  </select>
+
+  <label class="sealed">
+    <input
+      type="checkbox"
+      name="hideSealed"
+      [(ngModel)]="hideSealed"
+      (ngModelChange)="onFilterChange()"
+    />
+    Singles only
+  </label>
+</form>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<div class="panes">
+  <section class="results" [class.docked]="selected()" aria-label="Search results">
+    @if (searching()) {
+      <p class="hint">Searching…</p>
+    } @else if (searched() && results().length === 0) {
+      <p class="hint">No matches.</p>
+    } @else if (!searched()) {
+      <p class="hint">Type a name to begin.</p>
+    }
+
+    @for (item of results(); track item.productId) {
+      <button
+        type="button"
+        class="row"
+        [class.active]="selected()?.productId === item.productId"
+        (click)="select(item)"
+      >
+        @if (item.imageUrl) {
+          <img class="thumb" [src]="item.imageUrl" [alt]="item.name" loading="lazy" />
+        } @else {
+          <span class="thumb placeholder" aria-hidden="true"></span>
+        }
+
+        <span class="meta">
+          <span class="name">{{ item.name }}</span>
+          <span class="tags">
+            <!-- number + rarity are identity here, not decoration: one set
+                 reprints the same card at several rarities across a huge
+                 price range. -->
+            @if (item.cardNumber) {
+              <span class="tag num">{{ item.cardNumber }}</span>
+            }
+            @if (item.rarity) {
+              <span class="tag rarity">{{ item.rarity }}</span>
+            }
+            @if (item.isSealed) {
+              <span class="tag sealed">Sealed</span>
+            }
+            @if (item.variantCount > 1) {
+              <span class="tag variant-count">{{ item.variantCount }} variants</span>
+            }
+          </span>
+          <span class="set">{{ item.setName }} · {{ item.game }}</span>
+        </span>
+      </button>
+    }
+  </section>
+
+</div>
+
+<!-- Docked to the bottom of the VIEWPORT, not appended to the end of the
+     document: the results list is long, so a detail pane in normal flow
+     sits far below the fold and a click appears to do nothing. Fixed
+     position means the chart is on screen the moment you select something,
+     wherever you happen to be scrolled to. -->
+@if (selected(); as item) {
+  <aside class="dock" aria-label="Item detail">
+    <div class="dock-inner">
+      <div class="dock-info">
+        <div class="dock-head">
+          <h2>{{ item.name }}</h2>
+          <button
+            type="button"
+            class="dock-close"
+            (click)="clearSelection()"
+            aria-label="Close detail"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="detail-sub">
+          {{ item.setName }} · {{ item.game }}
+          @if (item.cardNumber) {
+            · {{ item.cardNumber }}
+          }
+          @if (item.rarity) {
+            · {{ item.rarity }}
+          }
+        </p>
+        @if (item.url) {
+          <a class="tcg-link" [href]="item.url" target="_blank" rel="noopener">
+            View on TCGplayer ↗
+          </a>
+        }
+
+        @if (loadingDetail()) {
+          <p class="hint">Loading variants…</p>
+        }
+
+        @if (variants().length) {
+          <div class="variants" role="tablist">
+            @for (v of variants(); track v.subTypeName) {
+              <button
+                type="button"
+                role="tab"
+                class="variant"
+                [class.active]="activeVariant() === v.subTypeName"
+                [attr.aria-selected]="activeVariant() === v.subTypeName"
+                (click)="showVariant(item.productId, v.subTypeName)"
+              >
+                <span class="v-name">{{ v.subTypeName }}</span>
+                <span class="v-price">
+                  {{ v.latestMarket != null ? (v.latestMarket | currency) : '—' }}
+                </span>
+                <span class="v-ath">ATH {{ v.allTimeHigh | currency }}</span>
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="dock-chart">
+        @if (activeVariant() && history().length) {
+          @let ret = totalReturn();
+          <div class="ret-row">
+            <span class="ret-label">
+              {{ activeVariant() }} · since {{ history()[0].snapshotDate }}
+            </span>
+            @if (ret !== null) {
+              <span class="ret" [class.up]="ret >= 0" [class.down]="ret < 0">
+                {{ ret >= 0 ? '+' : '' }}{{ ret | number: '1.2-2' }}%
+              </span>
+            }
+          </div>
+          <price-chart [history]="history()" />
+        } @else if (activeVariant()) {
+          <p class="hint">Loading history…</p>
+        }
+      </div>
+    </div>
+  </aside>
+}

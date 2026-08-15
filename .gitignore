@@ -3,3 +3,9 @@ dependency-reduced-pom.xml
 .idea/
 *.iml
 .DS_Store
+
+# Angular front end (web/)
+node_modules/
+web/dist/
+web/.angular/
+npm-debug.log*

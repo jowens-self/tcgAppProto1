@@ -1,0 +1,50 @@
+/* Design tokens. Light by default, dark when the OS asks for it - this is
+   a local tool that gets opened at all hours, so following the system
+   preference is worth the handful of extra lines. */
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --text: #16181d;
+  --muted: #6b7280;
+  --line: #e2e5ea;
+  --accent: #2563eb;
+  --accent-fade: #eaf0fe;
+  --up: #15803d;
+  --down: #b91c1c;
+  --warn: #b45309;
+  --danger: #b91c1c;
+  --danger-fade: #fdecec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --text: #e6e8ec;
+    --muted: #9aa1ad;
+    --line: #262b34;
+    --accent: #6ea8fe;
+    --accent-fade: #1a2436;
+    --up: #4ade80;
+    --down: #f87171;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --danger-fade: #2a1a1a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif, 'Apple Color Emoji';
+  -webkit-font-smoothing: antialiased;
+}

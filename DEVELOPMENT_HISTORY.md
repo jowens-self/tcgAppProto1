@@ -1254,6 +1254,87 @@ number was added - that would be optimising a path that isn't slow.
 
 ---
 
+## Part 18 — The front end
+
+**Angular, chosen on the owner's own terms.** The documented intent had
+always said Angular, and rather than quietly substituting something
+lighter the tradeoffs were put honestly: a real toolchain (Node wasn't
+even installed), RxJS observables showing up on the very first API call,
+and more ceremony than a one-screen app strictly needs - against a
+structure that scales to the movers/sets/inventory screens still to come,
+and a stack worth having on a professional-showcase repo. The owner asked
+directly whether there was any reason not to, got the caveats, and chose
+Angular. Angular 22, standalone components and signals throughout.
+
+**A detour worth recording: the Node install hung for 90 minutes.**
+`brew install node`, run from the owner's own terminal, sat at 0% CPU with
+`STAT` `S+` and no child processes - the signature of a process blocked on
+a prompt, not one doing work. Because it was running in their terminal
+rather than the agent's, its output wasn't visible from here at all; the
+diagnosis came entirely from `ps`. After a reboot the same command run
+non-interactively (`NONINTERACTIVE=1`) completed in under a minute. Worth
+remembering: when a command "hangs," check whether it's waiting on stdin
+before assuming it's slow.
+
+**The one design decision that shaped the screen: the flow mirrors the
+data.** Search returns products, so the UI shows products; picking one
+reveals its variants, because those are genuinely different markets; a
+chosen variant has a history. Flattening that - showing one price per
+search result - would have meant the UI silently picking a market for the
+user, which is the same mistake the API was built to avoid. The one
+concession to convenience is that selecting an item auto-opens its most
+valuable variant, since for a card with a $5 Normal and a $77 Reverse
+Holofoil that is overwhelmingly the one being looked up.
+
+**Invariants enforced by omission, again.** `PricePoint` has no
+`highPrice` field, so the chart cannot plot price-parked noise even by
+accident. The chart draws `trendablePrice`, the market->mid->low fallback
+the server already resolved, so the rule can't be re-derived wrong on the
+client. Days with no usable price are dropped rather than plotted as zero -
+a missing observation is not a price of $0.
+
+**No charting library.** One line and two labels didn't justify a
+dependency or the decision that comes with it; the chart is hand-rolled
+SVG. Written down as a decision to revisit if charts get richer (multiple
+series, brushing, touch tooltips), not as a permanent rule.
+
+**Docking the detail panel to the viewport, not the document.** The first
+version put the detail pane in normal flow beside the results, which
+collapsed below them on any narrow window. With fifty results that meant
+clicking a card scrolled nothing into view and appeared to do nothing at
+all. The owner caught it and asked for the graph to open at the bottom of
+the *visible page, not the bottom of the DOM* - a precise description of
+the bug. The panel is now `position: fixed` at the viewport bottom, with
+the results list reserving matching bottom padding so rows can still
+scroll clear of it. Verified rather than eyeballed: scrolled 3,724px down,
+the panel's bottom edge still equals the viewport height exactly and the
+chart is fully on screen; it takes 29% of a 1280x820 desktop and 52% of a
+375x812 phone, with no horizontal overflow at either.
+
+**Two CSS bugs, one of which needed the browser to find.** Result tags
+rendered as circles on any row with three of them. The cause was not the
+obvious flex-shrink guess - inspecting computed styles showed the badge
+carried `class="tag variants"`, which also matched the *variant tab
+container's* `.variants { margin: 1rem 0 }`, inflating the flex line to
+49.5px and stretching every 999px-radius pill on it into an ellipse. A
+class-name collision, found only by measuring rather than by re-reading
+the stylesheet. Separately, a `.chart-empty` rule sat in `search.css`
+while the element it targeted lives in `price-chart`'s own template -
+dead on arrival, since Angular scopes component styles. Moved to the
+component that owns it.
+
+**One open question deliberately left to the owner.** Result thumbnails
+load from `tcgplayer-cdn.tcgplayer.com`, which sits against the "all
+outbound traffic goes to tcgcsv.com only" hard constraint. It is not
+scraping - no crawling, no parsing, and the URLs come from tcgcsv's own
+`image_url` column - but it is automatic outbound traffic to a TCGplayer
+domain, and unlike the outbound product *links* (user-initiated, and a
+stated core feature) an `<img>` fires on its own for every row. Raised
+rather than decided, per the constraint's own instruction to stop and ask.
+Recorded here as unresolved.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -1363,10 +1444,13 @@ able to name, not just recognize:
 - **Docker Desktop autostart** — the owner intended to enable this
   themselves in Docker Desktop's own settings; worth confirming it's
   actually on, since it matters more if scheduling is ever reinstated.
-- **Front end** — the read API now exists (Part 16), so the remaining
-  piece is a UI on top of it. Framework deliberately not chosen yet;
-  CLAUDE.md's stated intent is Angular. The first screen is Card /
-  Product Search, whose three endpoints are built and verified.
+- ~~**Front end**~~ — built (Part 18). Angular 22 in `web/`, Card /
+  Product Search working against the read API. Further screens (movers,
+  set overview) are the next additions.
+- **Open: product thumbnails hit `tcgplayer-cdn.tcgplayer.com`** (Part
+  18). Sits against the tcgcsv-only outbound rule; raised with the owner,
+  not yet decided. Options were keep / drop / load only in the detail
+  pane for the item actually clicked.
 - **More read endpoints** — search/variants/history cover lookup. The
   "biggest movers" and "set overview" screens considered in Part 16 would
   each need their own endpoint; `set_return()`/`set_value()` already

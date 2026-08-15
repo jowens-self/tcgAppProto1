@@ -257,6 +257,39 @@ CORS is scoped to `http://localhost:4200` (the Angular dev server). The
 API binds locally and is meant to stay there; if it ever moves, revisit
 both that rule and the connection-per-request in `ApiServer.withRepo`.
 
+## Front end (`web/`)
+
+Angular 22 app over the read API. Card / product search: find an item, see
+its variants and their current prices, chart one variant's history.
+
+```bash
+docker compose up -d                                              # Postgres
+java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer  # API :7070
+cd web && npm install && npx ng serve                             # UI :4200
+```
+
+All three are needed — the UI talks only to the API, and the API is the
+only thing that talks to Postgres.
+
+Structure, all standalone components with signals:
+
+| File | Role |
+|---|---|
+| `api.models.ts` | TypeScript mirrors of the Java records |
+| `api.ts` | The only file that knows a server exists |
+| `search.ts/.html/.css` | The screen: query, filters, results, detail |
+| `price-chart.ts` | Hand-rolled SVG line chart, no charting library |
+
+The detail panel is **docked to the bottom of the viewport**, not placed in
+normal flow. With a long result list, a panel in flow sits below the fold
+and clicking a result looks like it did nothing. Fixed position means the
+chart is on screen wherever you're scrolled; the results list reserves
+matching bottom padding so nothing hides behind it permanently.
+
+The chart plots `trendablePrice` (the fallback the server already applied)
+and drops days with no price rather than plotting them as zero — a missing
+observation isn't a price of $0.
+
 ## Example queries
 
 Biggest 30-day movers, sealed product only:

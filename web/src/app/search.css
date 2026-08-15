@@ -1,0 +1,314 @@
+:host {
+  display: block;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+.sub {
+  margin: 0.25rem 0 1.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* --- controls --- */
+.controls {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+.q {
+  flex: 1 1 22rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+}
+.q:focus,
+.game:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+.game {
+  padding: 0.6rem 0.7rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+}
+.sealed {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  user-select: none;
+}
+
+.error {
+  background: var(--danger-fade);
+  color: var(--danger);
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  margin: 0 0 1rem;
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+}
+
+/* --- layout --- */
+.panes {
+  display: block;
+}
+
+/* --- results --- */
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Reserve room so the docked panel never covers the last few results -
+   they stay scrollable into view instead of being permanently hidden
+   under it. Generous because the dock grows on narrow screens, where it
+   stacks its two halves. */
+.results.docked {
+  padding-bottom: 60vh;
+}
+@media (min-width: 801px) {
+  .results.docked {
+    padding-bottom: 22rem;
+  }
+}
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.row:hover {
+  background: var(--surface);
+}
+.row.active {
+  background: var(--accent-fade);
+  border-color: var(--accent);
+}
+.thumb {
+  width: 40px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex: none;
+  background: var(--surface);
+}
+.thumb.placeholder {
+  display: block;
+  border: 1px dashed var(--line);
+}
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.name {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+.set {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.tags {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  /* Keeps pills at their own height instead of stretching to the tallest
+     item on the line - a stretched pill with a 999px radius turns into a
+     circle, which is how a stray margin on one badge deformed all of them. */
+  align-items: center;
+}
+.tag {
+  font-size: 0.68rem;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+  /* Without this, a row carrying three tags lets flex shrink the first two
+     below their text width; combined with the 999px radius they collapse
+     into circles rather than pills. */
+  flex: none;
+}
+.tag.num {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.tag.rarity {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tag.sealed {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* --- docked detail panel --- */
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgb(0 0 0 / 0.18);
+  /* Never eat the whole screen - the results stay usable behind it, and
+     anything taller scrolls inside the panel rather than off it. */
+  max-height: 62vh;
+  overflow-y: auto;
+  /* Keeps the panel clear of the home indicator on a phone. */
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.dock-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem 1.1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem 1.5rem;
+}
+@media (min-width: 801px) {
+  .dock-inner {
+    /* Info left, chart right, so the panel stays short enough to leave
+       most of the results visible above it. */
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+.dock-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.dock-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.dock-close {
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 1.75rem;
+  height: 1.75rem;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+.dock-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.dock-chart {
+  min-width: 0;
+}
+.detail-sub {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.tcg-link {
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.tcg-link:hover {
+  text-decoration: underline;
+}
+
+.variants {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 0;
+}
+.variant {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.variant:hover {
+  border-color: var(--accent);
+}
+.variant.active {
+  border-color: var(--accent);
+  background: var(--accent-fade);
+}
+.v-name {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.v-price {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.v-ath {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ret-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+.ret-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.ret {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ret.up {
+  color: var(--up);
+}
+.ret.down {
+  color: var(--down);
+}

@@ -1,0 +1,62 @@
+/**
+ * Mirrors the Java records returned by the read API (see
+ * com.cardtracker.model.* and README "Read API"). Field names match the
+ * JSON exactly - if a record changes on the server, change it here too.
+ */
+
+/** A tracked game, from GET /api/games. */
+export interface Game {
+  categoryId: number;
+  name: string;
+  productCount: number;
+}
+
+/**
+ * One search hit - a product, NOT a (product, variant) pair. A card that
+ * exists as Normal / Holofoil / Reverse Holofoil is one result with
+ * variantCount = 3, because those trade at genuinely different prices and
+ * there is no single honest price to show. Call variants() for real prices.
+ *
+ * cardNumber and rarity are identity, not decoration: a set routinely
+ * reprints one card at several rarities across a huge price range (SV03
+ * Obsidian Flames has four "Charizard ex" from $5.65 to $108.58). Null for
+ * sealed product, which has neither.
+ */
+export interface ItemSearchResult {
+  productId: number;
+  name: string;
+  cardNumber: string | null;
+  rarity: string | null;
+  setName: string;
+  game: string;
+  isSealed: boolean;
+  variantCount: number;
+  latestDate: string | null;
+  url: string | null;
+  imageUrl: string | null;
+}
+
+/** One variant of a product, from GET /api/items/{id}/variants. */
+export interface ItemVariant {
+  subTypeName: string;
+  firstDate: string;
+  latestDate: string;
+  /** Raw market price - null means none was recorded that day. */
+  latestMarket: number | null;
+  allTimeHigh: number | null;
+}
+
+/**
+ * One day of price history. No highPrice field on purpose: sellers
+ * "price park" (list absurdly high so nothing sells), so the API never
+ * returns it. trendablePrice is the market->mid->low fallback already
+ * applied server-side - chart that, don't re-derive it.
+ */
+export interface PricePoint {
+  snapshotDate: string;
+  marketPrice: number | null;
+  lowPrice: number | null;
+  midPrice: number | null;
+  directLowPrice: number | null;
+  trendablePrice: number | null;
+}
