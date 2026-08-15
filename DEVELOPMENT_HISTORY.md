@@ -1184,6 +1184,76 @@ localhost.
 
 ---
 
+## Part 17 — Searching by name and number together
+
+**The ask.** Straight from the owner: `Charizard 004` should find every
+Charizard numbered 4. Leading zeros shouldn't matter in either direction,
+and `Charizard#004` should work too. The stated instinct - "take whatever
+is after the space and check that for what number card they want" - was
+the right shape, and survived contact with the data with two refinements.
+
+**The data decided the matching rule, not intuition.** Checking the real
+`Number` values across both games first turned out to matter a lot:
+
+| Shape | Example | Count |
+|---|---|---|
+| `digits/digits` | `004/102` | 24,765 |
+| `letters+digits` | `XY121` | 1,399 |
+| digits only | `196` | 916 |
+| `TGxx/TGyy` | `TG10/TG30` | 532 |
+| `digits+letter/digits` | `098a/122` | 111 |
+| `ABC12-345` (One Piece) | `OP17-028` | 6,274 |
+
+The important find: **Pokemon puts the card number before the separator
+(`004/102`) and One Piece puts it after (`OP17-028`)**. A single generic
+"take the digits" rule would have matched the *set size* for Pokemon or the
+*set code* for One Piece - wrong answers that would have looked plausible.
+`normalize_card_number()` splits on the two cases explicitly and documents
+why, rather than trying to be clever with one regex.
+
+Leading zeros are stripped only at the start of a digit run, so `004` = `4`
+but `040` stays distinct from `4` - the padding is noise, the trailing
+zero is a different card.
+
+**Refinement one: "after the space" needed a guard.** Taken literally it
+breaks `Charizard ex`, which has a space and a trailing token. The rule
+became: the last token is a number only if it *contains a digit*. That one
+condition is what keeps `ex`, `GX`, `V` and `VMAX` working as names, since
+none of them contain digits.
+
+**Refinement two: the guess can still be wrong, so it falls back.** Some
+cards genuinely end in a number that isn't their card number -
+`Nemona - Pikachu 42` is real, and its number is `180/198`. Parsing would
+read that as name `Nemona - Pikachu` plus number 42 and return nothing.
+So when the parsed reading finds zero rows, the whole original string is
+retried as a plain name. A wrong guess costs one extra query and is
+invisible; without it, a card that exists would appear not to. This is the
+single most important line in the feature and the least obvious one -
+worth not "simplifying" away later. It also motivated writing `item_search`
+in plpgsql over a shared `item_search_core`, so parse-and-retry lives in
+one definition every caller gets, rather than in whichever client
+remembered to implement it.
+
+**A bug caught by testing a case the spec didn't mention.** The
+digits-only match exists so a set code is optional (`121` finds `XY121`,
+`28` finds `OP17-028`). But testing `Jirachi XY67a` returned both `XY67a`
+*and* `XY67`, because both reduce to digits `67` - throwing away the
+variant letter the user had deliberately typed, and undoing the care taken
+to keep `98a` distinct from `98`. Fixed by allowing the loose digits match
+only when the typed number contains no letters at all. Type a bare number
+and matching stays generous; type letters and it turns strict.
+
+**Efficiency, which was the owner's explicit question.** It stays fast
+because the filters are ordered: the name predicate hits the `pg_trgm`
+index first, and the number check - which has to unwrap `extendedData`
+JSON - only ever runs on rows the name filter already kept. A plain name
+search is unchanged at ~2-4ms; adding a number costs ~40-56ms because the
+JSON unwrap has to happen before the `LIMIT` rather than after. Well
+inside a 250ms search-as-you-type debounce, so no index on the extracted
+number was added - that would be optimising a path that isn't slow.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -1211,6 +1281,9 @@ localhost.
 | `ingest_runs.source` naming | Category-scoped (`tcgcsv-3`, `tcgcsv-archive-3`), existing rows migrated via `UPDATE` | Each tracked game needs independent idempotency/failure tracking; migrated rather than left to silently retrigger a full re-pull; see Part 15 |
 | Search result granularity | One row per product with `variant_count`, never one per (product, variant) | A single "price" per product would collapse sub-types, the oldest invariant in the project; `item_variants()` carries the real prices; see Part 16 |
 | Card number / rarity source | `extendedData` via `extended_field()`, never parsed from the product name | Only 5,276 of 34,435 singles carry a number in the name; `extendedData` has it for 100%. Same set reprints one card at several rarities across a 19x price range; see Part 16 |
+| Card number matching | Per-game normalization (`normalize_card_number()`), not one generic digit rule | Pokemon's number is before the separator (`004/102`), One Piece's is after (`OP17-028`) — a generic rule silently matches set size or set code; see Part 17 |
+| "name + number" parsing | In SQL (plpgsql `item_search` over `item_search_core`), not in the client | Same behaviour for psql, the API and the front end; parse-and-retry can't diverge per caller; see Part 17 |
+| Wrong number guess | Retry the whole string as a plain name when the parsed reading returns zero rows | The last-token rule genuinely misfires (`Nemona - Pikachu 42` is number `180/198`); without the retry a real card looks missing; see Part 17 |
 | `high_price` in the API | Not returned by `item_history()`, no field on `PricePoint` | Makes "store it, ignore it" structural instead of a rule a chart author has to remember; see Part 16 |
 | Search result ordering | `rank, length(name), name, product_id` — `product_id` as final tiebreaker | Dozens of products share an identical name; without it, `LIMIT`/`OFFSET` paging silently duplicates and skips rows; see Part 16 |
 | Product name search index | `pg_trgm` GIN index on `products.name` | Leading-wildcard `ILIKE` can't use a btree — was a full seq scan on every keystroke, ~30ms to ~1.3ms; see Part 16 |

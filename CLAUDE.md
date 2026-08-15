@@ -178,6 +178,21 @@ Rules it establishes, worth keeping:
   product carrying `variant_count`; `item_variants()` supplies real
   per-variant prices. Anything that puts a single "price" on a
   multi-variant product violates the sub-type invariant above.
+- **Search parses "name + number" from one string** (added 2026-08-14).
+  `item_search('Charizard 004')` splits into name + card number; `#` forces
+  the split. Two rules worth not breaking: (1) the last token becomes a
+  number only if it contains a digit, which is what keeps `Charizard ex`,
+  `VMAX` and `GX` working as names; (2) if the parsed reading returns zero
+  rows, the whole string is retried as a plain name. That fallback is not
+  optional polish - the last-token rule genuinely guesses wrong on cards
+  like `Nemona - Pikachu 42` (real card, number `180/198`), and without
+  the retry those return nothing. Number matching goes through
+  `normalize_card_number()`/`card_number_digits()`, never string equality:
+  Pokemon puts the card number *before* the slash (`004/102`) and One
+  Piece *after* the dash (`OP17-028`), so a generic rule would silently
+  match the set size or the set code instead. The digits-only match is
+  allowed only when the typed number has no letters, otherwise `XY67a`
+  would also match `XY67`.
 - **Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03

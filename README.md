@@ -180,6 +180,29 @@ Search takes `q` (required), plus optional `game` (category id),
 `sealed=false` to hide sealed product, `limit` (default 25, capped at 200)
 and `offset`.
 
+**`q` accepts a name, or a name plus a card number.** All of these find the
+same card:
+
+```
+Charizard 004      Charizard 4        Charizard#004
+Charizard #4       Charizard 004/102
+```
+
+Leading zeros never matter on either side — `4` matches `004/102`, `04/82`
+and `4/100`. Interior and trailing zeros do matter, since `040` and `4` are
+different cards. A number is only parsed out when the last word actually
+looks like one, so `Charizard ex`, `Charizard VMAX` and `Charizard GX`
+still search purely by name. Use `#` to force the split on a card whose
+name genuinely ends in a number.
+
+Set codes are optional: `Shanks 120` and `Shanks OP01-120` both find
+`OP01-120`, and `Jirachi 67` finds `XY67`. But a variant letter you type is
+respected — `Jirachi XY67a` returns only `XY67a`, never `XY67`.
+
+If the parsed reading finds nothing, the whole string is retried as a plain
+name, so a wrong guess is invisible rather than an empty result
+(`Nemona - Pikachu 42` is a real card whose number is `180/198`).
+
 ```bash
 curl "localhost:7070/api/items/search?q=charizard&sealed=false&limit=3"
 # [{"productId":42382,"name":"Charizard","cardNumber":"004/102",

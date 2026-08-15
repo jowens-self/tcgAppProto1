@@ -164,6 +164,59 @@ RETURNS TEXT AS $$
     LIMIT 1;
 $$ LANGUAGE sql IMMUTABLE;
 
+-- Reduce a card number to a comparable key, so "004", "4" and "004/102"
+-- all match each other.
+--
+-- Two game-specific shapes have to be handled, confirmed against the real
+-- data (2026-08-14, singles only):
+--   Pokemon  24,765 "004/102"   the card number is BEFORE the slash
+--            1,399  "XY121"     letters then digits, no separator
+--            916    "196"       bare
+--            532    "TG10/TG30" same slash rule, letters kept
+--            111    "098a/122"  variant suffix letter, kept ("98a" != "98")
+--   One Piece 6,274 "OP17-028"  the card number is AFTER the dash - the
+--                               leading part is the set code, not the card
+-- Getting the side wrong would silently match the set size or the set code
+-- instead of the card, so the two are split on separately rather than by a
+-- single generic rule.
+--
+-- Leading zeros are stripped from the start of each digit run ("004" -> "4",
+-- "098a" -> "98a") but interior and trailing zeros are untouched - "040" and
+-- "4" are genuinely different cards, only the padding is noise.
+CREATE OR REPLACE FUNCTION normalize_card_number(p_raw TEXT)
+RETURNS TEXT AS $$
+    WITH cleaned AS (
+        -- Tolerate how a person types it: "#004", "(11)", stray spaces.
+        SELECT btrim(lower(btrim(COALESCE(p_raw, ''))), ' #()[].') AS v
+    ),
+    local_part AS (
+        SELECT CASE
+            WHEN v = '' THEN NULL
+            -- "004/102" -> "004", "tg10/tg30" -> "tg10"
+            WHEN v LIKE '%/%' THEN split_part(v, '/', 1)
+            -- "op17-028" -> "028" (set code first, card number second)
+            WHEN v ~ '^[a-z]+[0-9]*-[0-9]+$' THEN split_part(v, '-', 2)
+            ELSE v
+        END AS v FROM cleaned
+    )
+    -- The lookahead stops a bare "0" from being erased entirely.
+    SELECT NULLIF(regexp_replace(v, '(^|[^0-9])0+(?=[0-9])', '\1', 'g'), '')
+    FROM local_part;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- The digits-only view of the same key, so typing "121" finds "XY121" and
+-- "28" finds "OP17-028" without the caller having to know the set code.
+-- Kept separate from normalize_card_number rather than replacing it, since
+-- dropping the letters would also collapse "98a" onto "98".
+CREATE OR REPLACE FUNCTION card_number_digits(p_raw TEXT)
+RETURNS TEXT AS $$
+    SELECT NULLIF(
+        regexp_replace(
+            regexp_replace(COALESCE(normalize_card_number(p_raw), ''), '[^0-9]', '', 'g'),
+            '^0+(?=[0-9])', '', 'g'),
+        '');
+$$ LANGUAGE sql IMMUTABLE;
+
 -- Name search across products, newest-relevance first. Case-insensitive
 -- substring match, backed by the pg_trgm GIN index on products.name (see
 -- schema.sql) - without that index this is a full seq scan on every
@@ -202,8 +255,16 @@ $$ LANGUAGE sql IMMUTABLE;
 -- is spelled out because item_search is overload-free but Postgres still
 -- needs the exact argument list to identify it.
 DROP FUNCTION IF EXISTS item_search(TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
-CREATE OR REPLACE FUNCTION item_search(
-    p_query TEXT,
+DROP FUNCTION IF EXISTS item_search_core(TEXT, TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
+
+-- The search itself, with name and card number already separated. Callers
+-- normally want item_search() below, which parses a single typed string
+-- into these two parts; this is split out so that parsing and matching stay
+-- separately testable, and so the wrapper can run it twice (see its
+-- fallback) without duplicating the query.
+CREATE OR REPLACE FUNCTION item_search_core(
+    p_name TEXT,
+    p_number TEXT DEFAULT NULL,
     p_category_id INTEGER DEFAULT NULL,
     p_include_sealed BOOLEAN DEFAULT TRUE,
     p_limit INTEGER DEFAULT 25,
@@ -228,13 +289,30 @@ CREATE OR REPLACE FUNCTION item_search(
     WITH hits AS (
         SELECT p.product_id, p.name, p.is_sealed, p.group_id, p.category_id,
                p.url, p.image_url, p.extended_data,
-               CASE WHEN lower(p.name) = lower(p_query) THEN 0
-                    WHEN lower(p.name) LIKE lower(p_query) || '%' THEN 1
+               CASE WHEN lower(p.name) = lower(p_name) THEN 0
+                    WHEN lower(p.name) LIKE lower(p_name) || '%' THEN 1
                     ELSE 2 END AS rank
         FROM products p
-        WHERE p.name ILIKE '%' || p_query || '%'
+        WHERE p.name ILIKE '%' || COALESCE(p_name, '') || '%'
           AND (p_category_id IS NULL OR p.category_id = p_category_id)
           AND (p_include_sealed OR p.is_sealed = FALSE)
+          -- Number match runs only when one was supplied, and only against
+          -- rows the (indexed) name filter already kept - so the JSON
+          -- unwrap happens for a handful of rows, not the whole catalog.
+          --
+          -- Two ways to match. The full normalized key is the strict one
+          -- ("xy67a" matches only XY67a). The digits-only key is the loose
+          -- one, so "121" finds XY121 and "28" finds OP17-028 without
+          -- having to type the set code - but it is allowed ONLY when the
+          -- typed number has no letters in it. Otherwise typing "XY67a"
+          -- would also match XY67, since both reduce to digits "67",
+          -- throwing away the variant letter the user deliberately typed.
+          AND (p_number IS NULL
+               OR normalize_card_number(extended_field(p.extended_data, 'Number'))
+                    = normalize_card_number(p_number)
+               OR (p_number !~ '[A-Za-z]'
+                   AND card_number_digits(extended_field(p.extended_data, 'Number'))
+                         = card_number_digits(p_number)))
         -- product_id is the final tiebreaker purely for determinism, and it
         -- is load-bearing for paging: many products share an identical name
         -- across sets (there are dozens of cards named exactly "Charizard"),
@@ -261,6 +339,82 @@ CREATE OR REPLACE FUNCTION item_search(
     ) v
     ORDER BY h.rank, length(h.name), h.name, h.product_id;
 $$ LANGUAGE sql STABLE;
+
+-- What callers actually use: one typed string, name and number figured out
+-- from it. "Charizard 004", "Charizard 4", "Charizard#004", "Charizard #4"
+-- and "Charizard 004/102" all find the same card; "Charizard" alone still
+-- searches by name exactly as before.
+--
+-- How the split is decided:
+--   * An explicit '#' always wins - everything left of it is the name,
+--     everything right is the number. This is the escape hatch for a card
+--     whose name genuinely ends in a number.
+--   * Otherwise the LAST whitespace-separated token is treated as a number
+--     only if it looks like one (contains a digit, and is otherwise just
+--     letters/digits with an optional / or - separator). "Charizard ex"
+--     keeps "ex" as part of the name; "VMAX", "GX" and "V" are likewise
+--     safe, because none of them contain a digit.
+--
+-- **The fallback is the important part.** That last-token rule guesses, and
+-- it can guess wrong - a card genuinely named "... 2" would be read as
+-- name "..." plus number 2. So when the parsed interpretation returns
+-- nothing, the whole original string is retried as a plain name. A wrong
+-- guess therefore costs one extra query and is invisible to the user,
+-- rather than showing an empty result for a card that does exist. The
+-- second query only ever runs on a miss.
+CREATE OR REPLACE FUNCTION item_search(
+    p_query TEXT,
+    p_category_id INTEGER DEFAULT NULL,
+    p_include_sealed BOOLEAN DEFAULT TRUE,
+    p_limit INTEGER DEFAULT 25,
+    p_offset INTEGER DEFAULT 0
+) RETURNS TABLE (
+    product_id INTEGER,
+    name TEXT,
+    card_number TEXT,
+    rarity TEXT,
+    set_name TEXT,
+    game TEXT,
+    is_sealed BOOLEAN,
+    variant_count INTEGER,
+    latest_date DATE,
+    url TEXT,
+    image_url TEXT
+) AS $$
+DECLARE
+    v_query TEXT := btrim(COALESCE(p_query, ''));
+    v_name  TEXT;
+    v_num   TEXT;
+    v_last  TEXT;
+    v_hits  INTEGER;
+BEGIN
+    IF position('#' IN v_query) > 0 THEN
+        v_name := btrim(split_part(v_query, '#', 1));
+        v_num  := NULLIF(btrim(split_part(v_query, '#', 2)), '');
+    ELSIF v_query ~ '\s' THEN
+        v_last := regexp_replace(v_query, '^.*\s+', '');
+        -- Digit required, so word-shaped suffixes (ex, GX, VMAX) stay name.
+        IF v_last ~ '^[(\[]?[A-Za-z]{0,4}[0-9]+[A-Za-z]?([/-][A-Za-z0-9]+)?[)\]]?$' THEN
+            v_num  := v_last;
+            v_name := btrim(regexp_replace(v_query, '\s+\S+$', ''));
+        END IF;
+    END IF;
+
+    IF v_num IS NOT NULL THEN
+        RETURN QUERY SELECT * FROM item_search_core(
+            COALESCE(v_name, ''), v_num, p_category_id,
+            p_include_sealed, p_limit, p_offset);
+        GET DIAGNOSTICS v_hits = ROW_COUNT;
+        IF v_hits > 0 THEN
+            RETURN;
+        END IF;
+    END IF;
+
+    -- No number parsed, or the parse found nothing: plain name search.
+    RETURN QUERY SELECT * FROM item_search_core(
+        v_query, NULL, p_category_id, p_include_sealed, p_limit, p_offset);
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Every variant of one product, with its current price and all-time high.
 -- This is the bridge between search and item_return/item_all_time_high:
