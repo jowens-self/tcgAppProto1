@@ -68,6 +68,27 @@ outranks every feature.
   design, not a gap to close.
 - **All outbound traffic goes to tcgcsv.com only.** If a task seems to require
   hitting TCGplayer directly, stop and ask rather than finding a way.
+- **No product images. Not from any TCGplayer host, in any component.**
+  Reinforced 2026-08-15 after the front end shipped with result thumbnails
+  bound to `products.image_url`, which points at
+  `tcgplayer-cdn.tcgplayer.com` - roughly 50 browser requests to a
+  TCGplayer domain per search. That is a violation of the rule above even
+  though tcgcsv publishes the URL and documents it, and even though it
+  isn't scraping. **"Only tcgcsv" means only tcgcsv - a CDN subdomain is
+  still TCGplayer, and the intent of the rule is zero traffic to them, not
+  zero *crawling* of them.** Do not reintroduce images from that host
+  under any framing: not lazy-loaded, not one-at-a-time on click, not
+  proxied through our own API (worse - that makes it server-side and
+  automated). `ItemSearchResult` in `web/src/app/api.models.ts`
+  deliberately omits the `imageUrl` field so it cannot be bound to an
+  `<img>` by accident; the API still returns it, which is harmless because
+  returning a string fetches nothing. If images are ever genuinely wanted,
+  they need a source that is not TCGplayer, and that is a decision for the
+  owner to make deliberately - not an implementation detail.
+  **Outbound product *links* remain fine and are a core feature:** an
+  `href` issues no request. Nothing is fetched unless the owner clicks it,
+  which is them visiting TCGplayer in their own browser, as they would
+  anyway.
 
 If asked to add scraping, say what it risks before writing it.
 

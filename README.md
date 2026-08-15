@@ -9,6 +9,10 @@ below.
 ## What it deliberately does not do
 
 - **No scraping.** Nothing in this project fetches from tcgplayer.com.
+- **No requests to tcgplayer.com at all** — not the site, not its image
+  CDN, not from the server, not from the browser. No product images, for
+  that reason. Outbound *links* are fine: an `href` fetches nothing until
+  you click it yourself.
 - **No automated login.** Your inventory comes from a CSV you export yourself.
 - **Nothing public.** No server, no auth, no users.
 
@@ -208,7 +212,7 @@ curl "localhost:7070/api/items/search?q=charizard&sealed=false&limit=3"
 # [{"productId":42382,"name":"Charizard","cardNumber":"004/102",
 #   "rarity":"Holo Rare","setName":"Base Set","game":"Pokemon",
 #   "isSealed":false,"variantCount":1,"latestDate":"2026-08-14",
-#   "url":"...","imageUrl":"..."}, ...]
+#   "url":"..."}, ...]
 ```
 
 **`cardNumber` and `rarity` are identity, not decoration.** A set routinely
@@ -275,7 +279,7 @@ Structure, all standalone components with signals:
 
 | File | Role |
 |---|---|
-| `api.models.ts` | TypeScript mirrors of the Java records |
+| `api.models.ts` | TypeScript mirrors of the Java records (no `imageUrl` — see below) |
 | `api.ts` | The only file that knows a server exists |
 | `search.ts/.html/.css` | The screen: query, filters, results, detail |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library |

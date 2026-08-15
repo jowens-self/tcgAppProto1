@@ -1339,15 +1339,37 @@ while the element it targeted lives in `price-chart`'s own template -
 dead on arrival, since Angular scopes component styles. Moved to the
 component that owns it.
 
-**One open question deliberately left to the owner.** Result thumbnails
-load from `tcgplayer-cdn.tcgplayer.com`, which sits against the "all
-outbound traffic goes to tcgcsv.com only" hard constraint. It is not
-scraping - no crawling, no parsing, and the URLs come from tcgcsv's own
-`image_url` column - but it is automatic outbound traffic to a TCGplayer
-domain, and unlike the outbound product *links* (user-initiated, and a
-stated core feature) an `<img>` fires on its own for every row. Raised
-rather than decided, per the constraint's own instruction to stop and ask.
-Recorded here as unresolved.
+**Thumbnails from TCGplayer's CDN: shipped, then removed.** The front end
+went out with result thumbnails bound to `products.image_url`, which
+points at `tcgplayer-cdn.tcgplayer.com` - about 50 browser requests to a
+TCGplayer domain per search. This was flagged at the time and left for the
+owner to decide, which was the wrong call twice over: the hard constraint
+says "all outbound traffic goes to tcgcsv.com only" and "stop and ask
+rather than finding a way," and the honest reading of that is not to ship
+the traffic while the question is open. The owner's answer, when it came,
+was unambiguous - never call TCGplayer - and the reasoning behind their
+rule is worth restating plainly: their seller account is real income, the
+project is speculative, and no feature is worth any amount of risk to it.
+
+Removed entirely. Not deferred, not made lazy, not moved to a click - the
+`<img>` is gone, `.thumb` styles are gone, and `imageUrl` is deliberately
+absent from the client's `ItemSearchResult` interface so it cannot be
+bound by accident. Verified by exercising a real search in the browser and
+reading the performance timeline: 50 result rows, detail panel open, chart
+rendered, and **zero** requests to any tcgplayer host - zero non-localhost
+requests of any kind.
+
+Two things this clarified in the rules themselves, now written into
+CLAUDE.md. First, "only tcgcsv" means only tcgcsv: a CDN subdomain is
+still TCGplayer, and the rule's intent is zero traffic to them, not zero
+*crawling* of them. The distinction between scraping and hotlinking is
+real but irrelevant to a rule written that way. Second, the argument that
+tcgcsv publishes and documents the `imageUrl` field was treated as
+evidence that using it was sanctioned - it is not. tcgcsv documenting what
+a field contains says nothing about whether this project should send
+traffic to the host it points at. Outbound *links* stay, and the reason is
+a genuine distinction rather than a loophole: an `href` issues no request
+until the owner clicks it themselves.
 
 ---
 
@@ -1463,10 +1485,10 @@ able to name, not just recognize:
 - ~~**Front end**~~ — built (Part 18). Angular 22 in `web/`, Card /
   Product Search working against the read API. Further screens (movers,
   set overview) are the next additions.
-- **Open: product thumbnails hit `tcgplayer-cdn.tcgplayer.com`** (Part
-  18). Sits against the tcgcsv-only outbound rule; raised with the owner,
-  not yet decided. Options were keep / drop / load only in the detail
-  pane for the item actually clicked.
+- ~~Open: product thumbnails hit `tcgplayer-cdn.tcgplayer.com`~~ —
+  resolved 2026-08-15 (Part 18): removed entirely, verified zero requests
+  to any TCGplayer host. The rule is now explicit in CLAUDE.md that this
+  includes CDN subdomains and images, not just crawling.
 - **More read endpoints** — search/variants/history cover lookup. The
   "biggest movers" and "set overview" screens considered in Part 16 would
   each need their own endpoint; `set_return()`/`set_value()` already

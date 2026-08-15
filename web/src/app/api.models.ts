@@ -21,6 +21,13 @@ export interface Game {
  * reprints one card at several rarities across a huge price range (SV03
  * Obsidian Flames has four "Charizard ex" from $5.65 to $108.58). Null for
  * sealed product, which has neither.
+ *
+ * NOTE: there is deliberately no `imageUrl` field here, even though the API
+ * returns one. Those URLs point at tcgplayer-cdn.tcgplayer.com, and
+ * rendering them makes the browser fetch from TCGplayer on every row. This
+ * project sends NO traffic to tcgplayer.com, ever - see CLAUDE.md "Hard
+ * constraints". The field is left off this interface so it cannot be bound
+ * to an <img> by accident. Do not add it back.
  */
 export interface ItemSearchResult {
   productId: number;
@@ -32,8 +39,12 @@ export interface ItemSearchResult {
   isSealed: boolean;
   variantCount: number;
   latestDate: string | null;
+  /**
+   * Link to the product page. Safe: an href makes no request - nothing is
+   * fetched unless the user deliberately clicks it, which is them browsing
+   * TCGplayer themselves, exactly as they would anyway.
+   */
   url: string | null;
-  imageUrl: string | null;
 }
 
 /** One variant of a product, from GET /api/items/{id}/variants. */

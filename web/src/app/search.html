@@ -61,12 +61,6 @@
         [class.active]="selected()?.productId === item.productId"
         (click)="select(item)"
       >
-        @if (item.imageUrl) {
-          <img class="thumb" [src]="item.imageUrl" [alt]="item.name" loading="lazy" />
-        } @else {
-          <span class="thumb placeholder" aria-hidden="true"></span>
-        }
-
         <span class="meta">
           <span class="name">{{ item.name }}</span>
           <span class="tags">

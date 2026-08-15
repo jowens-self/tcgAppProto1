@@ -118,18 +118,6 @@
   background: var(--accent-fade);
   border-color: var(--accent);
 }
-.thumb {
-  width: 40px;
-  height: 56px;
-  object-fit: contain;
-  border-radius: 4px;
-  flex: none;
-  background: var(--surface);
-}
-.thumb.placeholder {
-  display: block;
-  border: 1px dashed var(--line);
-}
 .meta {
   display: flex;
   flex-direction: column;
