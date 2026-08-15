@@ -1298,18 +1298,34 @@ dependency or the decision that comes with it; the chart is hand-rolled
 SVG. Written down as a decision to revisit if charts get richer (multiple
 series, brushing, touch tooltips), not as a permanent rule.
 
-**Docking the detail panel to the viewport, not the document.** The first
-version put the detail pane in normal flow beside the results, which
-collapsed below them on any narrow window. With fifty results that meant
-clicking a card scrolled nothing into view and appeared to do nothing at
-all. The owner caught it and asked for the graph to open at the bottom of
-the *visible page, not the bottom of the DOM* - a precise description of
-the bug. The panel is now `position: fixed` at the viewport bottom, with
-the results list reserving matching bottom padding so rows can still
-scroll clear of it. Verified rather than eyeballed: scrolled 3,724px down,
-the panel's bottom edge still equals the viewport height exactly and the
-chart is fully on screen; it takes 29% of a 1280x820 desktop and 52% of a
-375x812 phone, with no horizontal overflow at either.
+**A bottom-docked panel: tried, and reverted.** The detail pane sits in
+normal flow beside the results, sticky, so the chart stays put while the
+list scrolls. On a narrow window those columns stack, which put the chart
+below fifty results - the owner reported that clicking a card appeared to
+do nothing, and asked for the graph to open at the bottom of the *visible
+page, not the bottom of the DOM*.
+
+The fix built for that was a `position: fixed` panel docked to the
+viewport bottom. It measured well - pinned correctly 3,724px down the
+page, 29% of a 1280x820 desktop, 52% of a 375x812 phone, no horizontal
+overflow - and the owner's verdict on seeing it was still "way worse."
+Reverted to the sticky two-column layout. Worth recording because the
+metrics were not the point: a panel permanently occupying a third of the
+screen and covering the results is a worse way to browse than a column
+that shares space with them, and no amount of correct geometry fixes
+that. The underlying complaint (the chart being off-screen when the
+columns stack on a narrow window) remains open, and wants a narrower fix
+than replacing the layout wholesale.
+
+**A process lesson that cost real work.** The revert was harder than it
+should have been: the pre-dock layout had never been committed on its own,
+because the whole front end was being held back over the unresolved
+tcgplayer-CDN question. So "go back to how it was" meant reconstructing
+the previous CSS and template from memory rather than `git revert`. The
+owner's instruction afterwards was explicit - commit and push after every
+major change, so recovering a previous state never depends on the agent
+recalling code. An unrelated open question is not a reason to sit on
+finished work; commit it and note the question instead.
 
 **Two CSS bugs, one of which needed the browser to find.** Result tags
 rendered as circles on any row with three of them. The cause was not the

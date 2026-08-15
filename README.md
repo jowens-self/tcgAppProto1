@@ -280,11 +280,10 @@ Structure, all standalone components with signals:
 | `search.ts/.html/.css` | The screen: query, filters, results, detail |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library |
 
-The detail panel is **docked to the bottom of the viewport**, not placed in
-normal flow. With a long result list, a panel in flow sits below the fold
-and clicking a result looks like it did nothing. Fixed position means the
-chart is on screen wherever you're scrolled; the results list reserves
-matching bottom padding so nothing hides behind it permanently.
+Layout is two columns — results left, detail right and sticky, so the
+chart stays in view while you scroll the list. The results list scrolls
+within its own 70vh box rather than growing the page. Below 800px the
+columns stack.
 
 The chart plots `trendablePrice` (the fallback the server already applied)
 and drops days with no price rather than plotting them as zero — a missing
