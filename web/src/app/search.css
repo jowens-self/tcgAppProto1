@@ -77,7 +77,13 @@
   gap: 1.5rem;
   align-items: start;
 }
-@media (max-width: 800px) {
+/* Two columns only while both actually have room. Measured: at 1280 each
+   column is 518px and reads fine; by 820 they're ~378px, set names wrap to
+   two lines and the chart is squeezed into ~350px. Below this the list
+   takes the full width and the chart pins to the bottom instead (see the
+   narrow-screen block at the end of this file). Keep this number in sync
+   with that media query - they are two halves of one decision. */
+@media (max-width: 960px) {
   .panes {
     grid-template-columns: 1fr;
   }
@@ -293,7 +299,7 @@
 }
 
 /* --- narrow screens only: pin the detail panel ---------------------------
-   Below 800px the two columns stack, which puts the chart underneath the
+   Below 960px the two columns stack, which puts the chart underneath the
    whole result list - clicking a row then scrolls nothing into view and
    looks like nothing happened. Pinning it to the viewport bottom is the
    fix for THAT case specifically.
@@ -301,8 +307,12 @@
    Deliberately scoped to this breakpoint. The same treatment applied at
    desktop width was worse than the sticky column it replaced: a panel
    permanently covering a third of the screen is a poor way to browse a
-   list when there's room to put the two side by side. Here there isn't. */
-@media (max-width: 800px) {
+   list when there's room to put the two side by side. Here there isn't.
+
+   Must match the .panes stacking breakpoint above. If the two ever
+   disagree, one width ends up with stacked columns and no pinning - which
+   is exactly the broken state this pair exists to prevent. */
+@media (max-width: 960px) {
   /* Nothing selected means nothing to pin - don't leave an empty bar
      stuck across the bottom of the screen. */
   .detail.empty {
