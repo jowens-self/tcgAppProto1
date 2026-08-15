@@ -8,16 +8,19 @@ below.
 
 ## What it deliberately does not do
 
-- **No scraping.** Nothing in this project fetches from tcgplayer.com.
 - **No requests to tcgplayer.com at all** — not the site, not its image
   CDN, not from the server, not from the browser. No product images, for
   that reason. Outbound *links* are fine: an `href` fetches nothing until
   you click it yourself.
+- **No requests to eBay, ever.** Same rule, same reason — another real
+  seller account.
+- **No new outbound hosts without explicit permission.** `tcgcsv.com` is
+  the only one. Anything else gets asked about first, before any code.
 - **No automated login.** Your inventory comes from a CSV you export yourself.
 - **Nothing public.** No server, no auth, no users.
 
 Traffic goes only to `tcgcsv.com`, a third-party mirror on its own
-infrastructure. Your seller account is never involved.
+infrastructure. Your marketplace accounts are never involved.
 
 ## Setup
 

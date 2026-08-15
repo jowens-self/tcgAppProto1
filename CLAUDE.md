@@ -56,9 +56,23 @@ constraints for this project — respect them when making changes.
 
 ## Hard constraints — do not violate, do not "improve"
 
-These are risk decisions, not style preferences. The owner's TCGplayer seller
-account is real income; the project is speculative. Protecting the account
-outranks every feature.
+These are risk decisions, not style preferences. The owner sells on
+**both TCGplayer and eBay**, and both are real income; the project is
+speculative. Protecting those accounts outranks every feature.
+
+**The general rule, which governs every case below:** this project talks
+to `tcgcsv.com` and nothing else. Any other outbound host - a marketplace,
+a CDN, an image API, anything - requires the owner's explicit permission
+first, asked for before any code is written or any request is made. Do not
+reason from "this specific request seems harmless" to "therefore it's
+allowed." The owner's livelihood is on the other side of that judgment
+call, and it is not one to make on their behalf.
+
+- **Never contact eBay.** Added 2026-08-15 at the owner's explicit
+  instruction: they sell there as well. No API calls, no page fetches, no
+  image hotlinking, no scraping, no automation - and not "just to check
+  something." Same standard as TCGplayer below, for the same reason:
+  a real income account that a project like this must never put at risk.
 
 - **Never scrape tcgplayer.com.** Their terms prohibit crawling without
   permission. No HTML fetching, no headless browser, no "public search API"
