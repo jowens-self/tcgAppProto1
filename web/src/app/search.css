@@ -181,9 +181,39 @@
   position: sticky;
   top: 1rem;
 }
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
 .detail-head h2 {
   margin: 0;
   font-size: 1.1rem;
+}
+.detail-head .detail-sub {
+  flex-basis: 100%;
+}
+/* Hidden on the two-column layout - there the panel is just a column and
+   nothing is covered, so there's nothing to dismiss. Shown only in the
+   pinned narrow layout below. */
+.detail-close {
+  display: none;
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 1.75rem;
+  height: 1.75rem;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+.detail-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 .detail-sub {
   margin: 0.25rem 0 0.5rem;
@@ -260,4 +290,60 @@
 }
 .ret.down {
   color: var(--down);
+}
+
+/* --- narrow screens only: pin the detail panel ---------------------------
+   Below 800px the two columns stack, which puts the chart underneath the
+   whole result list - clicking a row then scrolls nothing into view and
+   looks like nothing happened. Pinning it to the viewport bottom is the
+   fix for THAT case specifically.
+
+   Deliberately scoped to this breakpoint. The same treatment applied at
+   desktop width was worse than the sticky column it replaced: a panel
+   permanently covering a third of the screen is a poor way to browse a
+   list when there's room to put the two side by side. Here there isn't. */
+@media (max-width: 800px) {
+  /* Nothing selected means nothing to pin - don't leave an empty bar
+     stuck across the bottom of the screen. */
+  .detail.empty {
+    display: none;
+  }
+
+  .detail:not(.empty) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* Must clear the sticky rule's `top: 1rem`. With position:fixed and
+       both top and bottom set, top wins and the panel pins to the TOP of
+       the screen instead of the bottom. */
+    top: auto;
+    z-index: 20;
+    border: none;
+    border-top: 1px solid var(--line);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -8px 24px rgb(0 0 0 / 0.28);
+    /* Leaves at least ~40% of the screen on the results, and anything
+       taller scrolls inside the panel instead of off it. */
+    max-height: 58vh;
+    overflow-y: auto;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .detail-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* The list gives up its own scrollbox here and lets the page scroll, so
+     rows can be scrolled clear of the pinned panel rather than being
+     trapped under it. */
+  .results {
+    max-height: none;
+    overflow: visible;
+  }
+  .results.has-selection {
+    padding-bottom: 62vh;
+  }
 }

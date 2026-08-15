@@ -45,7 +45,7 @@
 }
 
 <div class="panes">
-  <section class="results" aria-label="Search results">
+  <section class="results" [class.has-selection]="selected()" aria-label="Search results">
     @if (searching()) {
       <p class="hint">Searching…</p>
     } @else if (searched() && results().length === 0) {
@@ -92,12 +92,23 @@
     }
   </section>
 
-  <aside class="detail" aria-label="Item detail">
+  <aside class="detail" [class.empty]="!selected()" aria-label="Item detail">
     @if (!selected()) {
       <p class="hint">Select an item to see its variants and price history.</p>
     } @else {
       <div class="detail-head">
         <h2>{{ selected()!.name }}</h2>
+        <!-- Only rendered as a control on narrow screens, where the panel
+             is pinned over the results and has to be dismissable. On the
+             two-column layout it's just a column, so CSS hides it. -->
+        <button
+          type="button"
+          class="detail-close"
+          (click)="clearSelection()"
+          aria-label="Close detail"
+        >
+          ✕
+        </button>
         <p class="detail-sub">
           {{ selected()!.setName }} · {{ selected()!.game }}
           @if (selected()!.cardNumber) {
