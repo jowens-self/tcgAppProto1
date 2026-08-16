@@ -127,6 +127,39 @@ CREATE TABLE IF NOT EXISTS excluded_products (
     excluded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Card images, sourced from the pokemontcg.io community API (the ONLY image
+-- source permitted - see CLAUDE.md "Permitted hosts"; TCGplayer's CDN is
+-- explicitly off limits).
+--
+-- Misses are recorded as rows with status='no_match', not left absent. That
+-- distinction is the whole point of the table: roughly 40% of our Pokemon
+-- singles have no counterpart upstream (World Championship decks, jumbo
+-- cards, prize packs, promos, and the newest sets, which lag), and without
+-- a negative record every one of those would be re-queried on every import
+-- run forever.
+--
+-- Only Pokemon for now. One Piece has no permitted image source, so its
+-- products simply have no rows here.
+CREATE TABLE IF NOT EXISTS card_images (
+    product_id    INTEGER PRIMARY KEY,
+    -- pokemontcg.io card id, e.g. 'base1-4'. Null when status='no_match'.
+    source_id     TEXT,
+    -- 'ok'       = matched and a thumbnail is on disk
+    -- 'no_match' = no upstream card; don't look again
+    -- 'failed'   = matched but the download failed; retryable
+    status        TEXT NOT NULL,
+    -- Relative to the image root (CARDTRACKER_IMAGE_DIR), so moving the
+    -- directory doesn't invalidate every row.
+    file_path     TEXT,
+    bytes         INTEGER,
+    -- How the match was made, kept so a bad match can be traced back to the
+    -- rule that produced it rather than guessed at.
+    match_rule    TEXT,
+    checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_images_status ON card_images(status);
+
 -- Operational log. Lets you answer "did the pull run, and did it run clean?"
 -- without reading application logs.
 CREATE TABLE IF NOT EXISTS ingest_runs (

@@ -197,6 +197,23 @@ public class QueryRepository {
     public record Game(int categoryId, String name, int productCount) {
     }
 
+    /**
+     * Relative path of a product's cached thumbnail, or null if we have no
+     * image for it (never matched, or the download failed). Callers treat
+     * null as "show a placeholder" - roughly 40% of Pokemon singles have no
+     * upstream image at all, so absence is the normal case, not an error.
+     */
+    public String imagePath(int productId) throws Exception {
+        String sql = "SELECT file_path FROM card_images "
+                + "WHERE product_id = ? AND status = 'ok' AND file_path IS NOT NULL";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
     /** A set within a game, for the movers screen's set filter. */
     public record GameSet(int groupId, String name, LocalDate publishedOn, int productCount) {
     }

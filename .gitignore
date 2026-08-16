@@ -9,3 +9,6 @@ node_modules/
 web/dist/
 web/.angular/
 npm-debug.log*
+
+# Cached card thumbnails (fetched from pokemontcg.io, regenerable)
+images/

@@ -39,6 +39,23 @@ export class Search {
   protected readonly history = signal<PricePoint[]>([]);
   protected readonly loadingDetail = signal(false);
 
+  /**
+   * product_ids whose thumbnail 404'd. Roughly 40% of Pokemon singles have
+   * no upstream image and One Piece has none at all, so this is the normal
+   * path, not error handling - we swap in a placeholder rather than leaving
+   * a broken image icon.
+   */
+  protected readonly noImage = signal<ReadonlySet<number>>(new Set());
+
+  /**
+   * product_ids whose thumbnail has finished loading. The <img> stays
+   * invisible until it lands: relying on (error) alone still lets the
+   * browser paint its broken-image glyph for a frame or two before the
+   * placeholder swaps in, which looks like a bug on every row we have no
+   * image for - and that is ~40% of them.
+   */
+  protected readonly loadedImages = signal<ReadonlySet<number>>(new Set());
+
   protected query = '';
   protected game: number | null = null;
   protected hideSealed = false;
@@ -83,6 +100,18 @@ export class Search {
           this.error.set('Search failed. Is ApiServer running on :7070?');
         },
       });
+  }
+
+  protected imageUrl(productId: number): string {
+    return this.api.imageUrl(productId);
+  }
+
+  protected imageFailed(productId: number): void {
+    this.noImage.update((s) => new Set(s).add(productId));
+  }
+
+  protected imageLoaded(productId: number): void {
+    this.loadedImages.update((s) => new Set(s).add(productId));
   }
 
   protected onQueryChange(value: string): void {

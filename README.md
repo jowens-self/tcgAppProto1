@@ -184,6 +184,7 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | `GET /api/items/{id}/history?subType=` | Price time series for one variant |
 | `GET /api/movers` | Biggest price moves over a window |
 | `GET /api/games/{id}/sets` | Sets in a game, for the movers filter |
+| `GET /api/items/{id}/image` | Cached card thumbnail (404 = no image) |
 
 Search takes `q` (required), plus optional `game` (category id),
 `sealed=false` to hide sealed product, `limit` (default 25, capped at 200)
@@ -330,6 +331,49 @@ keep artifacts off the top of the board without hiding real moves.
 **`minPrice` defaults to $1** because percent change flatters cheap cards.
 Without it the week's top decliner was Shuckle at $0.06 → $0.01 (-83%),
 and four of the top twelve were sub-$1 cards moving pennies.
+
+## Card images
+
+Thumbnails come from [pokemontcg.io](https://pokemontcg.io), a free
+community API — **never from TCGplayer**. They're downloaded once,
+downscaled, and served off our own disk, so the browser never contacts a
+third party for them.
+
+```bash
+java -cp target/cardtracker-0.1.0.jar com.cardtracker.images.ImportCardImages
+# or a single set first:
+java -cp target/cardtracker-0.1.0.jar com.cardtracker.images.ImportCardImages --group 604
+```
+
+Resumable and safe to re-run: products with an `ok` or `no_match` row are
+skipped, `failed` ones are retried. Images land in `images/` (override with
+`CARDTRACKER_IMAGE_DIR`), gitignored since they're regenerable.
+
+**Coverage is about 60%, and that's the ceiling.** Measured across our
+27,807 Pokemon singles:
+
+| Scope | Matched |
+|---|---|
+| All Pokemon singles | 60.5% |
+| Main sets only | 73.3% |
+| Established sets (SV01, Paradox Rift, Paldea Evolved) | 88–95% |
+| Newest sets (Prismatic Evolutions, White Flare, Black Bolt) | 43–53% |
+| World Championship / Jumbo / Prize Pack / promos | ~0% |
+| One Piece | none — no permitted source |
+
+The newest sets are worst because the upstream catalog lags releases.
+Cards with no image get a placeholder, which is a normal state rather than
+an error.
+
+Matching is on name + card number + set total, with a name+number fallback
+accepted **only when unambiguous** — a wrong image is worse than none when
+you're pricing inventory. ~14 KB per thumbnail, so the full catalog is
+roughly 200 MB rather than the ~2.6 GB the originals would cost.
+
+Their API is flaky: expect transient 500s, and note deep pagination is
+broken past ~12,000 rows, which is why the importer fetches per set. If any
+set fails, the run records **no** `no_match` rows that pass — an incomplete
+catalog would otherwise permanently mark cards as imageless.
 
 ## Example queries
 

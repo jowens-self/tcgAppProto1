@@ -9,6 +9,8 @@ import io.javalin.http.BadRequestResponse;
 import io.javalin.http.NotFoundResponse;
 import io.javalin.json.JavalinJackson;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.LocalDate;
@@ -36,6 +38,9 @@ public class ApiServer {
         String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
         String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
         int port = Integer.parseInt(Env.get("CARDTRACKER_API_PORT", String.valueOf(DEFAULT_PORT)));
+        // Same default as ImportCardImages, which writes them.
+        Path imageRoot = Path.of(Env.get("CARDTRACKER_IMAGE_DIR", "images"))
+                .toAbsolutePath().normalize();
 
         Javalin app = Javalin.create(config -> {
             // LocalDate must serialize as "2026-08-14", not an array of ints
@@ -112,6 +117,32 @@ public class ApiServer {
 
             ctx.json(withRepo(url, user, pass,
                     repo -> repo.search(q, game, includeSealed, limit, offset)));
+        });
+
+        // Cached card thumbnail, served off OUR disk. The browser must never
+        // fetch an image from a third party - that is the rule that got broken
+        // with TCGplayer's CDN (see CLAUDE.md), and it holds for the permitted
+        // image source too: ImportCardImages fetches once, this serves forever.
+        //
+        // 404 is an ordinary outcome, not an error: about 40% of Pokemon
+        // singles have no upstream image, and every One Piece product has
+        // none, so the client shows a placeholder.
+        app.get("/api/items/{productId}/image", ctx -> {
+            int id = pathId(ctx.pathParam("productId"));
+            String rel = withRepo(url, user, pass, repo -> repo.imagePath(id));
+            if (rel == null) throw new NotFoundResponse("No image for product " + id);
+
+            Path file = imageRoot.resolve(rel).normalize();
+            // The path comes from our own DB, but normalize + containment check
+            // means a bad row can never read outside the image directory.
+            if (!file.startsWith(imageRoot) || !Files.isRegularFile(file)) {
+                throw new NotFoundResponse("No image file for product " + id);
+            }
+            ctx.contentType("image/jpeg");
+            // Immutable in practice: a card's art doesn't change, and the file
+            // is only rewritten by an explicit re-import.
+            ctx.header("Cache-Control", "public, max-age=604800");
+            ctx.result(Files.readAllBytes(file));
         });
 
         app.get("/api/items/{productId}", ctx -> {

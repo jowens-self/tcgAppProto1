@@ -68,6 +68,15 @@ export class CardTrackerApi {
     return this.http.get<Mover[]>(`${this.base}/movers`, { params });
   }
 
+  /**
+   * URL of a card's thumbnail on OUR server. Never a third-party URL - the
+   * browser must not fetch images from anyone else (see CLAUDE.md). Returns
+   * 404 when we have no image, which the caller renders as a placeholder.
+   */
+  imageUrl(productId: number): string {
+    return `${this.base}/items/${productId}/image`;
+  }
+
   item(productId: number): Observable<ItemSearchResult> {
     return this.http.get<ItemSearchResult>(`${this.base}/items/${productId}`);
   }

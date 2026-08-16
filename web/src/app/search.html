@@ -61,6 +61,23 @@
         [class.active]="selected()?.productId === item.productId"
         (click)="select(item)"
       >
+        <!-- Placeholder is always the backdrop; the image fades in over it
+             once it actually loads. Avoids a broken-image flash on the ~40%
+             of cards with no upstream image. -->
+        <span class="thumb-box" aria-hidden="true">
+          @if (!noImage().has(item.productId)) {
+            <img
+              class="thumb"
+              [class.loaded]="loadedImages().has(item.productId)"
+              [src]="imageUrl(item.productId)"
+              alt=""
+              loading="lazy"
+              (load)="imageLoaded(item.productId)"
+              (error)="imageFailed(item.productId)"
+            />
+          }
+        </span>
+
         <span class="meta">
           <span class="name">{{ item.name }}</span>
           <span class="tags">

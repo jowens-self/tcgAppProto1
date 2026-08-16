@@ -1441,6 +1441,69 @@ the same lesson as the interleaved-curl parse error in Part 16.
 
 ---
 
+## Part 20 — Card images, from a source that wants to be used
+
+**The rule that made this necessary.** Images had already shipped once,
+hotlinked from TCGplayer's CDN, and been removed (Part 18). The owner's
+reaction was unambiguous, and the follow-up question was the right one:
+where else can images come from, and is self-hosting them reasonable?
+They then granted use of pokemontcg.io specifically - which is why
+CLAUDE.md now carries an explicit permitted-hosts table rather than the
+prose "only tcgcsv" that let a CDN slip through the first time.
+
+**Self-hosting turned out to be the strictly better design, not a
+compromise.** Fetch each image once, downscale it, serve it from our own
+disk: the browser then contacts nobody. That is a stronger guarantee than
+hotlinking a permitted host would give, and it makes the app work offline
+for anything already cached. Their "small" PNG is ~157KB for something
+rendered at 40x56px, so downscaling to a 160px-wide JPEG (~14KB) takes the
+full catalog from ~2.6GB to roughly 200MB.
+
+**Coverage was measured before committing to the work, and it is the
+uncomfortable part.** Their catalog is 20,257 cards against our 27,807
+Pokemon singles. Matching on name + card number + set total gives 58.9%,
+plus 1.7% from an unambiguous name+number fallback - 60.5% overall, 73.3%
+across main sets. Established sets do well (SV01 95%, Paradox Rift 94%),
+but the newest sets run 43-53% because the upstream catalog lags releases,
+and World Championship decks, jumbo cards, prize packs and promos are
+absent entirely. That weakness lands exactly where a seller's attention
+is - recent sets - so it was put to the owner as a decision rather than
+buried. They chose to ship it with placeholders.
+
+**Two upstream defects that shaped the implementation.** Their deep
+pagination is broken: at pageSize=250, page 50 and beyond (offset ~12,250
+of 20,479) return HTTP 500 every time, across six attempts - not
+transient. Per-set queries are bounded and work, so the importer fetches
+that way. Separately the API is simply flaky: one run had 11 of 174 sets
+fail with 500/502 and succeed later. Retries with exponential backoff and
+per-set isolation are requirements here, not defensive habits - the first
+version aborted the entire run on one bad set.
+
+**A correctness bug caught by thinking about what a partial failure
+means.** Misses are recorded as `status='no_match'` so ~11,000 unmatchable
+cards are not re-queried on every run. But if the catalog download is
+incomplete, an unmatched product might simply live in a set that failed to
+download - and writing `no_match` then is a permanent lie, because those
+rows are never re-checked. A transient 500 would silently cost a card its
+image forever. The importer now tracks whether the catalog is complete and
+declines to record misses when it isn't, leaving those products for a
+later run. The first real run exercised exactly this: 5 sets failed, 95 of
+Base Set's 102 cards imported, and 7 unmatched products were correctly
+left unrecorded.
+
+**Loose matches are deliberately restricted to unambiguous ones.** Where
+name+number alone hits several candidate cards, no image is chosen. For
+someone pricing inventory a confidently wrong image is worse than an
+obvious blank.
+
+**A UI detail worth the extra state.** Relying on an `(error)` handler to
+swap in a placeholder still let the browser paint its broken-image glyph
+for a frame first - visible on roughly 40% of rows, which reads as a bug
+rather than an absence. The image now starts transparent and fades in on
+`load`, over a placeholder that is always present underneath.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -1479,6 +1542,10 @@ the same lesson as the interleaved-curl parse error in Part 16.
 | Movers price basis | Mean of N days at each end, not two point observations | Thinly-traded cards lurch on single sales; measured to damp a one-day artifact ~3x while leaving a real move at full magnitude; see Part 19 |
 | Movers minimum price | $1 floor on the starting price, by default | Percent change flatters cheap cards — unfiltered the top decliner was a $0.06 card moving 5 cents; see Part 19 |
 | Movers row granularity | Per (product, variant), unlike search's per-product | A mover is one specific market's move; sub-types move independently; see Part 19 |
+| Card image source | pokemontcg.io only, never TCGplayer | Owner sells on TCGplayer and eBay; permitted-hosts table now explicit in CLAUDE.md; see Part 20 |
+| Image delivery | Downloaded once, downscaled, served from our own disk | Browser contacts no third party at all — stronger than hotlinking a permitted host; ~200MB vs ~2.6GB; see Part 20 |
+| Unmatched cards | Recorded as `no_match`, but ONLY when the catalog download was complete | Otherwise a transient upstream 500 permanently marks a card imageless, since misses are never re-checked; see Part 20 |
+| Ambiguous image matches | Rejected — no image rather than a guess | A confidently wrong card image is worse than a blank when pricing inventory; see Part 20 |
 | SQL window bounds | Resolved to plpgsql DATE variables, never computed in a CTE | Bounds from a sub-select can't be folded to constants — planner spilled ~6GB to temp files, 550ms vs 365ms; see Part 19 |
 
 ---
