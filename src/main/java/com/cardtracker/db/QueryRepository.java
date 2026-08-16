@@ -2,6 +2,7 @@ package com.cardtracker.db;
 
 import com.cardtracker.model.ItemSearchResult;
 import com.cardtracker.model.ItemVariant;
+import com.cardtracker.model.Mover;
 import com.cardtracker.model.PricePoint;
 
 import java.math.BigDecimal;
@@ -194,6 +195,79 @@ public class QueryRepository {
 
     /** A tracked game, for filter UI. */
     public record Game(int categoryId, String name, int productCount) {
+    }
+
+    /** A set within a game, for the movers screen's set filter. */
+    public record GameSet(int groupId, String name, LocalDate publishedOn, int productCount) {
+    }
+
+    /** Sets belonging to one game, newest first. */
+    public List<GameSet> sets(int categoryId) throws Exception {
+        String sql = "SELECT group_id, name, published_on, product_count FROM game_sets(?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, categoryId);
+            List<GameSet> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new GameSet(rs.getInt("group_id"), rs.getString("name"),
+                            localDate(rs.getDate("published_on")), rs.getInt("product_count")));
+                }
+            }
+            return out;
+        }
+    }
+
+    /**
+     * Biggest movers over a window. Every argument has a server-side default
+     * in item_movers(); nulls here mean "use it" rather than "no filter", so
+     * a caller that passes nothing still gets the sane default view (7 days,
+     * decliners, singles, $1 floor) instead of an unfiltered firehose.
+     */
+    public List<Mover> movers(Integer days, Integer categoryId, Integer groupId,
+                              boolean includeSealed, java.math.BigDecimal minPrice,
+                              String direction, Integer smoothing, Integer limit)
+            throws Exception {
+        String sql = """
+                SELECT product_id, name, card_number, rarity, set_name, game,
+                       sub_type_name, is_sealed, then_price, now_price, pct_change, url
+                  FROM item_movers(?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            setIntOrDefault(ps, 1, days, 7);
+            if (categoryId == null) ps.setNull(2, Types.INTEGER); else ps.setInt(2, categoryId);
+            if (groupId == null) ps.setNull(3, Types.INTEGER); else ps.setInt(3, groupId);
+            ps.setBoolean(4, includeSealed);
+            if (minPrice == null) ps.setBigDecimal(5, java.math.BigDecimal.ONE);
+            else ps.setBigDecimal(5, minPrice);
+            ps.setString(6, direction == null ? "down" : direction);
+            setIntOrDefault(ps, 7, smoothing, 3);
+            setIntOrDefault(ps, 8, limit, 50);
+
+            List<Mover> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new Mover(
+                            rs.getInt("product_id"),
+                            rs.getString("name"),
+                            rs.getString("card_number"),
+                            rs.getString("rarity"),
+                            rs.getString("set_name"),
+                            rs.getString("game"),
+                            rs.getString("sub_type_name"),
+                            rs.getBoolean("is_sealed"),
+                            rs.getBigDecimal("then_price"),
+                            rs.getBigDecimal("now_price"),
+                            rs.getBigDecimal("pct_change"),
+                            rs.getString("url")));
+                }
+            }
+            return out;
+        }
+    }
+
+    private static void setIntOrDefault(PreparedStatement ps, int idx, Integer v, int dflt)
+            throws Exception {
+        ps.setInt(idx, v == null ? dflt : v);
     }
 
     private static void setDate(PreparedStatement ps, int idx, LocalDate d) throws Exception {

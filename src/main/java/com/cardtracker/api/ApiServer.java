@@ -59,6 +59,43 @@ public class ApiServer {
         app.get("/api/games", ctx ->
                 ctx.json(withRepo(url, user, pass, QueryRepository::games)));
 
+        app.get("/api/games/{categoryId}/sets", ctx -> {
+            int id = pathId(ctx.pathParam("categoryId"));
+            ctx.json(withRepo(url, user, pass, repo -> repo.sets(id)));
+        });
+
+        // Biggest movers over a window.
+        //   ?days=7&game=3&set=23353&sealed=false&minPrice=1&direction=down
+        //   &smoothing=3&limit=50
+        // Every parameter is optional: the defaults (7 days, decliners,
+        // singles, $1 floor, 3-day smoothing) are the screen's default view
+        // and live in item_movers() so psql callers get them too.
+        app.get("/api/movers", ctx -> {
+            String dir = ctx.queryParam("direction");
+            if (dir != null && !dir.equals("up") && !dir.equals("down")) {
+                throw new BadRequestResponse("direction must be 'up' or 'down'");
+            }
+            Integer days = intParam(ctx.queryParam("days"), "days");
+            if (days != null && days < 1) {
+                throw new BadRequestResponse("days must be at least 1");
+            }
+            Integer smoothing = intParam(ctx.queryParam("smoothing"), "smoothing");
+            if (smoothing != null && smoothing < 1) {
+                throw new BadRequestResponse("smoothing must be at least 1");
+            }
+            java.math.BigDecimal minPrice = decimalParam(ctx.queryParam("minPrice"), "minPrice");
+
+            ctx.json(withRepo(url, user, pass, repo -> repo.movers(
+                    days,
+                    intParam(ctx.queryParam("game"), "game"),
+                    intParam(ctx.queryParam("set"), "set"),
+                    "true".equalsIgnoreCase(ctx.queryParam("sealed")),
+                    minPrice,
+                    dir,
+                    smoothing,
+                    intParam(ctx.queryParam("limit"), "limit"))));
+        });
+
         // Card / product search. q is required; everything else optional.
         //   ?q=charizard&game=3&sealed=false&limit=25&offset=0
         app.get("/api/items/search", ctx -> {
@@ -163,6 +200,15 @@ public class ApiServer {
             return Integer.parseInt(raw);
         } catch (NumberFormatException e) {
             throw new BadRequestResponse(name + " must be an integer, got '" + raw + "'");
+        }
+    }
+
+    private static java.math.BigDecimal decimalParam(String raw, String name) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return new java.math.BigDecimal(raw);
+        } catch (NumberFormatException e) {
+            throw new BadRequestResponse(name + " must be a number, got '" + raw + "'");
         }
     }
 
