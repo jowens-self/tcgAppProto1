@@ -74,6 +74,24 @@ call, and it is not one to make on their behalf.
   something." Same standard as TCGplayer below, for the same reason:
   a real income account that a project like this must never put at risk.
 
+**Permitted hosts - only these.** Anything else needs explicit permission
+asked for before any code is written.
+
+| Host | Granted | For |
+|---|---|---|
+| `tcgcsv.com` | from the start | all price and catalog data |
+| `api.pokemontcg.io` | 2026-08-16 | Pokemon card image lookup |
+| `images.pokemontcg.io` | 2026-08-16 | the image files themselves |
+
+pokemontcg.io is a free community project, so it gets the same etiquette
+as tcgcsv: descriptive User-Agent, paced requests, and never re-fetching
+what's already been fetched. Its catalog is pulled once and matched
+offline rather than queried per card, and each image is fetched once then
+served from our own disk - so the browser never contacts it at all. This
+permission covers Pokemon images specifically; it is not a general
+licence to add image providers. One Piece has no source yet and needs its
+own conversation.
+
 - **Never scrape tcgplayer.com.** Their terms prohibit crawling without
   permission. No HTML fetching, no headless browser, no "public search API"
   calls. Not for one card, not as a fallback, not behind a flag.
