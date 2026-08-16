@@ -494,3 +494,158 @@ CREATE OR REPLACE FUNCTION item_history(
       AND (p_end_date IS NULL OR ps.snapshot_date <= p_end_date)
     ORDER BY ps.snapshot_date;
 $$ LANGUAGE sql STABLE;
+
+-- ---------------------------------------------------------------------------
+-- Movers (v3, added 2026-08-16)
+-- ---------------------------------------------------------------------------
+
+-- Biggest price moves over a window, for the "what moved this week" screen.
+--
+-- Rows are per (product, variant), NOT per product like item_search. A mover
+-- IS a specific variant's move - Holofoil and Reverse Holofoil are different
+-- markets that move independently, so collapsing them would be the sub-type
+-- invariant violation, not the other way round.
+--
+-- **Averaged at both ends, not a two-point comparison.** This is the whole
+-- reason the function looks more complicated than "price then vs price now."
+-- Thinly-traded cards lurch on single sales: Charizard Star (Delta Species,
+-- 84198) sat at $4,000 for weeks, printed $980 for exactly one day, snapped
+-- back to $4,000, then settled near $990. Point-to-point that reads as -75%
+-- one day and +308% the next, and a decliners board would be topped by that
+-- kind of artifact every single day.
+--
+-- Measured on that exact card, so the effect is stated honestly rather than
+-- assumed. As of the blip day the unsmoothed move is -75.50%; smoothed over
+-- 3 days it is -25.17%. As of a week later, when the drop was real and
+-- sustained, smoothing still reports -75.10%. So averaging does NOT erase a
+-- one-day artifact - it damps it about 3x, which is enough to push it well
+-- down a leaderboard - while leaving a genuine sustained move at full
+-- magnitude. That asymmetry is the point. A bigger p_smoothing damps harder
+-- at the cost of reacting more slowly.
+--
+-- Both windows must be FULLY covered (n = p_smoothing at each end).
+-- A partial window would average fewer days and quietly weight them more.
+--
+-- p_min_price exists because percent change flatters cheap cards: without
+-- it the top decliner for a week was Shuckle at $0.06 -> $0.01 (-83%), and
+-- four of the top twelve were sub-$1 cards moving a few cents. Defaults to
+-- $1, applied to the STARTING average.
+--
+-- market_price only, no mid/low fallback - same reasoning as item_return
+-- (DEVELOPMENT_HISTORY.md Part 12): a fallback price on a two-anchor
+-- comparison is where the -99% return bug came from.
+--
+-- Restricted to the basket present in both windows, like set_return, so
+-- tcgcsv covering more or fewer products between the two dates can never
+-- masquerade as a price move.
+DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE);
+CREATE OR REPLACE FUNCTION item_movers(
+    p_days INTEGER DEFAULT 7,
+    p_category_id INTEGER DEFAULT NULL,
+    p_group_id INTEGER DEFAULT NULL,
+    p_include_sealed BOOLEAN DEFAULT FALSE,
+    p_min_price NUMERIC DEFAULT 1,
+    p_direction TEXT DEFAULT 'down',
+    p_smoothing INTEGER DEFAULT 3,
+    p_limit INTEGER DEFAULT 50,
+    p_as_of DATE DEFAULT NULL
+) RETURNS TABLE (
+    product_id INTEGER,
+    name TEXT,
+    card_number TEXT,
+    rarity TEXT,
+    set_name TEXT,
+    game TEXT,
+    sub_type_name TEXT,
+    is_sealed BOOLEAN,
+    then_price NUMERIC,
+    now_price NUMERIC,
+    pct_change NUMERIC,
+    url TEXT
+) AS $$
+DECLARE
+    v_smooth      INTEGER := GREATEST(COALESCE(p_smoothing, 3), 1);
+    v_end         DATE;
+    v_recent_from DATE;
+    v_prior_to    DATE;
+    v_prior_from  DATE;
+BEGIN
+    -- Window bounds are resolved to plain DATE variables BEFORE the query
+    -- rather than computed in a CTE. That is a 5x difference, not a style
+    -- preference: with the bounds coming from a sub-select, the planner
+    -- cannot fold them into constants, fails to use idx_snapshots_date
+    -- properly, and aggregates far more of the 41M-row table than needed -
+    -- measured spilling ~6GB to temp files. As scalars the same query is an
+    -- ordinary indexed range scan over six days.
+    v_end := COALESCE(p_as_of, (SELECT MAX(snapshot_date) FROM price_snapshots));
+    v_recent_from := v_end - (v_smooth - 1);
+    v_prior_to    := v_end - p_days;
+    v_prior_from  := v_end - p_days - (v_smooth - 1);
+
+    RETURN QUERY
+    WITH recent AS (
+        SELECT ps.product_id, ps.sub_type_name,
+               AVG(ps.market_price) AS p, COUNT(*) AS n
+        FROM price_snapshots ps
+        WHERE ps.snapshot_date BETWEEN v_recent_from AND v_end
+          AND ps.market_price IS NOT NULL
+        GROUP BY 1, 2
+    ),
+    prior AS (
+        SELECT ps.product_id, ps.sub_type_name,
+               AVG(ps.market_price) AS p, COUNT(*) AS n
+        FROM price_snapshots ps
+        WHERE ps.snapshot_date BETWEEN v_prior_from AND v_prior_to
+          AND ps.market_price IS NOT NULL
+        GROUP BY 1, 2
+    )
+    SELECT
+        pr.product_id,
+        pr.name,
+        extended_field(pr.extended_data, 'Number'),
+        extended_field(pr.extended_data, 'Rarity'),
+        g.name,
+        c.name,
+        prior.sub_type_name,
+        pr.is_sealed,
+        ROUND(prior.p, 2),
+        ROUND(recent.p, 2),
+        ROUND((recent.p - prior.p) / prior.p * 100, 2),
+        pr.url
+    FROM prior
+    JOIN recent USING (product_id, sub_type_name)
+    JOIN products pr ON pr.product_id = prior.product_id
+    JOIN groups g ON g.group_id = pr.group_id
+    JOIN categories c ON c.category_id = pr.category_id
+    WHERE prior.n = v_smooth
+      AND recent.n = v_smooth
+      AND prior.p >= COALESCE(p_min_price, 0)
+      AND prior.p > 0
+      AND (p_category_id IS NULL OR pr.category_id = p_category_id)
+      AND (p_group_id IS NULL OR pr.group_id = p_group_id)
+      AND (p_include_sealed OR pr.is_sealed = FALSE)
+    ORDER BY
+        CASE WHEN p_direction = 'up' THEN (recent.p - prior.p) / prior.p END DESC NULLS LAST,
+        CASE WHEN p_direction <> 'up' THEN (recent.p - prior.p) / prior.p END ASC NULLS LAST,
+        pr.product_id
+    LIMIT LEAST(COALESCE(p_limit, 50), 200);
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- Sets for a game, newest first, for the movers screen's set filter.
+-- Only groups that actually have tracked products, so the dropdown can't
+-- offer a set that would return nothing.
+CREATE OR REPLACE FUNCTION game_sets(p_category_id INTEGER)
+RETURNS TABLE (
+    group_id INTEGER,
+    name TEXT,
+    published_on DATE,
+    product_count INTEGER
+) AS $$
+    SELECT g.group_id, g.name, g.published_on::DATE, COUNT(p.product_id)::INTEGER
+    FROM groups g
+    JOIN products p ON p.group_id = g.group_id
+    WHERE g.category_id = p_category_id
+    GROUP BY g.group_id, g.name, g.published_on
+    ORDER BY g.published_on DESC NULLS LAST, g.name;
+$$ LANGUAGE sql STABLE;
