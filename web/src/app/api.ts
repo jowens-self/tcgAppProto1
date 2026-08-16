@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { Game, ItemSearchResult, ItemVariant, PricePoint } from './api.models';
+import { Game, GameSet, ItemSearchResult, ItemVariant, Mover, PricePoint } from './api.models';
 
 /**
  * The only thing in this app that knows a server exists.
@@ -37,6 +37,35 @@ export class CardTrackerApi {
     if (opts.limit != null) params = params.set('limit', opts.limit);
     if (opts.offset != null) params = params.set('offset', opts.offset);
     return this.http.get<ItemSearchResult[]>(`${this.base}/items/search`, { params });
+  }
+
+  sets(categoryId: number): Observable<GameSet[]> {
+    return this.http.get<GameSet[]>(`${this.base}/games/${categoryId}/sets`);
+  }
+
+  /**
+   * Biggest movers. Every option is omitted unless set, so the server's own
+   * defaults (7 days, decliners, singles, $1 floor, 3-day smoothing) apply -
+   * they live in item_movers() rather than being restated here.
+   */
+  movers(opts: {
+    days?: number;
+    game?: number | null;
+    set?: number | null;
+    includeSealed?: boolean;
+    minPrice?: number;
+    direction?: 'up' | 'down';
+    limit?: number;
+  } = {}): Observable<Mover[]> {
+    let params = new HttpParams();
+    if (opts.days != null) params = params.set('days', opts.days);
+    if (opts.game != null) params = params.set('game', opts.game);
+    if (opts.set != null) params = params.set('set', opts.set);
+    if (opts.includeSealed) params = params.set('sealed', 'true');
+    if (opts.minPrice != null) params = params.set('minPrice', opts.minPrice);
+    if (opts.direction) params = params.set('direction', opts.direction);
+    if (opts.limit != null) params = params.set('limit', opts.limit);
+    return this.http.get<Mover[]>(`${this.base}/movers`, { params });
   }
 
   item(productId: number): Observable<ItemSearchResult> {

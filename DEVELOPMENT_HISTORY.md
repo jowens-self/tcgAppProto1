@@ -1373,6 +1373,74 @@ until the owner clicks it themselves.
 
 ---
 
+## Part 19 — Movers: the screen that needed the data checked first
+
+**The ask, and why the defaults matter.** The owner specified it directly:
+past week, top percentage downward, scoped to a whole game automatically,
+with a set filter to narrow afterwards - and asked whether whole-game scope
+was too heavy. It isn't: a full game compares in ~88ms unsmoothed, ~365ms
+smoothed, against 41M rows.
+
+**But the obvious query answers the wrong question twice over.** Both
+problems only showed up by running it and reading the output, and both
+would have put garbage at the top of the default view - the exact failure
+mode from Part 12, where a technically correct number quietly answers
+something other than what was asked.
+
+*Percent change flatters cheap cards.* Unfiltered, the week's biggest
+decliner was Shuckle, $0.06 -> $0.01, -83%. Four of the top twelve were
+sub-$1 cards moving a few cents, and the genuinely interesting moves - a
+$4,000 card at -75%, a $700 card at -73% - were buried among them. Fixed
+with a minimum starting price, defaulting to $1.
+
+*Thinly-traded cards lurch on single sales.* Checking the top result
+before trusting it turned up something worse. Charizard Star (Delta
+Species) sat at $4,000 for weeks, printed $980 for exactly one day,
+snapped back to $4,000, then later settled near $990 - and its
+`market_price` was sitting *below* its own `low_price` ($20,000) the whole
+time, which is what an illiquid card looks like when the cheap copy sells
+and only expensive listings remain. As a two-point comparison that one-day
+blip reads as -75% one day and +308% the next. A decliners board built on
+point-to-point would be topped by that kind of artifact every single day.
+
+**The fix, and stating its limits honestly.** Compare the mean of the last
+N days against the mean of N days a week earlier. Measured against that
+exact card rather than assumed: the one-day artifact goes from -75.50% to
+-25.17%, while the genuine sustained drop still reports -75.10%. So
+averaging damps artifacts about 3x and leaves real moves at full
+magnitude - it does not erase them. The first draft of the comment claimed
+smoothing "discards" the blip; the measurement said otherwise and the
+comment was corrected to match. Worth noting because the temptation with a
+smoothing feature is to describe it as solving the problem rather than
+reducing it.
+
+**A 5x performance bug from where the dates were computed.** The first
+version derived the window bounds in a CTE. `EXPLAIN (ANALYZE, BUFFERS)`
+showed `temp read=775436` - roughly 6GB spilled to disk - because bounds
+coming from a sub-select can't be folded into constants, so the planner
+misused `idx_snapshots_date` and aggregated far more of the table than
+needed. Resolving them to plain `DATE` variables in plpgsql first made it
+an ordinary indexed range scan: 550ms -> 365ms. The remaining 365ms is
+simply the cost of reading six days instead of two, and was left alone
+rather than adding a multi-GB covering index that would slow every ingest
+to speed up a query run a few times a day.
+
+**Rows are per (product, variant), unlike search.** Not an inconsistency
+with Part 16: a mover *is* one specific market's move, and the two
+sub-types of a card move independently, so merging them here would be the
+sub-type violation rather than the reverse. It also makes the movers
+screen simpler than search - a row already names its exact variant, so
+clicking it goes straight to a chart with no variant-picking step.
+
+**A false alarm worth recording.** Testing the set filter through the DOM
+showed zero rows while the identical API URL returned fifty. The instinct
+was a binding bug; the cause was a 3-second wait in the test script that
+the query occasionally outran. Re-reading the DOM a moment later showed
+all fifty rows, correctly filtered. Distrust the test before the system -
+the same lesson as the interleaved-curl parse error in Part 16.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -1408,6 +1476,10 @@ until the owner clicks it themselves.
 | Product name search index | `pg_trgm` GIN index on `products.name` | Leading-wildcard `ILIKE` can't use a btree — was a full seq scan on every keystroke, ~30ms to ~1.3ms; see Part 16 |
 | API DB connections | One connection per request, no pool | JDBC `Connection` isn't thread-safe and Javalin is multithreaded; a shared one corrupts intermittently rather than failing cleanly; see Part 16 |
 | API framework | Javalin, not Spring Boot | A handful of read-only JSON endpoints over existing SQL functions doesn't warrant a framework; see Part 16 |
+| Movers price basis | Mean of N days at each end, not two point observations | Thinly-traded cards lurch on single sales; measured to damp a one-day artifact ~3x while leaving a real move at full magnitude; see Part 19 |
+| Movers minimum price | $1 floor on the starting price, by default | Percent change flatters cheap cards — unfiltered the top decliner was a $0.06 card moving 5 cents; see Part 19 |
+| Movers row granularity | Per (product, variant), unlike search's per-product | A mover is one specific market's move; sub-types move independently; see Part 19 |
+| SQL window bounds | Resolved to plpgsql DATE variables, never computed in a CTE | Bounds from a sub-select can't be folded to constants — planner spilled ~6GB to temp files, 550ms vs 365ms; see Part 19 |
 
 ---
 
@@ -1489,10 +1561,9 @@ able to name, not just recognize:
   resolved 2026-08-15 (Part 18): removed entirely, verified zero requests
   to any TCGplayer host. The rule is now explicit in CLAUDE.md that this
   includes CDN subdomains and images, not just crawling.
-- **More read endpoints** — search/variants/history cover lookup. The
-  "biggest movers" and "set overview" screens considered in Part 16 would
-  each need their own endpoint; `set_return()`/`set_value()` already
-  exist and are unexposed.
+- **Set overview screen** — `set_return()`/`set_value()` exist and are
+  tested but still unexposed over the API. The cheapest remaining screen:
+  an endpoint and a table, no new SQL.
 - **API hardening if it ever leaves localhost** — connection-per-request
   should become a pool (`ApiServer.withRepo` is the only place to
   change), and the CORS rule would need revisiting. Fine as-is for a

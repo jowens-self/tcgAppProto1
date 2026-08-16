@@ -71,3 +71,37 @@ export interface PricePoint {
   directLowPrice: number | null;
   trendablePrice: number | null;
 }
+
+/** A set within a game, for the movers set filter. */
+export interface GameSet {
+  groupId: number;
+  name: string;
+  publishedOn: string | null;
+  productCount: number;
+}
+
+/**
+ * One row of the movers board.
+ *
+ * Per (product, VARIANT), unlike ItemSearchResult which is per product — a
+ * mover is one specific market's move, and Holofoil / Reverse Holofoil of
+ * the same card move independently.
+ *
+ * thenPrice/nowPrice are averages over the smoothing window at each end, not
+ * single-day prices. Thinly-traded cards lurch on single sales, so a raw
+ * two-point comparison puts artifacts at the top of the board.
+ */
+export interface Mover {
+  productId: number;
+  name: string;
+  cardNumber: string | null;
+  rarity: string | null;
+  setName: string;
+  game: string;
+  subTypeName: string;
+  isSealed: boolean;
+  thenPrice: number;
+  nowPrice: number;
+  pctChange: number;
+  url: string | null;
+}

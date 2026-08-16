@@ -182,6 +182,8 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | `GET /api/items/{id}` | One product's identity |
 | `GET /api/items/{id}/variants` | Its variants, with current price + all-time high |
 | `GET /api/items/{id}/history?subType=` | Price time series for one variant |
+| `GET /api/movers` | Biggest price moves over a window |
+| `GET /api/games/{id}/sets` | Sets in a game, for the movers filter |
 
 Search takes `q` (required), plus optional `game` (category id),
 `sealed=false` to hide sealed product, `limit` (default 25, capped at 200)
@@ -284,7 +286,8 @@ Structure, all standalone components with signals:
 |---|---|
 | `api.models.ts` | TypeScript mirrors of the Java records (no `imageUrl` — see below) |
 | `api.ts` | The only file that knows a server exists |
-| `search.ts/.html/.css` | The screen: query, filters, results, detail |
+| `search.ts/.html/.css` | Search screen: query, filters, results, detail |
+| `movers.ts/.html/.css` | Movers screen: window/game/set filters, table |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library |
 
 Layout is two columns — results left, detail right and sticky, so the
@@ -295,6 +298,38 @@ columns stack.
 The chart plots `trendablePrice` (the fallback the server already applied)
 and drops days with no price rather than plotting them as zero — a missing
 observation isn't a price of $0.
+
+### Movers
+
+`GET /api/movers` — all parameters optional, because the defaults that
+define the screen's default view live in `item_movers()` so psql callers
+get them too: 7 days, biggest drops, singles only, $1 minimum, 3-day
+smoothing, 50 rows.
+
+```bash
+curl "localhost:7070/api/movers?days=7&game=3&direction=down"
+curl "localhost:7070/api/movers?game=3&set=23353&direction=up"
+```
+
+Takes `days`, `game`, `set`, `sealed=true`, `minPrice`, `direction`
+(`up`/`down`), `smoothing`, `limit`.
+
+**Rows are per (product, variant)**, unlike search which is per product —
+a mover is one specific market's move, and the sub-types of a card move
+independently.
+
+**Prices at each end are averages over the smoothing window, not single
+days.** Thinly-traded cards lurch on single sales: Charizard Star (84198)
+sat at $4,000 for weeks, printed $980 for exactly one day, snapped back,
+then settled near $990. Point-to-point that reads as -75% one day and
++308% the next. Measured on that card, 3-day smoothing takes the one-day
+artifact from -75.50% to -25.17% while still reporting the genuine
+sustained drop at -75.10% — damped ~3x, not erased, which is enough to
+keep artifacts off the top of the board without hiding real moves.
+
+**`minPrice` defaults to $1** because percent change flatters cheap cards.
+Without it the week's top decliner was Shuckle at $0.06 → $0.01 (-83%),
+and four of the top twelve were sub-$1 cards moving pennies.
 
 ## Example queries
 

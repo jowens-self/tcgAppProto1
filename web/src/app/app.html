@@ -1,1 +1,26 @@
-<app-search />
+<nav class="tabs" aria-label="Screens">
+  <button
+    type="button"
+    class="tab"
+    [class.active]="tab() === 'search'"
+    [attr.aria-current]="tab() === 'search' ? 'page' : null"
+    (click)="tab.set('search')"
+  >
+    Search
+  </button>
+  <button
+    type="button"
+    class="tab"
+    [class.active]="tab() === 'movers'"
+    [attr.aria-current]="tab() === 'movers' ? 'page' : null"
+    (click)="tab.set('movers')"
+  >
+    Movers
+  </button>
+</nav>
+
+@if (tab() === 'search') {
+  <app-search />
+} @else {
+  <app-movers />
+}
