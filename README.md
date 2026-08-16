@@ -9,9 +9,10 @@ below.
 ## What it deliberately does not do
 
 - **No requests to tcgplayer.com at all** — not the site, not its image
-  CDN, not from the server, not from the browser. No product images, for
-  that reason. Outbound *links* are fine: an `href` fetches nothing until
-  you click it yourself.
+  CDN, not from the server, not from the browser. Card images come from
+  pokemontcg.io instead (see "Card images"), cached and served locally.
+  Outbound *links* are fine: an `href` fetches nothing until you click it
+  yourself.
 - **No requests to eBay, ever.** Same rule, same reason — another real
   seller account.
 - **No new outbound hosts without explicit permission.** `tcgcsv.com` is
