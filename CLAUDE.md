@@ -87,16 +87,6 @@ Any change to request volume, retry logic, or concurrency in
 `TcgCsvPriceSource` or `Throttle` should be checked against these numbers
 before merging.
 
-## Design constraints (from README — keep in sync, don't duplicate details)
-
-See [README.md](README.md) "What it deliberately does not do" and "Design
-decisions worth not undoing" for: no scraping tcgplayer.com directly, no
-contact with eBay, no automated login, variant-aware pricing key,
-append-only inserts, and the `PriceSource` interface boundary.
-
-Note this list previously included "nothing public" - removed 2026-08-16.
-That was never an owner constraint; see the provenance section above.
-
 ## Hard constraints — do not violate, do not "improve"  **[OWNER]**
 
 Every rule in this section came from the owner directly, most of them
@@ -443,10 +433,11 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   a multi-user version is in scope, not a violation. The one genuinely
   open question is card-art redistribution - showing Pokemon art publicly
   is not the same act as showing it in a local tool.
-- Angular front end on top of the read API - first screen is Card /
-  Product Search (the three endpoints it needs are built and verified)
-- More read endpoints: `set_return()`/`set_value()` exist but aren't
-  exposed; "biggest movers" would need its own function + endpoint
+- Set overview screen - `set_return()`/`set_value()` are built and tested
+  but still unexposed. The cheapest screen left: one endpoint, one table,
+  no new SQL.
+- One Piece card images - no permitted source exists yet; needs its own
+  conversation before any code.
 
 Completed items aren't tracked here - git history and
 DEVELOPMENT_HISTORY.md carry them, and DEVELOPMENT_HISTORY.md's "What's
