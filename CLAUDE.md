@@ -1,23 +1,51 @@
 # CardTracker
 
-A personal tool for a TCGplayer seller. Pulls daily TCG price data from a
-third-party mirror into local Postgres, append-only, to build a price history
-the owner controls. Joins against their own inventory to answer: what's up,
-what's down, what's dead stock, what's it worth this week vs last month.
+A TCG price-history app, built by and initially for a TCGplayer/eBay
+seller but **intended to be shared** - see below. Pulls daily price data
+from a third-party mirror into Postgres, append-only, to build a price
+history it controls. Answers: what's up, what's down, what's dead stock,
+what's it worth this week vs last month.
 Started Pokemon-only; which games are actually tracked is controlled by the
 `tracked_categories` table, not hardcoded — see "Multi-game support" below.
 
-**Current state, not a constraint:** today this runs locally for one
-person - no auth, no hosting, nobody else using it. That is a description
-of where the project happens to be, and it should never be cited as a rule
-against building something. It was written in the initial commit as a
-statement of fact and then repeatedly quoted back as if the owner had
-forbidden a hosted or multi-user version. They never said that. Do not
-treat "it's local today" as "it must stay local."
+**This is intended to ship.** Stated by the owner 2026-08-16: the app is
+meant to be shared, not a personal tool, and features should be "universal
+enough to warrant shipping." It runs locally today because that is how far
+it has got, not because it is meant to stay there. Design for other people
+using it.
 
-The genuinely hard rules are the ones under "Hard constraints" below, and
-they came from the owner directly: never contact TCGplayer or eBay, no new
-outbound hosts without permission, no automated logins.
+Several things written before that was clear now read as too small, and
+are marked **[SHIPPING GAP]** below where they'll need revisiting - the
+read-only API, connection-per-request, localhost-only CORS, and the
+"personal tool" framing generally. None are wrong today; all are wrong for
+a shipped app.
+
+---
+
+## How to read this file: provenance
+
+Rules here have three different origins, and they do not carry the same
+weight. This section exists because one of them - "Not a product. No
+users, no auth, no server, nothing public" - was written by Claude in the
+initial commit as a *description*, then quoted by later sessions as though
+the owner had forbidden a hosted version, and eventually used to argue
+against the owner's own feature idea. They had never said it.
+
+Every rule below is tagged:
+
+- **[OWNER]** - the owner said this. Treat as binding. If it seems to
+  block something, raise it with them; don't reinterpret it.
+- **[VERIFIED]** - an external fact checked against a real source or
+  measured directly (tcgcsv's published limits, an API's actual behaviour,
+  a number produced by a query). Binding while it stays true; re-check if
+  circumstances change.
+- **[CLAUDE]** - a design decision Claude made and recorded. Usually
+  reasonable, sometimes load-bearing, but **not** something the owner
+  ruled on. Revisit freely when there's a reason; say so rather than
+  citing it as a constraint.
+
+Untagged older text predates this audit (2026-08-16); treat it as
+**[CLAUDE]** unless it says otherwise inline.
 
 **Goal: one `price_snapshots` row per day for every card the owner has
 included, with no gaps.** Completeness over time is the point — a missing
@@ -25,7 +53,10 @@ day is a defect, not a rounding error. `ingest_runs` exists so a gap is
 visible rather than silently swallowed; a failed or skipped day should be
 noticed and backfilled, not shrugged off.
 
-## tcgcsv.com usage constraints — do not violate
+## tcgcsv.com usage constraints — do not violate  **[VERIFIED]**
+
+Checked against tcgcsv's own docs/FAQ on 2026-08-12. Their published
+limits, not our policy.
 
 This app's only external dependency is `tcgcsv.com`, a free, no-SLA mirror
 run by one person. Verified against [tcgcsv.com/docs](https://tcgcsv.com/docs)
@@ -60,11 +91,16 @@ before merging.
 
 See [README.md](README.md) "What it deliberately does not do" and "Design
 decisions worth not undoing" for: no scraping tcgplayer.com directly, no
-automated login, nothing public, variant-aware pricing key, append-only
-inserts, and the `PriceSource` interface boundary. Those are the load-bearing
-constraints for this project — respect them when making changes.
+contact with eBay, no automated login, variant-aware pricing key,
+append-only inserts, and the `PriceSource` interface boundary.
 
-## Hard constraints — do not violate, do not "improve"
+Note this list previously included "nothing public" - removed 2026-08-16.
+That was never an owner constraint; see the provenance section above.
+
+## Hard constraints — do not violate, do not "improve"  **[OWNER]**
+
+Every rule in this section came from the owner directly, most of them
+reaffirmed forcefully. These are the ones that protect real income.
 
 These are risk decisions, not style preferences. The owner sells on
 **both TCGplayer and eBay**, and both are real income; the project is
@@ -78,7 +114,7 @@ reason from "this specific request seems harmless" to "therefore it's
 allowed." The owner's livelihood is on the other side of that judgment
 call, and it is not one to make on their behalf.
 
-- **Never contact eBay.** Added 2026-08-15 at the owner's explicit
+- **[OWNER] Never contact eBay.** Added 2026-08-15 at the owner's explicit
   instruction: they sell there as well. No API calls, no page fetches, no
   image hotlinking, no scraping, no automation - and not "just to check
   something." Same standard as TCGplayer below, for the same reason:
@@ -102,15 +138,15 @@ permission covers Pokemon images specifically; it is not a general
 licence to add image providers. One Piece has no source yet and needs its
 own conversation.
 
-- **Never scrape tcgplayer.com.** Their terms prohibit crawling without
+- **[OWNER] Never scrape tcgplayer.com.** Their terms prohibit crawling without
   permission. No HTML fetching, no headless browser, no "public search API"
   calls. Not for one card, not as a fallback, not behind a flag.
-- **Never automate a login.** Inventory arrives as a CSV the owner exports by
+- **[OWNER] Never automate a login.** Inventory arrives as a CSV the owner exports by
   hand from the Seller Portal and drops in `inbox/`. That manual step is the
   design, not a gap to close.
-- **All outbound traffic goes to tcgcsv.com only.** If a task seems to require
+- **[OWNER] All outbound traffic goes to tcgcsv.com only.** If a task seems to require
   hitting TCGplayer directly, stop and ask rather than finding a way.
-- **No product images. Not from any TCGplayer host, in any component.**
+- **[OWNER] No product images. Not from any TCGplayer host, in any component.**
   Reinforced 2026-08-15 after the front end shipped with result thumbnails
   bound to `products.image_url`, which points at
   `tcgplayer-cdn.tcgplayer.com` - roughly 50 browser requests to a
@@ -134,18 +170,22 @@ own conversation.
 
 If asked to add scraping, say what it risks before writing it.
 
-## Data invariants
+## Data invariants  **[MIXED]**
 
-- **Prices key on `(product_id, sub_type_name, snapshot_date)`.** Pokemon cards
+Domain facts the owner supplied (sub-types trade separately, sellers
+price-park) plus engineering rules Claude derived from them. Tagged
+individually.
+
+- **[OWNER] Prices key on `(product_id, sub_type_name, snapshot_date)`.** Pokemon cards
   exist as Normal / Holofoil / Reverse Holofoil of the same product and trade
   at different prices. Never collapse sub-types or aggregate across them.
-- **`price_snapshots` is append-only.** Inserts use `ON CONFLICT DO NOTHING`.
+- **[CLAUDE] `price_snapshots` is append-only.** Inserts use `ON CONFLICT DO NOTHING`.
   Never change this to `DO UPDATE`. Re-running a pull must be safe; a bad run
   must never overwrite a good observation. The history is the whole asset.
-- **Never compute on `high_price`.** Sellers "price park" — listing at absurd
+- **[OWNER] Never compute on `high_price`.** Sellers "price park" — listing at absurd
   values so nothing sells. Store it, ignore it. Trend on `market_price`, with
   `mid` then `low` as fallback (see `PriceSnapshot.trendablePrice`).
-- **Our own "all-time high" is computed on demand, not tracked in a table.**
+- **[CLAUDE] Our own "all-time high" is computed on demand, not tracked in a table.**
   Decided 2026-08-12: `MAX(...) GROUP BY product_id, sub_type_name` against
   `price_snapshots`, run whenever it's needed - see `item_all_time_high()`
   in `sql/functions.sql`. Deliberately not an incrementally-updated table:
@@ -164,7 +204,7 @@ If asked to add scraping, say what it risks before writing it.
   return-calculation bug), so there's no reason to withhold the fallback
   here the way `item_return`/`set_return` deliberately do for their
   start/end anchors.
-- **A set's price/return is defined over its singles only - never sealed
+- **[OWNER] A set's price/return is defined over its singles only - never sealed
   product.** Decided 2026-08-13, after finding sealed product (booster
   boxes, ETBs, tins, cases) was dominating set-level numbers once
   `is_sealed` became real - see "Sealed product" below for the concrete
@@ -178,9 +218,9 @@ If asked to add scraping, say what it risks before writing it.
   contributes to a set-level aggregate. "The set" and "sealed product
   belonging to that set" are two categorically different things, tracked
   at two different granularities (individual items vs. sets as a whole).
-- **`product_id` rides on every row through every transform.** Outbound links
+- **[OWNER] `product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
-- **"Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
+- **[CLAUDE] "Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
   Decided 2026-08-12. `App`, `BackfillArchive`, and `ProductPullTest` all
   compute it this way, matching the archive backfill's own day boundary and
   the container's default clock - so `snapshot_date` means the same thing
@@ -194,7 +234,7 @@ If asked to add scraping, say what it risks before writing it.
   `price_snapshots` is append-only and that row was valid under the
   convention in effect when it was written. A one-time, already-happened
   quirk, not an ongoing bug; nothing later depends on it being "fixed."
-- **Percent change returns null on a zero or negative starting price.** Do not
+- **[CLAUDE] Percent change returns null on a zero or negative starting price.** Do not
   "fix" this to return 0 or infinity. Every return-calculation query so far
   has been ad-hoc SQL (`CASE WHEN start_price > 0 THEN ... ELSE NULL END`,
   see DEVELOPMENT_HISTORY.md Part 12) - there's no Java implementation of
@@ -202,7 +242,10 @@ If asked to add scraping, say what it risks before writing it.
   removed 2026-08-13; reintroduce it if/when percent-change logic actually
   moves into application code instead of interactive SQL).
 
-## Architecture intent
+## Architecture intent  **[CLAUDE]**
+
+Claude's design decisions unless marked otherwise. Revisit as needed -
+and several now need it, see [SHIPPING GAP] markers.
 
 `PriceSource` and `InventorySource` exist so the data sources are swappable.
 TCGCSV has no per-condition pricing and no uptime guarantee; a paid provider
@@ -217,31 +260,34 @@ ingested server-side).
 2026-08-14 - see DEVELOPMENT_HISTORY.md Part 16 and README "Read API").
 Rules it establishes, worth keeping:
 
-- **It is read-only, and should stay that way.** No endpoint writes.
+- **[CLAUDE] [SHIPPING GAP] It is read-only, and should stay that way.**
+  *The community showcase needs writes. "Ingestion stays separate from the
+  API" is the part actually worth keeping; "no endpoint ever writes" is
+  not a rule the owner set.* No endpoint writes.
   Ingestion lives in `App`/`BackfillArchive` where the append-only
   guarantees are; an API that can write is an API that can violate them.
-- **Handlers call SQL functions, not inline SQL.** Every method on
+- **[CLAUDE] Handlers call SQL functions, not inline SQL.** Every method on
   `QueryRepository` is a thin call into `sql/functions.sql`. That keeps
   query logic verifiable directly in psql - which is how this project
   checks its own numbers - and stops the API and hand-written analysis
   from quietly diverging. New endpoint, new SQL function.
-- **Reads go through `QueryRepository`, not `PriceRepository`.** The
+- **[CLAUDE] Reads go through `QueryRepository`, not `PriceRepository`.** The
   latter is write-only by design; keeping them apart stops ingestion and
   the API surface from coupling.
-- **One DB connection per request** (`ApiServer.withRepo`). A JDBC
+- **[CLAUDE] [SHIPPING GAP] One DB connection per request** (`ApiServer.withRepo`). A JDBC
   `Connection` is not thread-safe and Javalin is multithreaded - sharing
   one corrupts results intermittently instead of failing cleanly. That
   method is the single place to add a pool if this ever leaves localhost.
-- **`high_price` is absent from every response**, and `PricePoint` has no
+- **[OWNER] `high_price` is absent from every response**, and `PricePoint` has no
   field for it - the "store it, ignore it" rule made structural rather
   than left as something a future chart author must remember. Same for
   `trendable_price`, which is returned precomputed so the
   market->mid->low fallback can't be re-derived wrong.
-- **Search returns products, not (product, variant) rows.** One hit per
+- **[CLAUDE] Search returns products, not (product, variant) rows.** One hit per
   product carrying `variant_count`; `item_variants()` supplies real
   per-variant prices. Anything that puts a single "price" on a
   multi-variant product violates the sub-type invariant above.
-- **Search parses "name + number" from one string** (added 2026-08-14).
+- **[OWNER] Search parses "name + number" from one string** (added 2026-08-14).
   `item_search('Charizard 004')` splits into name + card number; `#` forces
   the split. Two rules worth not breaking: (1) the last token becomes a
   number only if it contains a digit, which is what keeps `Charizard ex`,
@@ -256,7 +302,7 @@ Rules it establishes, worth keeping:
   match the set size or the set code instead. The digits-only match is
   allowed only when the typed number has no letters, otherwise `XY67a`
   would also match `XY67`.
-- **Search results must carry `card_number` and `rarity`.** Added
+- **[OWNER] Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03
   Obsidian Flames has four "Charizard ex" - 125/197 Double Rare $5.65,
@@ -268,10 +314,13 @@ Rules it establishes, worth keeping:
   34,435 singles), while `extendedData` carries `Number` and `Rarity`
   for 100% of singles in both tracked games (verified 2026-08-14). Any
   new endpoint returning product identity should carry them too.
-- **CORS is scoped to `localhost:4200`.** The data isn't secret, but no
+- **[CLAUDE] [SHIPPING GAP] CORS is scoped to `localhost:4200`.** The data isn't secret, but no
   site a browser happens to visit should be able to query it.
 
-## Multi-game support (decided 2026-08-13/14)
+## Multi-game support (decided 2026-08-13/14)  **[MIXED]**
+
+Owner asked whether non-Pokemon data existed and warned against assuming
+Pokemon quirks generalize; the tracked_categories design is Claude's.
 
 **Not Pokemon-only anymore, by design.** This started as a Pokemon-specific
 tool (`TcgCsvUrls.POKEMON` hardcoded everywhere), but tcgcsv covers ~90
@@ -480,7 +529,10 @@ would silently break an unattended nightly pull until Docker Desktop is
 reopened by hand. Enable "Start Docker Desktop when you log in" in Docker
 Desktop's own Settings > General before relying on any scheduled job again.
 
-## Commit message style (decided 2026-08-14)
+## Commit message style (decided 2026-08-14)  **[OWNER]**
+
+Owner asked for tighter commit bodies that don't re-narrate what
+DEVELOPMENT_HISTORY.md already covers.
 
 Keep commit message bodies tight and scoped to *this* change - what changed
 and why, enough for `git log`/`git blame`/a bisect six months from now.
@@ -495,7 +547,7 @@ rows deleted," "$25,100.93 -> $2,792.05") - that's the kind of thing a
 diff alone won't show and is genuinely useful at commit-message scope, not
 narrative bloat.
 
-## Known unknowns — verify before trusting
+## Known unknowns — verify before trusting  **[VERIFIED]**
 
 1. ~~Field names in `TcgCsvPriceSource` are unverified.~~ **Verified 2026-08-12**
    via direct curl against `tcgcsv.com/tcgplayer/3/groups` and
@@ -524,7 +576,10 @@ narrative bloat.
    Caveat: this only tests 2024-02-08 vs now (the earliest archive available)
    and only within Pokemon. Good enough to stop treating this as an open risk.
 
-## Excluded products
+## Excluded products  **[MIXED]**
+
+The code-card problem was found in the data and confirmed by the owner's
+domain knowledge; the exclusion mechanism is Claude's design.
 
 **Code cards are excluded entirely, everywhere - decided 2026-08-13.** While
 building the first real analytical queries (% return over time, per card and
@@ -575,7 +630,10 @@ If another category of product turns out to need the same treatment later
 this same table and mechanism rather than inventing a new one - `reason` is
 already a free-text column for exactly that.
 
-## Sealed product (`is_sealed`) is now real, not a placeholder
+## Sealed product (`is_sealed`) is now real, not a placeholder  **[MIXED]**
+
+Owner spotted that sealed product was polluting set-level numbers;
+classifier and implementation are Claude's.
 
 **Implemented 2026-08-13**, immediately after the code-card work above.
 Set-level aggregates were still badly skewed even after excluding code
@@ -631,11 +689,10 @@ should filter on `is_sealed` explicitly rather than assume "the group" means
   prompts ("best beach vibes", "favourite darker-theme art") over card
   art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md
   "What's still open" for the full note. **Read it before building any of
-  this**: a public version reverses the "nothing public, no users, no
-  auth" constraint above and raises a card-art redistribution question
-  that hasn't been answered. The suggested first step is a single-user
-  version, whose schema is identical, so neither question has to be
-  settled yet.
+  this**: the owner confirmed 2026-08-16 that the app is meant to ship, so
+  a multi-user version is in scope, not a violation. The one genuinely
+  open question is card-art redistribution - showing Pokemon art publicly
+  is not the same act as showing it in a local tool.
 - Angular front end on top of the read API - first screen is Card /
   Product Search (the three endpoints it needs are built and verified)
 - More read endpoints: `set_return()`/`set_value()` exist but aren't

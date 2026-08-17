@@ -1,7 +1,8 @@
 # CardTracker
 
-A personal tool. Pulls daily TCG price data from the TCGCSV mirror into a
-local Postgres database, append-only, so you build a price history you own.
+A TCG price-history app — built by a seller, **intended to be shared**.
+Pulls daily price data from the TCGCSV mirror into Postgres, append-only,
+so you build a price history you own.
 Started Pokemon-only; which games are actually tracked is controlled by the
 `tracked_categories` table, not hardcoded - see "Tracking another game"
 below.
