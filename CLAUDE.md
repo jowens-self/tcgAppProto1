@@ -685,6 +685,20 @@ should filter on `is_sealed` explicitly rather than assume "the group" means
 
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
+- **Known rough edges in `ImportCardImages`** (found 2026-08-16, not yet
+  fixed - the jar could not be rebuilt while an import was running):
+  - It re-downloads the whole 174-set catalog on *every* run, including a
+    `--group` run needing a handful of cards. That's a 3-5 minute tax per
+    invocation and makes set-by-set importing tedious. Cache the catalog
+    to disk with a TTL.
+  - `--limit 0` prints "Nothing to do - every Pokemon single already has a
+    card_images row", which is false; it just selected zero rows. The
+    message should distinguish "nothing pending" from "you asked for none."
+  - **The image directory resolves relative to the process's working
+    directory.** Launch it from anywhere but the project root and images
+    land somewhere the API can't serve, silently. This already happened
+    once. Either resolve relative to the jar, or refuse to start when the
+    target directory isn't the expected one.
 - **Community art showcase (owner's idea, 2026-08-16)** - themed voting
   prompts ("best beach vibes", "favourite darker-theme art") over card
   art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md

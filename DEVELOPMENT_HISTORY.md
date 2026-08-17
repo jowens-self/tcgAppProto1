@@ -1648,6 +1648,27 @@ if it later goes public; identity and hosting get added around it. That
 way something exists now and the pivot stays a real decision rather than
 one backed into.
 
+**Confirmed 2026-08-16: the app is meant to ship**, so a multi-user
+version is in scope from the start rather than something to grow into.
+Identity should be in the schema from day one (votes reference a voter,
+uniqueness enforced per (voter, prompt) in the database rather than in
+application code) - vote integrity is the thing that cannot be retrofitted
+cleanly.
+
+**Three design questions the owner is thinking about, and their answers
+shape the tables - do not guess at them:**
+
+1. **What is a vote?** One favourite per prompt, a ranked top 3, or
+   upvote-as-many-as-you-like. Three different schemas and three very
+   different behaviours: single-pick is cleanest and hardest to game;
+   multi-upvote surfaces more art but rewards whoever votes most.
+2. **Where do candidates come from?** Any card in the catalog via open
+   nomination, or a curated shortlist per prompt. Open is more fun;
+   curated avoids someone nominating a basic energy card as a joke.
+3. **What is a period?** Fixed (weekly/monthly) or opened and closed by
+   hand. Determines whether prompts need a scheduler or just a status
+   column.
+
 Not started. Schema not yet designed.
 
 ### Other open items
