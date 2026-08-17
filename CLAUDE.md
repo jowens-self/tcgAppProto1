@@ -7,7 +7,17 @@ what's down, what's dead stock, what's it worth this week vs last month.
 Started Pokemon-only; which games are actually tracked is controlled by the
 `tracked_categories` table, not hardcoded — see "Multi-game support" below.
 
-Not a product. No users, no auth, no server, nothing public.
+**Current state, not a constraint:** today this runs locally for one
+person - no auth, no hosting, nobody else using it. That is a description
+of where the project happens to be, and it should never be cited as a rule
+against building something. It was written in the initial commit as a
+statement of fact and then repeatedly quoted back as if the owner had
+forbidden a hosted or multi-user version. They never said that. Do not
+treat "it's local today" as "it must stay local."
+
+The genuinely hard rules are the ones under "Hard constraints" below, and
+they came from the owner directly: never contact TCGplayer or eBay, no new
+outbound hosts without permission, no automated logins.
 
 **Goal: one `price_snapshots` row per day for every card the owner has
 included, with no gaps.** Completeness over time is the point — a missing

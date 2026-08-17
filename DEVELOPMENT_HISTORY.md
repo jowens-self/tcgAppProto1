@@ -1608,19 +1608,28 @@ surface art that price data never would, and give a reason to come back
 each period. It's also the first feature idea for this project that isn't
 about money, which is probably the point.
 
-**This is a pivot, not a feature - flagged so it's chosen deliberately.**
-CardTracker's founding constraint is "Not a product. No users, no auth,
-no server, nothing public." Community voting needs a hosted server, user
-identity, write endpoints (the API is read-only *by design*, see Part 16),
-plus moderation and anti-vote-gaming. Every one of those reverses a
-decision the rest of this project rests on.
+**Correction, same day.** This was first written up here as a "pivot"
+that contradicted a founding constraint, quoting "Not a product. No users,
+no auth, no server, nothing public." The owner pushed back - they never
+said that. Checking `git log -S` confirms it: the line entered in the
+initial commit (f7e73c6) inside Claude-authored docs, as a description of
+what the project *was* at the time, and was then quoted by later sessions
+as though it were a prohibition the owner had issued. It wasn't. Corrected
+in CLAUDE.md and README so it reads as current state rather than a rule.
 
-**Two things to settle before any public version ships:**
+Worth internalising as a pattern: a factual note about where a project
+stands can harden into an imagined constraint purely through repetition,
+and then get used to argue against the owner's own ideas. Anything in
+these docs phrased as a limit should be traceable to something the owner
+actually said.
 
-1. **Reversing "nothing public."** Load-bearing for essentially every
-   design call recorded in this document. Worth reversing on purpose
-   rather than by accretion.
-2. **Card art licensing - the one with real exposure.** Showing Pokemon
+What building it genuinely requires is unchanged and unremarkable: a
+hosted server, user identity, write endpoints (the API is read-only today,
+see Part 16), and anti-vote-gaming. Those are work items, not violations.
+
+**One thing that does deserve a real answer first:**
+
+1. **Card art licensing - the one with actual exposure.** Showing Pokemon
    art in a private local tool is a different act from serving it
    publicly at scale. The art belongs to The Pokemon Company;
    pokemontcg.io's terms cover access to *their API*, not a
@@ -1630,7 +1639,7 @@ decision the rest of this project rests on.
    card art under a name traceable to them deserves the same scrutiny -
    priced before building, not after.
 
-**Suggested staging, which avoids both for now:** build it single-player
+**Suggested staging, which sidesteps that for now:** build it single-player
 first - themed prompts, browse art, pick favourites, view your picks per
 period. Useful on its own, uses the images being imported in Part 20, and
 crucially **the data model is identical to the multi-user version**:

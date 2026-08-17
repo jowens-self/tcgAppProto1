@@ -18,7 +18,8 @@ below.
 - **No new outbound hosts without explicit permission.** `tcgcsv.com` is
   the only one. Anything else gets asked about first, before any code.
 - **No automated login.** Your inventory comes from a CSV you export yourself.
-- **Nothing public.** No server, no auth, no users.
+- **Currently local-only** — one person, no auth, no hosting. That's
+  where it is today, not a rule about where it can go.
 
 Traffic goes only to `tcgcsv.com`, a third-party mirror on its own
 infrastructure. Your marketplace accounts are never involved.
