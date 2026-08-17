@@ -617,6 +617,15 @@ should filter on `is_sealed` explicitly rather than assume "the group" means
 
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
+- **Community art showcase (owner's idea, 2026-08-16)** - themed voting
+  prompts ("best beach vibes", "favourite darker-theme art") over card
+  art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md
+  "What's still open" for the full note. **Read it before building any of
+  this**: a public version reverses the "nothing public, no users, no
+  auth" constraint above and raises a card-art redistribution question
+  that hasn't been answered. The suggested first step is a single-user
+  version, whose schema is identical, so neither question has to be
+  settled yet.
 - Angular front end on top of the read API - first screen is Card /
   Product Search (the three endpoints it needs are built and verified)
 - More read endpoints: `set_return()`/`set_value()` exist but aren't

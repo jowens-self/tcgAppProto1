@@ -1594,6 +1594,55 @@ able to name, not just recognize:
 
 ## What's still open
 
+### Community art showcase — owner's idea, 2026-08-16
+
+**The idea, in the owner's words:** a community showcase that highlights
+what people vote for as favourite *art* over a period, with rotating
+themed prompts rather than one generic "best card" - examples given were
+"what card gives best beach vibes" and "favourite card using a darker
+theme."
+
+The rotating prompt is the interesting half. A single "best card" poll
+converges on the same expensive chase cards forever; themed prompts
+surface art that price data never would, and give a reason to come back
+each period. It's also the first feature idea for this project that isn't
+about money, which is probably the point.
+
+**This is a pivot, not a feature - flagged so it's chosen deliberately.**
+CardTracker's founding constraint is "Not a product. No users, no auth,
+no server, nothing public." Community voting needs a hosted server, user
+identity, write endpoints (the API is read-only *by design*, see Part 16),
+plus moderation and anti-vote-gaming. Every one of those reverses a
+decision the rest of this project rests on.
+
+**Two things to settle before any public version ships:**
+
+1. **Reversing "nothing public."** Load-bearing for essentially every
+   design call recorded in this document. Worth reversing on purpose
+   rather than by accretion.
+2. **Card art licensing - the one with real exposure.** Showing Pokemon
+   art in a private local tool is a different act from serving it
+   publicly at scale. The art belongs to The Pokemon Company;
+   pokemontcg.io's terms cover access to *their API*, not a
+   redistribution right for a public product. Given how carefully the
+   owner's TCGplayer and eBay seller accounts are protected elsewhere in
+   these rules (see CLAUDE.md), a public site built on someone else's
+   card art under a name traceable to them deserves the same scrutiny -
+   priced before building, not after.
+
+**Suggested staging, which avoids both for now:** build it single-player
+first - themed prompts, browse art, pick favourites, view your picks per
+period. Useful on its own, uses the images being imported in Part 20, and
+crucially **the data model is identical to the multi-user version**:
+prompts, periods, candidate items, votes. Nothing in the schema changes
+if it later goes public; identity and hosting get added around it. That
+way something exists now and the pivot stays a real decision rather than
+one backed into.
+
+Not started. Schema not yet designed.
+
+### Other open items
+
 - **One Piece added (Part 15)** — 918 days backfilled, catalog populated,
   `is_sealed` and the query functions all confirmed working against real
   data. A third game (or more) would be the next test of how well this
