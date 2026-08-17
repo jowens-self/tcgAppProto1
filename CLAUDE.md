@@ -9,7 +9,7 @@ Started Pokemon-only; which games are actually tracked is controlled by the
 `tracked_categories` table, not hardcoded — see "Multi-game support" below.
 
 **This is intended to ship.** Stated by the owner 2026-08-16: the app is
-meant to be shared, not a personal tool, and features should be "universal
+meant to be shared, not just a personal tool, and features should be "universal
 enough to warrant shipping." It runs locally today because that is how far
 it has got, not because it is meant to stay there. Design for other people
 using it.
@@ -58,8 +58,8 @@ noticed and backfilled, not shrugged off.
 Checked against tcgcsv's own docs/FAQ on 2026-08-12. Their published
 limits, not our policy.
 
-This app's only external dependency is `tcgcsv.com`, a free, no-SLA mirror
-run by one person. Verified against [tcgcsv.com/docs](https://tcgcsv.com/docs)
+This app's only external dependency right now is `tcgcsv.com`, a free, no-SLA mirror
+run by one person (Keeping an eye out for sourcing past what this provides is needed). Verified against [tcgcsv.com/docs](https://tcgcsv.com/docs)
 and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
 
 - **Hard ban threshold: >10,000 requests in a 24h period "may be banned."**
@@ -141,7 +141,7 @@ own conversation.
 - **[OWNER] Never scrape tcgplayer.com.** Their terms prohibit crawling without
   permission. No HTML fetching, no headless browser, no "public search API"
   calls. Not for one card, not as a fallback, not behind a flag.
-- **[OWNER] Never automate a login.** Inventory arrives as a CSV the owner exports by
+- **[OWNER] Never automate a login to TCGPlayer or eBay.** Inventory arrives as a CSV the owner exports by
   hand from the Seller Portal and drops in `inbox/`. That manual step is the
   design, not a gap to close.
 - **[OWNER] All outbound traffic goes to tcgcsv.com only.** If a task seems to require
@@ -185,39 +185,22 @@ individually.
 - **[OWNER] Never compute on `high_price`.** Sellers "price park" — listing at absurd
   values so nothing sells. Store it, ignore it. Trend on `market_price`, with
   `mid` then `low` as fallback (see `PriceSnapshot.trendablePrice`).
-- **[CLAUDE] Our own "all-time high" is computed on demand, not tracked in a table.**
-  Decided 2026-08-12: `MAX(...) GROUP BY product_id, sub_type_name` against
-  `price_snapshots`, run whenever it's needed - see `item_all_time_high()`
-  in `sql/functions.sql`. Deliberately not an incrementally-updated table:
-  this is unrelated to tcgcsv's noisy `high_price` column above. A
-  running-high table only compares against new incoming rows, so a later
-  backfill that turns up an older, higher price would leave it silently
-  wrong. Recomputing from `price_snapshots` is always correct after a
-  backfill, no reconciliation code needed. Revisit only if `MAX()` over the
-  full table is ever too slow to run live.
-  **Correction, 2026-08-13:** originally written as plain `MAX(market_price)`,
-  which quietly contradicted the general trending rule right above this one
-  ("Trend on `market_price`, with `mid` then `low` as fallback"). Reconciled
-  to `MAX(COALESCE(market_price, mid_price, low_price))` when
-  `item_all_time_high()` was built - a MAX() over the whole history doesn't
-  have the anchor-bias risk that point-to-point comparisons do (see Part 12's
-  return-calculation bug), so there's no reason to withhold the fallback
-  here the way `item_return`/`set_return` deliberately do for their
-  start/end anchors.
-- **[OWNER] A set's price/return is defined over its singles only - never sealed
-  product.** Decided 2026-08-13, after finding sealed product (booster
-  boxes, ETBs, tins, cases) was dominating set-level numbers once
-  `is_sealed` became real - see "Sealed product" below for the concrete
-  impact, and DEVELOPMENT_HISTORY.md Part 12 and Part 14. This is
-  not a caller-adjustable default - `set_return()`/`set_value()` in
-  `sql/functions.sql` hardcode `is_sealed = FALSE` internally, no parameter
-  for it, the same way code-card exclusion is baked into ingestion rather
-  than left as a query-time filter. Sealed product is still fully
-  trackable as an individual item via `item_return()`/`item_all_time_high()`
-  (those work on any product_id regardless of category) - it just never
-  contributes to a set-level aggregate. "The set" and "sealed product
-  belonging to that set" are two categorically different things, tracked
-  at two different granularities (individual items vs. sets as a whole).
+- **[CLAUDE] All-time high is computed on demand, never stored.**
+  `MAX(COALESCE(market_price, mid_price, low_price))` in
+  `item_all_time_high()`. Not an incrementally-updated table: that would
+  only compare against *new* rows, so a backfill turning up an older,
+  higher price would leave it silently wrong. Recomputing is always
+  correct. Uses the mid/low fallback deliberately - a MAX over all history
+  has no anchor-bias risk, unlike the two-point comparisons in
+  `item_return`/`set_return`, which withhold it on purpose.
+- **[OWNER] A set's price/return covers its singles only - never sealed
+  product.** `set_return()`/`set_value()` hardcode `is_sealed = FALSE`
+  internally; it is *not* a caller-adjustable parameter. Sealed product
+  stays fully trackable individually via
+  `item_return()`/`item_all_time_high()` - it just never contributes to a
+  set aggregate. Sealed items had been dominating those numbers (one
+  $8,441 display case was a third of a set's "total value"; Paldean Fates
+  went $25,100.93 -> $2,792.05 once fixed). See Part 12 and Part 14.
 - **[OWNER] `product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
 - **[CLAUDE] "Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
@@ -227,20 +210,11 @@ individually.
   across the whole table's history, and `CURRENT_DATE` in raw SQL always
   agrees with it. If a new place ever needs "today," use `ZoneOffset.UTC`
   explicitly - bare `LocalDate.now()` is the bug this fixed.
-  **One pre-fix artifact, deliberately left alone:** the 2026-08-12 19:40
-  CDT live-pull run (45,156 rows) was stamped under the old host-local
-  convention; under the new rule that same moment would have been
-  2026-08-13 (UTC had already rolled over). Not corrected -
-  `price_snapshots` is append-only and that row was valid under the
-  convention in effect when it was written. A one-time, already-happened
-  quirk, not an ongoing bug; nothing later depends on it being "fixed."
-- **[CLAUDE] Percent change returns null on a zero or negative starting price.** Do not
-  "fix" this to return 0 or infinity. Every return-calculation query so far
-  has been ad-hoc SQL (`CASE WHEN start_price > 0 THEN ... ELSE NULL END`,
-  see DEVELOPMENT_HISTORY.md Part 12) - there's no Java implementation of
-  this yet (`Change.percent` existed briefly with zero call sites and was
-  removed 2026-08-13; reintroduce it if/when percent-change logic actually
-  moves into application code instead of interactive SQL).
+  (One pre-fix run is stamped under the old convention and was left
+  alone on purpose - append-only means it was valid when written.)
+- **[CLAUDE] Percent change returns null on a zero or negative starting
+  price.** Do not "fix" it to 0 or infinity. Lives in SQL only
+  (`CASE WHEN start_price > 0 ...`); there is no Java implementation.
 
 ## Architecture intent  **[CLAUDE]**
 
@@ -317,217 +291,63 @@ Rules it establishes, worth keeping:
 - **[CLAUDE] [SHIPPING GAP] CORS is scoped to `localhost:4200`.** The data isn't secret, but no
   site a browser happens to visit should be able to query it.
 
-## Multi-game support (decided 2026-08-13/14)  **[MIXED]**
+## Multi-game support  **[MIXED]**
 
-Owner asked whether non-Pokemon data existed and warned against assuming
-Pokemon quirks generalize; the tracked_categories design is Claude's.
+Which games get pulled is **data, not code**: `tracked_categories`
+(schema.sql) lists the category_ids `App`/`BackfillArchive` pull. Adding a
+game is an INSERT. Currently Pokemon (3) and One Piece (68).
 
-**Not Pokemon-only anymore, by design.** This started as a Pokemon-specific
-tool (`TcgCsvUrls.POKEMON` hardcoded everywhere), but tcgcsv covers ~90
-categories (Magic, Yu-Gi-Oh!, Lorcana, One Piece, Digimon, Flesh & Blood,
-Star Wars Unlimited, and many more - checked live before committing to
-this). Generalized so tracking another game is a data change, not a code
-change: `tracked_categories` (schema.sql) lists which category_ids
-`App`/`BackfillArchive` actually pull. Add a row, the next run picks it up.
-Seeded with only Pokemon (3) so nothing changes in behavior until another
-row is added deliberately.
+- **[OWNER] Do not assume a quirk found in one game generalizes.**
+  Code-card exclusion is gated on `categoryId == TcgCsvUrls.POKEMON`
+  specifically, because it's a Pokemon packaging quirk, not an industry
+  fact. A new game's quirk gets its own condition alongside it, never a
+  broadened check. Same caution applies to `is_sealed`'s classifier -
+  spot-checked on Magic and One Piece, not verified at Pokemon's depth.
+- **[CLAUDE] `ingest_runs.source` is category-scoped** (`tcgcsv-3`,
+  `tcgcsv-archive-68`) so each game has independent idempotency and
+  failure tracking; one game failing never masks another.
+- **[CLAUDE] `Throttle` is one shared instance across all categories** in
+  a run - the 9000-request breaker is a whole-process limit, not per
+  game. `App` logs each category's own count as a delta.
+- **[VERIFIED] Watch the 10,000/24h ban ceiling as games are added.** One
+  Pokemon-sized category is ~436 requests/day.
 
-**Do not assume Pokemon-specific quirks generalize to other games.**
-Code-card exclusion (see "Excluded products" below) is scoped to
-`categoryId == TcgCsvUrls.POKEMON` specifically in `App.pullCategory` - it
-is a Pokemon quirk (physical tins bundling a Pokemon TCG Live redemption
-code), not a general trading-card-industry thing, and nothing currently
-confirms any other game has an equivalent. When a new game turns up its own
-quirk, add it the same way - a new condition alongside the Pokemon one, own
-`reason` string in `excluded_products` - rather than broadening the
-existing check to cover categories it was never verified against.
-`is_sealed`'s classifier (presence of a `Number` field in `extendedData`)
-spot-checked fine against a Magic single (Darksteel Angel) before this
-generalization, but that's one card in one set, not the same level of
-verification Pokemon got (1999 Base Set through 2026 sets) - worth a
-proper check the first time a new game's data actually gets pulled in
-volume, not just assumed to hold everywhere tcgcsv's schema looks similar.
+Background and the verification behind all of this: DEVELOPMENT_HISTORY.md
+Part 15.
 
-**One Piece Card Game (category 68) added 2026-08-14 - the first real
-second game, not just architecture.** Verified before adding: `is_sealed`
-held cleanly across two separate real samples (sealed products correctly
-empty on `extendedData`, singles correctly carrying `Number`) - three
-games for three now, not an assumption. No code-card-style quirk found in
-the samples checked, though that's a spot-check, not exhaustive. Full
-history: 918 days backfilled (2024-02-08 - the hard floor of tcgcsv's
-archive system for any game, regardless of when that game actually
-launched - through present), 0 failures, then a live pull to populate the
-catalog (archives never carry names) - 7,261 products, 633 sealed / 6,628
-singles, matching the same is_sealed split ratio Pokemon showed. Proved
-the generalization is real, not just designed: `item_return()` - written
-and tested against Pokemon only, untouched since - worked on a One Piece
-product_id with zero code changes (Monkey.D.Luffy (001) Foil: $173.45 ->
-$961.19, +454.16%).
+## Environment  **[CLAUDE]**
 
-**Mechanics of how this actually works, for future reference:**
-- `ingest_runs.source` is category-scoped: `"tcgcsv-" + categoryId` for
-  live pulls, `BackfillArchive.sourceFor(categoryId)` (`"tcgcsv-archive-"
-  + categoryId`) for archive backfills. Each tracked category gets fully
-  independent idempotency, gap-catchup, and failure tracking - one game
-  failing never blocks or masks another's success. Existing history was
-  migrated from the old bare `tcgcsv`/`tcgcsv-archive` names to
-  `tcgcsv-3`/`tcgcsv-archive-3` when this was built (a plain `UPDATE`, not
-  a delete - `ingest_runs` is operational metadata, not the append-only
-  price history, so relabeling it is fine).
-- `BackfillArchive.run()` downloads one archive per day and processes every
-  tracked category's subfolder from that same download, since archives
-  already bundle every TCG category regardless - adding a second tracked
-  game costs zero extra downloads for backfill, just more local parsing.
-- `App.main()` now always calls the gap catch-up unconditionally (no more
-  per-category "is yesterday covered" pre-check) - `BackfillArchive.run()`
-  is already cheap when nothing's missing, so a separate check was pure
-  duplication once it had to reason about multiple categories anyway. Each
-  tracked category is then pulled and isolated in its own try/catch inside
-  `main`'s loop, so a failure in one category doesn't stop the others.
-- `Throttle` stays a single shared instance across every category in one
-  run - the 9000-request circuit breaker is a whole-process safety limit,
-  not a per-category allowance, so sharing it is required for correctness,
-  not just convenience. `App` tracks each category's own request count as
-  a delta against the shared cumulative total, so `ingest_runs.request_count`
-  stays accurate per category despite the shared counter.
-- **Watch the 10,000/24h ban threshold as more categories get added.** One
-  category of Pokemon's size costs ~436 requests/day. That's nowhere near
-  the ceiling alone, but it's not unlimited headroom either - re-check the
-  math in "tcgcsv.com usage constraints" above before tracking many large
-  games at once.
+Java 21, Maven, Postgres 16 via `docker compose up -d`, macOS. Schema
+loads from `sql/schema.sql` on first container boot. Rebuild with
+`mvn package` after any source change - everything runs the jar, not the
+source. Setup details are in README.
 
-## Environment
+**Do not run `mvn package` while a long-running job is using the jar**
+(an import, a backfill). It overwrites the jar in place and Java loads
+classes lazily, so a running process can die partway through.
 
-Java 21, Maven, Postgres 16 via `docker compose up -d`. macOS. Schema loads
-from `sql/schema.sql` on first container boot.
+**On-demand pulls, no scheduled job (decided 2026-08-13).** Nothing reads
+this data unattended yet, so a daemon would mean Docker Desktop parked in
+memory for no one. Run the jar by hand when you want fresh data.
 
-**Consider switching to a native Postgres install during development
-(2026-08-14 note - not decided, just flagged).** Docker was originally
-chosen for isolation/reproducibility (self-contained, exact version +
-schema checked into git via `docker-compose.yml`/`sql/schema.sql`, no
-manual install) and because it's a smoother path to the "then cloud" step
-in "Architecture intent" below. But on macOS, Docker containers only run
-inside a Linux VM underneath - that VM is the entire reason a "memory
-ceiling" needs managing at all (see the Docker Desktop resource discussion
-this same day). A native install (`brew install postgresql@16`, no Docker)
-would eliminate that overhead completely - just a normal Mac process using
-what it needs, no VM, no `docker compose up -d` step before running the
-app - at the cost of the reproducibility/portability Docker provides.
-Given cloud hosting is explicitly a "not started" future item (see
-DEVELOPMENT_HISTORY.md "What's still open"), that benefit isn't being used
-right now. Worth switching to native for now and migrating back to Docker
-if/when the cloud step actually starts - `schema.sql` and `functions.sql`
-would both still apply cleanly either way, so this isn't a one-way door.
+**Missing a day costs nothing** - that's why on-demand is safe. tcgcsv's
+archives persist back to 2024-02-08 and `App` runs gap catch-up
+unconditionally on every run, so skipping a week just means the next run
+backfills those seven days. A day with no pull is a day with no *new*
+row, not a lost one.
 
-**Maven installed 2026-08-13** via `brew install maven` (no sudo needed,
-unlike the Docker Desktop cask). Before this, the project had no persisted
-build output anywhere - every run that session was `javac` against jars
-sitting in a scratch temp dir. `mvn package` now produces a real
-`target/cardtracker-0.1.0.jar` (shaded, `App` as main class) that the
-LaunchAgent below depends on. Rebuild with `mvn package` after any source
-change - the LaunchAgent runs the jar, not the source.
+**The trigger for a scheduled daemon is hosting, not a front end.** A
+local front end changes nothing - whoever opens it can trigger the pull.
+Unattended freshness only matters once someone *other than the owner*
+loads the app. (Now that shipping is the goal, this is approaching.)
+The LaunchAgent template is checked in at `com.cardtracker.daily.plist`,
+built and verified 2026-08-13, then deliberately unloaded.
 
-**Daily automation was tried, then deliberately paused 2026-08-13.**
-`~/Library/LaunchAgents/com.cardtracker.daily.plist` was loaded and verified
-working (confirmed via `launchctl list`, and `/usr/bin/java` resolves
-correctly even under `env -i`, so it works fine under launchd's bare
-environment). Then unloaded and the file removed from `~/Library/LaunchAgents`
-on purpose - see "On-demand pulls, not a scheduled job" below. The plist
-template still lives at `com.cardtracker.daily.plist` in the project root,
-ready to reinstate (`cp` it back into `~/Library/LaunchAgents` and
-`launchctl load` it) once there's an actual reason to run unattended.
-
-**On-demand pulls, not a scheduled job (decided 2026-08-13).** The only
-thing that reads this data today is a person manually querying Postgres or
-running the jar. Running a background scheduled job for that is standing
-infrastructure (Docker Desktop kept resident, ~3.5GB+ RAM parked
-continuously on a 16GB Mac) in service of a use case that doesn't exist
-yet. Instead: run `docker compose up -d` and
-`java -jar target/cardtracker-0.1.0.jar` by hand whenever you actually
-want to look at something.
-
-**Missing a day costs nothing, which is why this is safe.** tcgcsv's daily
-archives persist and go back to 2024-02-08, so no observation is ever
-ephemeral - `App` runs the gap catch-up unconditionally on every run
-(`BackfillArchive.run(EARLIEST_ARCHIVE, yesterday, repo)`, see "App also
-catches up missing prior days" below), so skipping a week just means the
-next manual run backfills those seven days from the archives. A day with
-no manual pull is a day with no *new* row, not a lost one.
-
-**The trigger for reinstating a daemon is hosting/sharing, not a front
-end.** Clarified 2026-08-14 - the original wording here ("revisit once
-there's a front end where 'always up to date without a manual step'
-actually matters") got misread within a day of being written as "revisit
-once there's a front end," which is wrong. A local single-user front end
-changes nothing: the person opening it is right there and can trigger the
-pull, so a daemon would only buy "already fresh on open" instead of "fresh
-a few minutes after open" - convenience, not capability, given the
-backfill guarantee above. What genuinely needs unattended freshness is
-someone *other than the owner* loading the app with nobody around to run
-the jar - i.e. the hosted/shared phase in "Architecture intent." Build the
-Angular front end locally without touching scheduling; revisit the
-LaunchAgent when hosting actually starts.
-
-**`App` skips the fetch if today (UTC) is already pulled** - added
-2026-08-13, right after the on-demand decision above, because without it
-"run it whenever I check something" meant a full ~5.5 minute, 436-request
-re-fetch on every single check, even if today's data was already sitting in
-Postgres from an hour ago. `App.main` now calls
-`repo.hasSuccessfulRun(source.name(), snapshotDate)` first (the same method
-`BackfillArchive` already used for its own day-level idempotency) and
-returns immediately if a successful run for today already exists, instead
-of hitting tcgcsv again. Verified: second run same day completed in under a
-second instead of ~5.5 minutes. A failed run does not count - `App` will
-retry a day that previously errored out, same as `BackfillArchive` does.
-
-**`App` also catches up missing prior days before pulling today** - added
-2026-08-13, same session. On-demand pulls mean real gaps can accumulate (go
-5 days without opening the app, and without this, only day 6 would ever get
-filled - see the "if I skip 5 days" discussion). `BackfillArchive`'s main
-loop was extracted into a reusable `BackfillArchive.run(start, end, repo)`
-(main() is now a thin CLI wrapper around it; `SOURCE` and `EARLIEST_ARCHIVE`
-made public). `App.main`, after the today-already-done check above, checks
-whether *yesterday* has a successful run under either source
-(`tcgcsv` live or `tcgcsv-archive`) - if not, it calls
-`BackfillArchive.run(EARLIEST_ARCHIVE, yesterday, repo)` before doing
-today's live pull. That call is cheap even though the range looks huge:
-`run()` already skips any day with a prior successful run via one lookup
-per day, so on the normal steady-state day (no gap) this whole block is
-skipped entirely, and even when it does run, only the genuinely missing
-days trigger a real download.
-**Correction, 2026-08-13:** that lookup was claimed "indexed" here from the
-start, but no index actually existed until the full-codebase review in
-DEVELOPMENT_HISTORY.md Part 13 caught it - `EXPLAIN` showed a full
-`Seq Scan`. Fixed with `idx_ingest_runs_source_date_status` on
-`ingest_runs(source, snapshot_date, status)`; the claim above is accurate
-now, it just wasn't when originally written.
-**Verified end-to-end 2026-08-13**, not just by code review. Spun up a second,
-fully isolated Postgres container (`cardtracker-db-test`, port 5433, same
-`sql/schema.sql`, no shared volume with the real `cardtracker-db`), seeded
-`ingest_runs` with 914 fake "ok" rows for source `tcgcsv-archive` covering
-2024-02-08 through 2026-08-09, and deliberately left 2026-08-10/11/12 (a
-real 3-day gap) plus today unseeded. Ran the real jar against it via
-`CARDTRACKER_DB_URL` pointed at the scratch container - no code changes, no
-mocking. Result: `App` printed "No data for 2026-08-12 yet - catching up..."
-correctly identified all 914 seeded days as covered (skipped instantly),
-pulled real data from tcgcsv's actual archives for exactly the 3 missing
-days ("2026-08-10: 45163 rows", "...11: 45161", "...12: 45156", "914
-already had, 3 backfilled, 0 failed"), then proceeded to a normal today's
-live pull (45,156 rows, 436 requests - matches the real DB's own numbers
-for the same day). Scratch container stopped and removed after; confirmed
-the real `cardtracker-db` was untouched throughout (row counts unchanged).
-This is now a proven feature, not just a reasoned-through one.
-Known edge case: if tcgcsv hasn't published yesterday's archive yet (lag
-time unverified), that one day's catch-up attempt fails and gets logged as
-`status='failed'` in `ingest_runs`, but does not stop `App` - it proceeds to
-today's live pull regardless, and will retry the failed day next time it's
-still "yesterday or earlier" and uncovered.
-
-Known gap if scheduling is reinstated later: Docker Desktop doesn't
-auto-launch at login (only its privileged helper daemons do), so a reboot
-would silently break an unattended nightly pull until Docker Desktop is
-reopened by hand. Enable "Start Docker Desktop when you log in" in Docker
-Desktop's own Settings > General before relying on any scheduled job again.
+**`App` is idempotent per day and self-healing:** it skips the fetch if
+today (UTC) already has a successful run, and catches up missing prior
+days before pulling today. Both verified end-to-end against an isolated
+scratch database, not just by code review - see DEVELOPMENT_HISTORY.md
+Parts 9 and 10.
 
 ## Commit message style (decided 2026-08-14)  **[OWNER]**
 
@@ -576,110 +396,26 @@ narrative bloat.
    Caveat: this only tests 2024-02-08 vs now (the earliest archive available)
    and only within Pokemon. Good enough to stop treating this as an open risk.
 
-## Excluded products  **[MIXED]**
+## Excluded products and sealed classification  **[MIXED]**
 
-The code-card problem was found in the data and confirmed by the owner's
-domain knowledge; the exclusion mechanism is Claude's design.
+- **[OWNER] Code cards are excluded from ingestion entirely** - not
+  filtered at query time. They're digital redemption codes that crater
+  toward $0 and wreck set-level aggregates. Classified by name prefix
+  ("Code Card...") in `App`, Pokemon only. The 1,253 already backfilled
+  (810,451 price rows) were deleted.
+- **[CLAUDE] `excluded_products` is a standalone table**, independent of
+  `products`, and this matters: `BackfillArchive` only ever sees a bare
+  `product_id` from archives, never a name, so once an excluded product's
+  row leaves `products` there'd be no way to know to skip it. Records
+  `category_id` too, so an exclusion found for one game is never mistaken
+  for a universal rule. Reuse this table for any future exclusion -
+  `reason` is free text for exactly that.
+- **[CLAUDE] `is_sealed` is set at ingest from `extendedData`** (a real
+  single always carries a `Number` field; sealed product never does) -
+  data-driven, not name-guessing, and computed in
+  `TcgCsvPriceSource.products()` rather than re-derived in SQL later.
 
-**Code cards are excluded entirely, everywhere - decided 2026-08-13.** While
-building the first real analytical queries (% return over time, per card and
-per set), digital "Code Card" products (separate TCGplayer listings for the
-online redemption code packed inside sealed product - see DEVELOPMENT_HISTORY.md
-for the full investigation) turned out to skew set-level return calculations
-badly: they crater toward $0 once redeemed, dragging the low end of any
-aggregate way down, and they're not a real physical card anyone would want
-to search for or trend anyway.
-
-Excluded means excluded from ingestion, not just filtered at query time -
-they're never written to `products` or `price_snapshots` going forward, and
-the 1,253 that had already been backfilled (810,451 price rows) were deleted
-outright. Classification is by name prefix ("Code Card...", case-insensitive),
-checked live in `App` against each day's real product names.
-
-A standalone `excluded_products` table (`product_id`, `category_id`, `name`,
-`reason`, `excluded_at`) tracks what's been excluded and why, **independent
-of** `products` - this matters because `BackfillArchive` only ever sees a
-bare `product_id` from tcgcsv's archives, never a name (archives never
-carry product metadata, only prices), so once an excluded product's row is
-gone from `products`, archive backfill would have no way left to know to
-skip it. `App` writes to `excluded_products` as a side effect of its live,
-name-based classification (`upsertExcludedProduct`, `ON CONFLICT DO NOTHING`);
-`BackfillArchive.run()` reads the accumulated set once per call
-(`excludedProductIds()`, global across categories - a product_id already
-belongs to exactly one category, so filtering by category there would be
-redundant) and filters by ID before inserting. This also means a code card
-from a set that hasn't had a live pull yet can't be excluded during backfill
-until `App` has seen it once - acceptable since backfill only ever targets
-recent past days in the on-demand model, and those days get caught up by
-`App` itself (see the gap catch-up logic above).
-`category_id` was added when multi-game support was built (see "Multi-game
-support" above) specifically so an exclusion reason discovered for one game
-is never mistaken for a universal rule - code cards are a Pokemon thing
-until proven otherwise for something else.
-
-Verified before deleting anything: filter logic tested live (via jshell)
-against Paldean Fates' real API response - 295 products, 13 correctly
-identified as code cards, 375 price rows correctly reduced to 362. After
-cleanup, re-ran the set-level aggregate for Paldean Fates with no filter
-clause at all (since the rows were simply gone) and got an exact match
-against the query-time-filtered version: 361 variants, mean +103.26%,
-median +50.06%, range -66.67% to +952.10%.
-
-If another category of product turns out to need the same treatment later
-(sealed product once `is_sealed` is real, something else entirely), reuse
-this same table and mechanism rather than inventing a new one - `reason` is
-already a free-text column for exactly that.
-
-## Sealed product (`is_sealed`) is now real, not a placeholder  **[MIXED]**
-
-Owner spotted that sealed product was polluting set-level numbers;
-classifier and implementation are Claude's.
-
-**Implemented 2026-08-13**, immediately after the code-card work above.
-Set-level aggregates were still badly skewed even after excluding code
-cards, because sealed product (booster boxes, ETBs, tins, cases, bundles)
-was still mixed in with real singles - a single $8,441 booster bundle
-display case was a third of one set's entire "total value." Unlike code
-cards, sealed product isn't something to exclude outright - it's a real,
-legitimate thing to track, just a different category that needs to be
-filterable, which is exactly what `products.is_sealed` was always meant
-for (see its schema comment) but had never been implemented - every row
-was hardcoded `FALSE`.
-
-**Classifier: presence of a `Number` field in `extendedData`.** A real
-single card always carries its card number as a structured field; sealed
-product never does - it only ever has a `CardText` marketing blurb, if
-anything. This is data-driven, not a name-pattern guess like the code-card
-check. Verified before trusting it: checked Paldean Fates in full (37
-sealed / 245 singles, zero misclassifications either direction on
-inspection), checked 1999 Base Set specifically to make sure the field
-name is stable across the oldest and newest data in the archive (booster
-boxes/theme decks/starter sets correctly `f`, singles including an
-error-print variant and Trainer cards correctly `t`), then a 20-item
-random sample across a wide range of sets after the retroactive fix -
-19/20 singles correctly `false`, the one sealed item (a Sword & Shield
-theme deck) correctly `true`.
-
-Computed once in `TcgCsvPriceSource.products()` (where the raw
-`extendedData` JSON is already being read) and carried on `Product.isSealed`
-from construction onward - not reverse-engineered from the name later, and
-not computed in SQL, so the same value is available for both product
-metadata and set-level query filtering without re-deriving it. `is_sealed`
-is now in `PriceRepository`'s `ON CONFLICT DO UPDATE` clause too, same as
-every other real field on `products` - it wasn't before, since there was
-no point updating a hardcoded constant.
-
-**Existing catalog corrected retroactively**, same pattern as the code-card
-cleanup: `UPDATE products SET is_sealed = NOT (extended_data @> '[{"name":
-"Number"}]'::jsonb)` across the whole table (31,294 products at the time) -
-27,807 came back singles, 3,487 sealed.
-
-**Impact, concretely (Paldean Fates, singles only vs. previously mixed):**
-current set value dropped from $25,100.93 to $2,792.05; set return dropped
-from +369.53% to +137.07%. Sealed product wasn't minor noise in these
-numbers, it was the dominant factor - any set-level query going forward
-should filter on `is_sealed` explicitly rather than assume "the group" means
-"the singles."
+Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 

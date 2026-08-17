@@ -1504,6 +1504,32 @@ rather than an absence. The image now starts transparent and fades in on
 
 ---
 
+## Notes moved out of CLAUDE.md (2026-08-16 trim)
+
+Kept here because they're reasoning worth having, but they were costing
+tokens on every request while sitting in the auto-loaded file.
+
+**Docker vs. a native Postgres install (flagged 2026-08-14, never
+decided).** Docker was chosen for isolation and reproducibility - exact
+version and schema checked into git via `docker-compose.yml`/`schema.sql`,
+no manual install - and as a smoother path to eventual cloud hosting. But
+on macOS a container runs inside a Linux VM, and that VM is the entire
+reason a memory ceiling needs managing on a 16GB machine. A native
+`brew install postgresql@16` removes that overhead completely: a normal
+process, no VM, no `docker compose up -d` before running anything. The
+cost is the reproducibility Docker gives. Since cloud hosting hadn't
+started, the benefit wasn't being used. Not a one-way door either way -
+`schema.sql` and `functions.sql` apply cleanly to both.
+
+**The One Piece proof that generalization was real, not just designed
+(2026-08-14).** `item_return()` was written and tested against Pokemon
+only and never touched afterwards. Run against a One Piece product_id it
+worked with zero code changes: Monkey.D.Luffy (001) Foil, $173.45 ->
+$961.19, +454.16%. That single result is what distinguished "we built it
+to generalize" from "it generalizes."
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
