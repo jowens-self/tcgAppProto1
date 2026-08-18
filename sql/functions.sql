@@ -604,25 +604,46 @@ $$ LANGUAGE sql STABLE;
 -- markets that move independently, so collapsing them would be the sub-type
 -- invariant violation, not the other way round.
 --
--- **Averaged at both ends, not a two-point comparison.** This is the whole
--- reason the function looks more complicated than "price then vs price now."
--- Thinly-traded cards lurch on single sales: Charizard Star (Delta Species,
--- 84198) sat at $4,000 for weeks, printed $980 for exactly one day, snapped
--- back to $4,000, then settled near $990. Point-to-point that reads as -75%
--- one day and +308% the next, and a decliners board would be topped by that
--- kind of artifact every single day.
+-- **MEDIAN over a window at both ends, not a two-point comparison and not
+-- a mean.** This is the whole reason the function looks more complicated
+-- than "price then vs price now." Thinly-traded cards lurch on single
+-- sales: Charizard Star (Delta Species, 84198) sat at $4,000 for weeks,
+-- printed $980 for exactly one day, snapped back to $4,000, then settled
+-- near $990. Point-to-point that reads as -75% one day and +308% the next,
+-- and a decliners board would be topped by that kind of artifact daily.
 --
--- Measured on that exact card, so the effect is stated honestly rather than
--- assumed. As of the blip day the unsmoothed move is -75.50%; smoothed over
--- 3 days it is -25.17%. As of a week later, when the drop was real and
--- sustained, smoothing still reports -75.10%. So averaging does NOT erase a
--- one-day artifact - it damps it about 3x, which is enough to push it well
--- down a leaderboard - while leaving a genuine sustained move at full
--- magnitude. That asymmetry is the point. A bigger p_smoothing damps harder
--- at the cost of reacting more slowly.
+-- This used a MEAN until 2026-08-18 and the change is a correctness fix,
+-- not a preference. A mean damps everything, signal included, and worse, it
+-- contaminates one window with prices from the other side of a step. Both
+-- failures were measured on live data the day of the change:
+--
+--   * Lillie - 125a/156 (199681, Reverse Holofoil) stepped $41.10 ->
+--     $123.32 and held it for eight days. A genuine +200.0% move. The mean
+--     reported +80.0%, because one day of the post-step price leaked into
+--     the "then" window. The median reports +200.0% exactly.
+--   * Flaaffy (85475, Reverse Holofoil) sat at $1.69 for nine days then
+--     moved to $50.83. The mean called the current price $34.45 - a number
+--     the card has never traded at. The median says $50.83.
+--
+-- A median leaves steps and monotone trends untouched while annihilating
+-- single-sample impulses outright: the $980 artifact above becomes exactly
+-- $4,000 rather than a damped $2,993 that still shows a phantom -25%. That
+-- is a property of the filter, not a tuning choice. See
+-- DEVELOPMENT_HISTORY.md Part 24, and game_set_overview()'s despiking,
+-- which rests on the same property.
+--
+-- Prefer an ODD p_smoothing. At odd sizes the median is a price the card
+-- was genuinely at on some day; at even sizes percentile_cont interpolates
+-- between the two middle days and can report a price never observed, which
+-- is the exact failure the mean was replaced for. Default 3.
+--
+-- A median does react faster than the mean it replaced, so genuine one-day
+-- noise on thin cards now shows at full size rather than damped. p_min_price
+-- is what keeps that off the board.
 --
 -- Both windows must be FULLY covered (n = p_smoothing at each end).
--- A partial window would average fewer days and quietly weight them more.
+-- A partial window would take the median of fewer days and quietly weight
+-- them more.
 --
 -- p_min_price exists because percent change flatters cheap cards: without
 -- it the top decliner for a week was Shuckle at $0.06 -> $0.01 (-83%), and
@@ -683,7 +704,8 @@ BEGIN
     RETURN QUERY
     WITH recent AS (
         SELECT ps.product_id, ps.sub_type_name,
-               AVG(ps.market_price) AS p, COUNT(*) AS n
+               (percentile_cont(0.5) WITHIN GROUP (ORDER BY ps.market_price))::NUMERIC AS p,
+               COUNT(*) AS n
         FROM price_snapshots ps
         WHERE ps.snapshot_date BETWEEN v_recent_from AND v_end
           AND ps.market_price IS NOT NULL
@@ -691,7 +713,8 @@ BEGIN
     ),
     prior AS (
         SELECT ps.product_id, ps.sub_type_name,
-               AVG(ps.market_price) AS p, COUNT(*) AS n
+               (percentile_cont(0.5) WITHIN GROUP (ORDER BY ps.market_price))::NUMERIC AS p,
+               COUNT(*) AS n
         FROM price_snapshots ps
         WHERE ps.snapshot_date BETWEEN v_prior_from AND v_prior_to
           AND ps.market_price IS NOT NULL

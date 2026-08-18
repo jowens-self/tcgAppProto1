@@ -100,9 +100,13 @@ export interface GameSet {
  * mover is one specific market's move, and Holofoil / Reverse Holofoil of
  * the same card move independently.
  *
- * thenPrice/nowPrice are averages over the smoothing window at each end, not
- * single-day prices. Thinly-traded cards lurch on single sales, so a raw
- * two-point comparison puts artifacts at the top of the board.
+ * thenPrice/nowPrice are the MEDIAN of the smoothing window at each end, not
+ * single-day prices and not an average. Thinly-traded cards lurch on single
+ * sales, so a raw two-point comparison puts artifacts at the top of the
+ * board - but an average was worse than no smoothing in one respect: it
+ * leaked prices across a step, reporting a real $41.10 -> $123.32 move as
+ * +80% instead of +200%. A median kills one-day impulses outright and
+ * leaves genuine steps at full size. See item_movers().
  */
 export interface Mover {
   productId: number;

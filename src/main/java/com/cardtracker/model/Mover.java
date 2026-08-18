@@ -11,9 +11,11 @@ import java.math.BigDecimal;
  * Holofoil / Reverse Holofoil of the same card move independently. Merging
  * them here would be the sub-type violation, not the reverse.
  *
- * thenPrice and nowPrice are averages over the smoothing window at each end,
- * not single-day observations - see item_movers() in sql/functions.sql for
- * why (thinly-traded cards lurch on single sales).
+ * thenPrice and nowPrice are the MEDIAN of the smoothing window at each end,
+ * not single-day observations and not an average - see item_movers() in
+ * sql/functions.sql for why (thinly-traded cards lurch on single sales, and
+ * an average additionally leaks prices across a step, which misreported a
+ * real +200% move as +80% until this was changed on 2026-08-18).
  */
 public record Mover(
         int productId,

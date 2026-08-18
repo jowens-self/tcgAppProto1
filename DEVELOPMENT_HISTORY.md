@@ -2026,6 +2026,63 @@ the aggregation logic it exists to test.
 
 ---
 
+### Addendum, same day — the mean in `item_movers()` was the bigger bug
+
+Having established that a median beats a mean for despiking, the obvious
+next question was whether `item_movers()`, which had smoothed with a **mean**
+since Part 19, was wrong for the same reason. It was, and more consequentially
+than the thing that prompted the investigation.
+
+Two cards off the live board, both real moves, both misreported:
+
+| card | shape | mean-3 | median-3 |
+|---|---|---|---|
+| Lillie - 125a/156 (199681) | $41.10 → $123.32, held 8 days | **+80.0%** | **+200.05%** |
+| Flaaffy (85475) | $1.69 for 9 days → $50.83 | "now" = **$34.45** | "now" = **$50.83** |
+
+Lillie's true move is +200%. The mean reported +80% because one day of the
+post-step price leaked into the "then" window — the mean does not just damp
+a move, it *contaminates one window with the other side of the step*.
+Flaaffy is starker still: the mean reported a current price of $34.45, a
+number that card has never traded at on any day.
+
+Against the Part 19 worked example the asymmetry is exactly what was wanted:
+
+| Charizard Star (84198) | mean-3 | median-3 |
+|---|---|---|
+| as of the one-day artifact | -25.17% | **0.00%** |
+| as of a week later, drop real | -75.10% | **-75.03%** |
+
+The artifact goes to zero — not damped, gone — while the genuine sustained
+drop is untouched. Part 19's README text defended the mean's ~3x damping as
+an acceptable price for suppressing artifacts. It was never a price that had
+to be paid.
+
+**On even window sizes.** `percentile_cont(0.5)` interpolates between the
+two middle days when the window is even, which can report a price never
+observed — precisely the failure the mean was replaced for. Odd sizes are
+preferred and the default (3) is odd. Left as `percentile_cont` rather than
+`percentile_disc` because disc biases low on even windows; neither is right
+there, so the guidance is to keep the window odd.
+
+**Cost, measured rather than assumed.** Isolating the aggregation, mean and
+median cost the same (~80ms both). The all-games Movers query does take
+~3.1-3.5s, but timing the pre-change function proves 3.14s of that predates
+this work — the median adds ~13%, not the 7x a first glance suggested. That
+pre-existing cost is worth its own look: the Movers screen defaults to all
+games, so its default view is the slow path.
+
+### And a question closed rather than left open
+
+Part 24 left "should a 5-window median catch two-day runs?" open. Flaaffy
+answers it: `median(1.69, 1.69, 1.69, 50.83, 50.83)` = **$1.69**. A 5-window
+median would have erased a genuine two-day move completely and reported the
+card as unmoved. Two-day steps are clearly common enough that this is not a
+tolerable trade for the 20 two-day artifacts it would also catch.
+**Decided against**, on evidence rather than caution.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |

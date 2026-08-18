@@ -83,13 +83,15 @@
     No movers match those filters. Try a lower minimum price or a longer window.
   </p>
 } @else {
-  <!-- Prices are averages over a 3-day window at each end, not single-day
+  <!-- Prices are the MEDIAN of a 3-day window at each end, not single-day
        readings. Said plainly in the UI because "then" and "now" would
        otherwise imply exact daily prices, and a seller comparing this to a
-       single day's number should know why they differ. -->
+       single day's number should know why they differ. Median rather than
+       average since 2026-08-18 - an average leaked prices across a step and
+       misreported real moves (see item_movers() and Part 24). -->
   <p class="method">
-    Comparing a 3-day average now against a 3-day average {{ days }} days ago,
-    so a single unusual sale doesn't dominate the board.
+    Comparing the median of the last 3 days against the median of 3 days
+    around {{ days }} days ago, so a one-off sale can't dominate the board.
   </p>
 
   <div class="table-wrap">

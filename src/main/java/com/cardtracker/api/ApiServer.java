@@ -93,7 +93,7 @@ public class ApiServer {
         //   ?days=7&game=3&set=23353&sealed=false&minPrice=1&direction=down
         //   &smoothing=3&limit=50
         // Every parameter is optional: the defaults (7 days, decliners,
-        // singles, $1 floor, 3-day smoothing) are the screen's default view
+        // singles, $1 floor, 3-day median smoothing) are the screen's default view
         // and live in item_movers() so psql callers get them too.
         app.get("/api/movers", ctx -> {
             String dir = ctx.queryParam("direction");

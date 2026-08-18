@@ -238,6 +238,16 @@ individually.
   set aggregate. Sealed items had been dominating those numbers (one
   $8,441 display case was a third of a set's "total value"; Paldean Fates
   went $25,100.93 -> $2,792.05 once fixed). See Part 12 and Part 14.
+- **[CLAUDE] Smoothing is a MEDIAN, never a mean** - `item_movers()` since
+  2026-08-18, `game_set_overview()`'s despiking from the start. A mean
+  damps real moves and leaks prices across a step: measured live, it
+  reported Lillie 125a/156's genuine $41.10 -> $123.32 step (+200.0%) as
+  +80.0%, and called Flaaffy's current price $34.45 when the card had
+  never traded there. On the same data a median reports both exactly, and
+  takes the Charizard Star one-day artifact to 0.00% rather than a damped
+  -25.17% that still reached the board. Prefer odd window sizes: at odd
+  sizes the median is an actually-observed price, at even sizes
+  `percentile_cont` interpolates and can invent one. Part 24.
 - **[OWNER] A reading that swings hard and reverts the next day is
   replaced with the median of its neighbours, and the row says so.**
   Decided 2026-08-18 - the owner's framing was "if something swings -80%

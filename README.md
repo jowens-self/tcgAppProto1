@@ -325,14 +325,35 @@ Takes `days`, `game`, `set`, `sealed=true`, `minPrice`, `direction`
 a mover is one specific market's move, and the sub-types of a card move
 independently.
 
-**Prices at each end are averages over the smoothing window, not single
-days.** Thinly-traded cards lurch on single sales: Charizard Star (84198)
-sat at $4,000 for weeks, printed $980 for exactly one day, snapped back,
-then settled near $990. Point-to-point that reads as -75% one day and
-+308% the next. Measured on that card, 3-day smoothing takes the one-day
-artifact from -75.50% to -25.17% while still reporting the genuine
-sustained drop at -75.10% — damped ~3x, not erased, which is enough to
-keep artifacts off the top of the board without hiding real moves.
+**Prices at each end are the MEDIAN over the smoothing window, not single
+days and not a mean.** Thinly-traded cards lurch on single sales: Charizard
+Star (84198) sat at $4,000 for weeks, printed $980 for exactly one day,
+snapped back, then settled near $990. Point-to-point that reads as -75% one
+day and +308% the next.
+
+This used a mean until 2026-08-18. Switching to a median is a correctness
+fix, not a preference — measured on live data:
+
+| case | mean-3 | median-3 | truth |
+|---|---|---|---|
+| Charizard Star, one-day artifact | -25.17% | **0.00%** | no move |
+| Charizard Star, real sustained drop | -75.10% | **-75.03%** | -75% |
+| Lillie 125a/156, real step $41.10→$123.32 | +80.0% | **+200.05%** | +200% |
+
+A mean damps everything including the signal, and worse, it leaks prices
+across a step: the +80% above is one day of post-step price contaminating
+the "then" window. It also reported Flaaffy (85475) as $34.45 — a price
+that card has never traded at. A median annihilates single-sample impulses
+outright while leaving steps and trends untouched.
+
+Prefer an **odd** `smoothing`: at odd sizes the median is a price the card
+was genuinely at on some day, while even sizes interpolate between the two
+middle days and can report a price never observed — the exact failure the
+mean was replaced for.
+
+A median reacts faster than the mean did, so genuine one-day noise on thin
+cards now shows at full size rather than damped; `minPrice` is what keeps
+that off the board.
 
 **`minPrice` defaults to $1** because percent change flatters cheap cards.
 Without it the week's top decliner was Shuckle at $0.06 → $0.01 (-83%),
