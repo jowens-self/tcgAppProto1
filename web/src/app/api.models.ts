@@ -34,6 +34,19 @@ export interface ItemSearchResult {
   name: string;
   cardNumber: string | null;
   rarity: string | null;
+  /**
+   * Printing qualifier pulled out of the name by variant_label() -
+   * "Cracked Ice Holo", "Poke Ball Pattern", "2016 World Championship" -
+   * or null for an ordinary printing.
+   *
+   * Two jobs. It is identity, like cardNumber: a variant is a separate
+   * product at a separate price. It also marks cards whose thumbnail may be
+   * the BASE printing rather than this exact variant, because the image
+   * matcher resolves some variants to their original set (see
+   * DEVELOPMENT_HISTORY.md Part 21). Wherever a variant's image is shown,
+   * this label must be shown with it.
+   */
+  variantLabel: string | null;
   setName: string;
   game: string;
   isSealed: boolean;

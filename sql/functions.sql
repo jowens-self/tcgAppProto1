@@ -262,6 +262,101 @@ DROP FUNCTION IF EXISTS item_search_core(TEXT, TEXT, INTEGER, BOOLEAN, INTEGER, 
 -- into these two parts; this is split out so that parsing and matching stay
 -- separately testable, and so the wrapper can run it twice (see its
 -- fallback) without duplicating the query.
+
+-- Is this captured token a real variant descriptor, or just punctuation the
+-- name happens to end with? Shared by both halves of variant_label() so a
+-- parenthetical and a bracket are judged identically.
+--
+--   * must contain a letter    - rejects "(2)", "(147)"
+--   * must not be a card code  - rejects "(H1)", "(XY72)", "(SWSH014)";
+--     same shape item_search() uses to split a number off a typed query
+--   * must be 3+ characters    - rejects "Unown [A]" .. "[Z]"
+CREATE OR REPLACE FUNCTION is_variant_word(p_token TEXT)
+RETURNS BOOLEAN AS $$
+    SELECT p_token IS NOT NULL
+       AND p_token ~ '[A-Za-z]'
+       AND p_token !~ '^[A-Za-z]{0,4}[0-9]+[A-Za-z]?$'
+       AND length(p_token) >= 3;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Human-readable variant qualifier from a product name, or NULL when the
+-- product is an ordinary printing.
+--
+-- This exists because TCGplayer encodes the variant in the NAME, not in
+-- extendedData - unlike Number and Rarity, which have their own fields.
+-- "Blastoise - 13/95 (Cracked Ice Holo)" and plain "Blastoise" are
+-- different products at different prices, and the parenthetical is the only
+-- thing that says so.
+--
+-- Derived from the name alone, deliberately: that makes it correct for
+-- every product today, independent of whether the image matcher ever finds
+-- a picture for it (see DEVELOPMENT_HISTORY.md Part 21).
+--
+-- Three rules, each earning its place against real data:
+--
+--  1. A trailing "- YYYY (Person)" is a World Championship deck - the
+--     parenthetical is the DECK PILOT, not a variant, so rendering it
+--     as-is would put a stranger's name on the card. Verified 2026-08-18:
+--     all 1,947 Pokemon products matching this shape are in World
+--     Championship Decks and nothing else, so the year is safe to promote.
+--  2. A parenthetical that is really a card number is not a variant.
+--     "Alakazam (2)", "Crobat (147)" and "Latios EX (XY72)" all carry the
+--     number in the name; the code shape (up to 4 letters then digits) is
+--     the same one item_search() uses to split a typed number off a query.
+--  3. A trailing [Staff] / [Bracket] token is a genuine variant of its own
+--     ("... (Prerelease) [Staff]"), so it is kept and appended rather than
+--     stripped with the rest of the punctuation. It faces the SAME validity
+--     test as the parenthetical, which is not optional: Unown is catalogued
+--     as "Unown [A]" ... "Unown [Z]", and without the length floor every
+--     one of those 26 cards gets a one-letter "variant" label. The real
+--     bracket vocabulary is words - Staff, Winner, Set of 4, 1st Place.
+CREATE OR REPLACE FUNCTION variant_label(p_name TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    v_name  TEXT := btrim(COALESCE(p_name, ''));
+    v_brack TEXT;
+    v_paren TEXT;
+    v_out   TEXT;
+BEGIN
+    IF v_name = '' THEN
+        RETURN NULL;
+    END IF;
+
+    -- TCGplayer sometimes appends the card number AFTER the qualifier
+    -- ("Professor's Research [Professor Magnolia] - 223"), which would hide
+    -- the bracket from the trailing match below. Drop a trailing number
+    -- first. Safe for the two shapes that must survive it: a World
+    -- Championship name ends in ")" and "Blastoise - 13/95 (Cracked Ice
+    -- Holo)" ends in ")", so neither matches.
+    v_name := btrim(regexp_replace(v_name, '\s*-\s*[0-9A-Za-z]+(/[0-9A-Za-z]+)?\s*$', ''));
+
+    -- Rule 3: lift a trailing [Staff]-style token before anything else, so
+    -- the parenthetical behind it is still the last thing on the string.
+    v_brack := btrim(COALESCE(substring(v_name FROM '\[([^\]]+)\]\s*$'), ''));
+    v_name  := btrim(regexp_replace(v_name, '\s*\[[^\]]+\]\s*$', ''));
+    IF NOT is_variant_word(v_brack) THEN
+        v_brack := NULL;
+    END IF;
+
+    IF v_name ~ '- [0-9]{4} \([^)]+\)$' THEN
+        -- Rule 1: World Championship deck.
+        v_out := substring(v_name FROM '- ([0-9]{4}) \([^)]+\)$') || ' World Championship';
+    ELSE
+        v_paren := btrim(COALESCE(substring(v_name FROM '\(([^)]*)\)\s*$'), ''));
+        IF is_variant_word(v_paren) THEN
+            v_out := v_paren;
+        END IF;
+    END IF;
+
+    IF v_brack IS NOT NULL THEN
+        v_out := CASE WHEN v_out IS NULL THEN btrim(v_brack)
+                      ELSE v_out || ' · ' || btrim(v_brack) END;
+    END IF;
+
+    RETURN v_out;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 CREATE OR REPLACE FUNCTION item_search_core(
     p_name TEXT,
     p_number TEXT DEFAULT NULL,
@@ -274,6 +369,7 @@ CREATE OR REPLACE FUNCTION item_search_core(
     name TEXT,
     card_number TEXT,
     rarity TEXT,
+    variant_label TEXT,
     set_name TEXT,
     game TEXT,
     is_sealed BOOLEAN,
@@ -327,6 +423,7 @@ CREATE OR REPLACE FUNCTION item_search_core(
     SELECT h.product_id, h.name,
            extended_field(h.extended_data, 'Number'),
            extended_field(h.extended_data, 'Rarity'),
+           variant_label(h.name),
            g.name, c.name, h.is_sealed,
            v.variant_count, v.latest_date, h.url, h.image_url
     FROM hits h
@@ -373,6 +470,7 @@ CREATE OR REPLACE FUNCTION item_search(
     name TEXT,
     card_number TEXT,
     rarity TEXT,
+    variant_label TEXT,
     set_name TEXT,
     game TEXT,
     is_sealed BOOLEAN,

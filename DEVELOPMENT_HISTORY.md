@@ -38,9 +38,10 @@ origin through that date, then continuing forward from there).
 19. [Part 19 — Movers: the screen that needed the data checked first](#part-19--movers-the-screen-that-needed-the-data-checked-first)
 20. [Part 20 — Card images, from a source that wants to be used](#part-20--card-images-from-a-source-that-wants-to-be-used)
 21. [Part 21 — The no_match audit: a matcher bug wearing upstream absence as a disguise](#part-21--the-no_match-audit-a-matcher-bug-wearing-upstream-absence-as-a-disguise)
-22. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-23. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-24. [What's still open](#whats-still-open)
+22. [Part 22 — Saying which printing you are looking at](#part-22--saying-which-printing-you-are-looking-at)
+23. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+24. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+25. [What's still open](#whats-still-open)
 
 ---
 
@@ -1642,6 +1643,105 @@ reproduced almost exactly, and it was still concealing a defect. The
 measurement was real; the *explanation* attached to it had never been
 tested. When a number matches its prediction, that confirms the number —
 not the story about why.
+
+---
+
+## Part 22 — Saying which printing you are looking at
+
+Part 21 left one question unanswered, and it was the owner's to answer: if
+a variant printing shows the base card's artwork, is that acceptable? Their
+answer reframed it — show the image, but **label it**.
+
+That turns out to be the better shape for a reason worth recording. The
+label is derived from the **product name**, not from the image match, so it
+is correct for all 9,314 labelled Pokemon products *today* — whether or not
+the matcher fix from Part 21 is ever applied, and whether or not a given
+card has a picture at all. A decision that looked like it was blocking the
+image work turned out not to depend on it.
+
+### Where a variant is actually recorded
+
+Nowhere structured. `extendedData` carries `Number` and `Rarity` as real
+fields, but the printing qualifier exists only inside the product name:
+`Blastoise - 13/95 (Cracked Ice Holo)` versus plain `Blastoise`. Those are
+different products at different prices and the parenthetical is the only
+thing that says so — the same reason `card_number` and `rarity` are treated
+as identity rather than decoration (Part 17).
+
+`variant_label()` extracts it. Three rules, each earned against real data
+rather than guessed:
+
+1. **A trailing `- YYYY (Person)` is a World Championship deck**, where the
+   parenthetical is the deck's pilot, not a variant. Rendering it as-is
+   would print a stranger's name on the card as though it described the
+   printing. Verified before relying on it: all 1,947 Pokemon products
+   matching that shape are in World Championship Decks and nothing else, so
+   promoting the year to `2016 World Championship` is safe.
+2. **A parenthetical that is really a card number is not a variant.**
+   `Alakazam (2)`, `Crobat (147)`, `Latios EX (XY72)` all carry their
+   number in the name. The reject shape is the one `item_search()` already
+   uses to split a typed number off a query, so the two agree by
+   construction.
+3. **A trailing `[Staff]`-style token is its own variant** and is appended:
+   `Prerelease · Staff`.
+
+### Two bugs the data caught, both found by looking
+
+Neither showed up in the unit-shaped checks — both appeared only when the
+function was run against the real catalog.
+
+**`Unown [A]`.** Rule 3 lifted any trailing bracket, so all 26 Unown cards
+— cards whose bracket *is* their identity — got a one-letter "variant"
+label. The fix was to make the bracket face the same validity test as the
+parenthetical rather than a weaker one; that test now lives in
+`is_variant_word()` and is called from both places, so the two can't drift
+apart again. Caught by joining against `card_images` to find a labelled
+product that actually had a picture to show — the entire result set was
+Unown.
+
+**The number after the qualifier.** TCGplayer sometimes appends the card
+number *after* the bracket: `Professor's Research [Professor Magnolia] -
+223`. That hid the bracket from a trailing match, leaving 45 products
+unlabelled while their identical siblings were labelled. Fixed by dropping
+a trailing number before extracting. The two shapes that must survive that
+strip — a World Championship name and `Blastoise - 13/95 (Cracked Ice
+Holo)` — both end in `)`, so neither matches it.
+
+### Why the treatment differs by canvas
+
+The list thumbnail is 40×56. Text rendered over it lands at roughly 5px:
+not small, illegible — and it covers the artwork exactly where the eye is
+scanning. So the two ends of the UI got different treatments:
+
+- **List row:** a `--warn` corner wedge on the thumbnail, and the words as
+  a *filled* pill beside the name. Filled, because `.tag.sealed` is already
+  an outlined `--warn` pill and the two must not read as the same claim.
+- **Detail panel:** the card image at 160×220 — which is exactly
+  `ImportCardImages.THUMB_WIDTH`, so it renders 1:1 with no upscaling —
+  with a semi-transparent band across the bottom. The band sits over the
+  card's own text box, the least costly part of the art to cover, and
+  truncates with the full label in `title` for the rare long ones
+  (`Galarian Articuno, Galarian Zapdos, & Galarian Moltres`).
+
+The detail panel had no image at all before this; it was title, subtitle
+and chart. Adding one is what made a readable label possible.
+
+The band's colours are literals rather than tokens, deliberately: it floats
+on artwork, not on a themed surface, so it must hold in both themes without
+following the theme.
+
+### What this does not do
+
+It does not apply the Part 21 matcher fix, and it does not clear a single
+`no_match` row. Those are still the owner's call. What changed is that the
+call is no longer risky in one direction: when cross-set images are turned
+on, every variant that shows a base printing already says which printing it
+is.
+
+Movers deliberately doesn't carry the label yet — that screen shows no
+images, so nothing there can mislead. It would still be useful as identity,
+the same way `card_number` is, and that is a small follow-up rather than a
+gap.
 
 ---
 

@@ -141,6 +141,20 @@
 .thumb.loaded {
   opacity: 1;
 }
+/* Variant marker. At 40x56 there is no room for words - roughly 5px of
+   type - so the thumbnail gets a mark and .tag.variant carries the text.
+   Drawn as a border triangle rather than an overlaid box so it costs the
+   artwork only the corner it occupies. */
+.thumb-box.is-variant::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 11px 11px 0;
+  border-color: transparent var(--warn) transparent transparent;
+  pointer-events: none;
+}
 .meta {
   display: flex;
   flex-direction: column;
@@ -187,6 +201,72 @@
 .tag.sealed {
   border-color: var(--warn);
   color: var(--warn);
+}
+/* Filled where .sealed is outlined: both are --warn, and a variant is the
+   stronger claim of the two - it says this row is a different product from
+   the card it otherwise looks identical to. */
+.tag.variant {
+  border-color: var(--warn);
+  background: var(--warn);
+  color: var(--bg);
+  font-weight: 600;
+  /* One-offs run long ("Galarian Articuno, Galarian Zapdos, & Galarian
+     Moltres"); the row must not stretch to fit one. */
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- detail artwork --- */
+.detail-art {
+  position: relative;
+  width: 160px;
+  height: 220px;
+  margin: 0.9rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* 160px wide is the cached thumbnail's native width (ImportCardImages
+   THUMB_WIDTH), so this renders 1:1 with no upscaling. */
+.detail-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.detail-img.loaded {
+  opacity: 1;
+}
+/* Sits over the card's own text box - the least costly part of the art to
+   cover. Fixed colours, not tokens: this floats on the artwork, not on a
+   themed surface, so it must stay legible in both themes. */
+.variant-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.28rem 0.35rem;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(1.5px);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-img,
+  .thumb {
+    transition: none;
+  }
 }
 
 /* --- detail --- */

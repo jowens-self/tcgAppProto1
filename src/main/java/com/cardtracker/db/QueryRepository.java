@@ -43,8 +43,8 @@ public class QueryRepository {
     public List<ItemSearchResult> search(String query, Integer categoryId,
                                          boolean includeSealed, int limit, int offset)
             throws Exception {
-        String sql = "SELECT product_id, name, card_number, rarity, set_name, game, "
-                + "is_sealed, variant_count, latest_date, url, image_url "
+        String sql = "SELECT product_id, name, card_number, rarity, variant_label, "
+                + "set_name, game, is_sealed, variant_count, latest_date, url, image_url "
                 + "FROM item_search(?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, query);
@@ -65,6 +65,7 @@ public class QueryRepository {
                             rs.getString("name"),
                             rs.getString("card_number"),
                             rs.getString("rarity"),
+                            rs.getString("variant_label"),
                             rs.getString("set_name"),
                             rs.getString("game"),
                             rs.getBoolean("is_sealed"),
@@ -136,6 +137,7 @@ public class QueryRepository {
                 SELECT p.product_id, p.name,
                        extended_field(p.extended_data, 'Number') AS card_number,
                        extended_field(p.extended_data, 'Rarity') AS rarity,
+                       variant_label(p.name) AS variant_label,
                        g.name AS set_name, c.name AS game,
                        p.is_sealed, p.url, p.image_url,
                        (SELECT COUNT(DISTINCT ps.sub_type_name)::INT
@@ -156,6 +158,7 @@ public class QueryRepository {
                         rs.getString("name"),
                         rs.getString("card_number"),
                         rs.getString("rarity"),
+                        rs.getString("variant_label"),
                         rs.getString("set_name"),
                         rs.getString("game"),
                         rs.getBoolean("is_sealed"),

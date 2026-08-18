@@ -313,6 +313,20 @@ Rules it establishes, worth keeping:
   match the set size or the set code instead. The digits-only match is
   allowed only when the typed number has no letters, otherwise `XY67a`
   would also match `XY67`.
+- **[OWNER] A variant's image must be labelled** (decided 2026-08-18). The
+  owner's answer to the Part 21 question: when a variant printing shows the
+  base card's artwork, show it *and* say which printing it is. So wherever a
+  variant's image appears, `variantLabel` appears with it - a `--warn` corner
+  wedge plus a filled pill in the list (at 40x56 a text overlay renders at
+  ~5px and is illegible), and a semi-transparent band across the bottom of
+  the 160x220 detail image. `variant_label()` derives it from the product
+  name, not from the image match, so it is correct whether or not a card has
+  a picture. Two rules inside it are load-bearing and were both bugs first:
+  a trailing bracket faces the same validity test as a parenthetical
+  (`is_variant_word()`, shared by both - otherwise all 26 `Unown [A]`..`[Z]`
+  get a one-letter "variant"), and a trailing card number is stripped before
+  extraction (`... [Professor Magnolia] - 223`). See DEVELOPMENT_HISTORY.md
+  Part 22.
 - **[OWNER] Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03
