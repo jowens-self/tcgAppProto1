@@ -456,6 +456,22 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
+- **Image matcher: two normalization bugs, 8,834 images recoverable
+  (audited 2026-08-18, nothing applied).** `numberDigits()`'s
+  `LEADING_DIGITS` is anchored, so any number not starting with a digit
+  (`H1`, `SV066`, `SWSH014`, `TG12`) returns null - which drops the card
+  from *both* the catalog index and the match attempt; 1,550 of 20,479
+  catalog cards are invisible. `normName()` doesn't strip trailing
+  parentheticals or letter-number tokens, so `Alakazam (H1)` and
+  `Rillaboom V - SWSH014` never match. Replayed offline: fixing both
+  recovers 81% of the 10,912 `no_match` rows. **Blocked on an [OWNER]
+  decision** - about half those matches come from a different set than the
+  product's own (championship stamps, Cracked Ice holos, Poke Ball
+  patterns, jumbos), and whether a variant may display its base printing's
+  image is a domain call, not an implementation detail. Applying any fix
+  also needs `DELETE FROM card_images WHERE status='no_match'`, since
+  those rows are never re-queried. Full analysis: DEVELOPMENT_HISTORY.md
+  Part 21.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
 - **`ImportCardImages` resolves its image directory relative to the

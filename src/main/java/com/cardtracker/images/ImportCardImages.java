@@ -44,13 +44,32 @@ import java.util.regex.Pattern;
  * CLAUDE.md), and it applies to a permitted host too: fetch once, serve
  * forever, no per-view traffic to anyone.
  *
- * **Expect roughly 60% coverage, by measurement.** Matching our 27,807
- * Pokemon singles against their 20,257 cards: 58.9% match on
- * name+number+setTotal, another 1.7% on name+number alone. Main sets run
- * 73%, established ones 88-95% (SV01 95%, Paradox Rift 94%), but the newest
- * sets are 43-53% because the upstream catalog lags new releases, and World
- * Championship decks / jumbo / prize packs / promos are absent entirely.
- * Misses are recorded as status='no_match' so they are never re-queried.
+ * **Coverage runs ~60% - but that number is NOT a ceiling, it is a bug.**
+ * Measured: 16,841 of 27,807 Pokemon singles matched (60.6%). An earlier
+ * version of this comment blamed the gap on the upstream catalog, claiming
+ * "World Championship decks / jumbo / prize packs / promos are absent
+ * entirely." **That claim is false** - audited 2026-08-18 against the
+ * cached catalog: `swshp` alone carries 304 promo cards we had written off.
+ * The real causes are two normalization defects below - see
+ * DEVELOPMENT_HISTORY.md Part 21. Replayed offline, fixing both recovers
+ * 8,834 of the 10,912 no_match rows (81%).
+ *
+ * 1. {@link #LEADING_DIGITS} is anchored, so {@link #numberDigits} returns
+ *    null for any number not starting with a digit (H1, SV066, SWSH014,
+ *    RC4, TG12, GG46). That null is fatal on BOTH sides: 1,550 of 20,479
+ *    catalog cards (7.6%) are never indexed, and those products never
+ *    attempt a match.
+ * 2. {@link #normName} strips a trailing "- 123" and "- 4/5" but not a
+ *    trailing parenthetical or letter-number token, so "Alakazam (H1)" and
+ *    "Rillaboom V - SWSH014" never match their bare catalog names.
+ *
+ * Not yet fixed: ~half the recoverable matches come from a different set
+ * than the product's own (championship stamps, Cracked Ice holos, Poke Ball
+ * patterns, jumbos), and whether a variant may show its base printing's
+ * image is the owner's call, still open.
+ *
+ * Misses are recorded as status='no_match' so they are never re-queried -
+ * which is why fixing the above also requires clearing those rows.
  */
 public class ImportCardImages {
 

@@ -32,9 +32,15 @@ origin through that date, then continuing forward from there).
 13. [Part 13 — Full codebase review and cleanup](#part-13--full-codebase-review-and-cleanup)
 14. [Part 14 — Formalizing the analytical building blocks](#part-14--formalizing-the-analytical-building-blocks)
 15. [Part 15 — Generalizing beyond Pokemon](#part-15--generalizing-beyond-pokemon)
-16. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-17. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-18. [What's still open](#whats-still-open)
+16. [Part 16 — The read path: lookup primitives and an API](#part-16--the-read-path-lookup-primitives-and-an-api)
+17. [Part 17 — Searching by name and number together](#part-17--searching-by-name-and-number-together)
+18. [Part 18 — The front end](#part-18--the-front-end)
+19. [Part 19 — Movers: the screen that needed the data checked first](#part-19--movers-the-screen-that-needed-the-data-checked-first)
+20. [Part 20 — Card images, from a source that wants to be used](#part-20--card-images-from-a-source-that-wants-to-be-used)
+21. [Part 21 — The no_match audit: a matcher bug wearing upstream absence as a disguise](#part-21--the-no_match-audit-a-matcher-bug-wearing-upstream-absence-as-a-disguise)
+22. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+23. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+24. [What's still open](#whats-still-open)
 
 ---
 
@@ -1501,6 +1507,141 @@ swap in a placeholder still let the browser paint its broken-image glyph
 for a frame first - visible on roughly 40% of rows, which reads as a bug
 rather than an absence. The image now starts transparent and fades in on
 `load`, over a placeholder that is always present underneath.
+
+---
+
+## Part 21 — The `no_match` audit: a matcher bug wearing upstream absence as a disguise
+
+Picked the project back up on 2026-08-17 (evening local / 2026-08-18 UTC)
+with an image import already running. It finished mid-session. Its final
+tally is where this starts:
+
+| status | before this run | after |
+|---|---|---|
+| ok | 16,458 | 16,841 |
+| no_match | 3,621 | **10,912** |
+| failed | 54 | 54 |
+
+That run resolved ~7,674 products and matched **383** of them. A ~95% miss
+rate on the tail, against ~82% matched on everything before it.
+
+**Why this had never been questioned.** The class javadoc on
+`ImportCardImages` predicts it: *"Expect roughly 60% coverage, by
+measurement,"* attributing the gap to the upstream catalog — *"World
+Championship decks / jumbo / prize packs / promos are absent entirely."*
+The final numbers land at 16,841 of 27,807 = **60.6%**, almost exactly on
+the documented prediction. A measured expectation that a later run
+reproduces to within half a percent is about as reassuring as a number
+gets.
+
+It was right about the total and wrong about the cause.
+
+### Finding the real cause
+
+The misses cluster in two shapes that "upstream is missing these" does not
+explain. Skyridge — a 2003 set, fully catalogued upstream — sat at exactly
+91 matched / 91 missed. Several 2025 sets sat near 50%. Those are not the
+shapes of an absent set.
+
+The names told the story:
+
+```
+ok        Abra                  no_match  Alakazam (2)
+ok        Aerodactyl            no_match  Alakazam (H1)
+ok        Charizard             no_match  Crobat (147)
+```
+
+Checked against the cached catalog offline — every one of those is
+present upstream: `ecard3` carries `Alakazam` at `H1` and at `2`, `Crobat`
+at `6`, `H5` and `147`. Same for the promos the javadoc called absent:
+`swshp` has 304 cards, including the `Rillaboom V - SWSH014` we had just
+written off.
+
+**Two independent bugs, both in normalization.**
+
+1. **`LEADING_DIGITS = ^\s*([0-9]+)` is anchored.** `numberDigits()`
+   returns null for any card number that doesn't begin with a digit, and
+   that null is fatal on *both* sides of the match — catalog cards are
+   skipped at index time (`if (n == null || d == null) continue;`) and
+   products never attempt a match. **1,550 of 20,479 catalog cards (7.6%)
+   were never indexed at all**: every `H1`, `SV066`, `SWSH014`, `RC4`,
+   `TG12`, `GG46`. An entire promo set can be in the cache and invisible
+   to the matcher.
+
+2. **`normName()` strips the wrong suffixes.** It removes a trailing
+   `- 123` and a trailing `- 4/5`, but not a trailing parenthetical or a
+   letter-number token. `Alakazam (H1)` normalizes to `alakazam h1` and
+   `Rillaboom V - SWSH014` to `rillaboom v swsh014`; neither matches the
+   catalog's bare `Alakazam` / `Rillaboom V`.
+
+Bug 1 alone explains the 100%-miss promo sets. Bug 2 alone explains
+Skyridge's clean 50/50 split. Together they explain the tail.
+
+### Measuring it instead of asserting it
+
+Both rules were replayed offline against `images/.catalog-cache` (20,479
+cards) and all 10,912 `no_match` rows — no network, no re-import:
+
+| rules | recovered from the 10,912 |
+|---|---|
+| current (baseline) | 0 |
+| + number fix | 514 (4.7%) |
+| + number fix + name fix | **8,834 (81.0%)** |
+
+The number fix alone recovering only 4.7% is worth noting: the first
+hypothesis was that bug 1 explained everything, and the data said it
+explained a twentieth. The two bugs compound — most products needed both
+fixes to match.
+
+### The part that is not a bug, and not Claude's call
+
+Of the 8,834, roughly half match a card in a **different set** from the
+product's own:
+
+- `Town Volunteers - 2004 (Kevin Nguyen)` → Aquapolis #136
+- `Magikarp - 22/83 (Toys R Us Promo)` → Generations #22
+- `Blastoise - 13/95 (Cracked Ice Holo)` → HS—Unleashed #13
+- `Whimsicott (Poke Ball Pattern)` → the base Prismatic Evolutions print
+
+Same artwork, genuinely the same card — but the championship stamp, the
+Cracked Ice foil, the Poke Ball pattern and the jumbo format are precisely
+what make these separate products at separate prices. Against this file's
+own standing rule — *a confidently wrong image is worse than an obvious
+blank for someone pricing inventory* — showing the base printing for a
+variant is a domain judgment about how this app should behave, not an
+implementation detail. It belongs to the owner, who knows these printing
+conventions far better than Claude does.
+
+(The same/cross split above is a set-name heuristic and **undercounts the
+safe side**: the four promo groups, ~900 cards, are the same set under a
+different name — `SWSH: Sword & Shield Promo Cards` vs `SWSH Black Star
+Promos` — and are misfiled as cross-set. Don't quote 4,030/4,804 as
+precise.)
+
+### State at the end of this part
+
+**Nothing was applied.** No code changed, and critically **no `no_match`
+rows were deleted**. They are written to be permanent — never re-queried —
+so any fix only takes effect after
+`DELETE FROM card_images WHERE status='no_match'`, letting a later run
+reconsider them. That is a destructive write against real data and was
+left for the owner.
+
+Open, in priority order:
+
+1. The variant-image policy question above — it decides what the fixed
+   matcher should *accept*, so it gates the code.
+2. Fix both normalization bugs regardless; they are defects under any
+   policy.
+3. Correct the javadoc's "promos are absent entirely" claim, which is
+   false and actively misleading — it is the sentence that made a 60%
+   match rate look like a ceiling instead of a bug.
+
+**The pattern worth keeping:** a documented, measured expectation
+reproduced almost exactly, and it was still concealing a defect. The
+measurement was real; the *explanation* attached to it had never been
+tested. When a number matches its prediction, that confirms the number —
+not the story about why.
 
 ---
 
