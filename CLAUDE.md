@@ -22,6 +22,53 @@ a shipped app.
 
 ---
 
+## Where the project actually is (updated 2026-08-17)
+
+Built and working: daily price ingest for Pokemon (3) and One Piece (68)
+with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
+in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
+front end in `web/` with two screens (Card/Product Search, Movers); and
+locally-cached Pokemon card images.
+
+**Check state before assuming anything** - `./status.sh` reports what's
+running, image-import progress and data freshness in one shot. The backlog
+at the bottom of this file goes stale faster than anything else here; two
+shipped features were still listed as to-do a few hours after shipping.
+
+Running it, all three needed together:
+
+```
+docker compose up -d                                                  # Postgres
+java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer    # API :7070
+cd web && npx ng serve                                                 # UI :4200
+```
+
+`java -jar target/cardtracker-0.1.0.jar` pulls prices (idempotent per day,
+catches up gaps automatically). `com.cardtracker.images.ImportCardImages`
+fetches card images - resumable, run it from the project root.
+
+**Traps that have actually bitten, all of them more than theory:**
+
+- **Never `mvn package` while a long job is using the jar.** It overwrites
+  in place and Java loads classes lazily, so a running import or backfill
+  can die partway through.
+- **Run tools from the project root.** `ImportCardImages` resolves its
+  image directory against the working directory; launched elsewhere it
+  writes images the API cannot find, silently.
+- **`.gitignore` patterns without a leading slash match at any depth.** A
+  bare `images/` silently excluded the Java package
+  `src/main/java/com/cardtracker/images/`, and the importer sat
+  uncommitted for a day. Anchor directory ignores: `/images/`.
+- **Don't pipe a long-running Java process through `head`.** It ignores
+  the resulting SIGPIPE and keeps running with output discarded, which
+  looks exactly like a hang.
+- **pokemontcg.io is flaky.** Expect 5-11 of 174 sets to fail per attempt,
+  and deep pagination is broken past ~12k rows. The importer retries and
+  caches a complete catalog under `images/.catalog-cache` (7-day TTL);
+  delete that file to force a refresh.
+
+---
+
 ## How to read this file: provenance
 
 Rules here have three different origins, and they do not carry the same
@@ -411,20 +458,12 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
-- **Known rough edges in `ImportCardImages`** (found 2026-08-16, not yet
-  fixed - the jar could not be rebuilt while an import was running):
-  - It re-downloads the whole 174-set catalog on *every* run, including a
-    `--group` run needing a handful of cards. That's a 3-5 minute tax per
-    invocation and makes set-by-set importing tedious. Cache the catalog
-    to disk with a TTL.
-  - `--limit 0` prints "Nothing to do - every Pokemon single already has a
-    card_images row", which is false; it just selected zero rows. The
-    message should distinguish "nothing pending" from "you asked for none."
-  - **The image directory resolves relative to the process's working
-    directory.** Launch it from anywhere but the project root and images
-    land somewhere the API can't serve, silently. This already happened
-    once. Either resolve relative to the jar, or refuse to start when the
-    target directory isn't the expected one.
+- **`ImportCardImages` resolves its image directory relative to the
+  process's working directory.** Launch it from anywhere but the project
+  root and images land where the API can't serve them, silently. This has
+  already happened once. Either resolve relative to the jar, or refuse to
+  start when the target directory isn't the expected one. (The catalog
+  re-download and `--limit 0` message issues were fixed 2026-08-17.)
 - **Community art showcase (owner's idea, 2026-08-16)** - themed voting
   prompts ("best beach vibes", "favourite darker-theme art") over card
   art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md
