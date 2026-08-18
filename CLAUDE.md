@@ -238,6 +238,33 @@ individually.
   set aggregate. Sealed items had been dominating those numbers (one
   $8,441 display case was a third of a set's "total value"; Paldean Fates
   went $25,100.93 -> $2,792.05 once fixed). See Part 12 and Part 14.
+- **[OWNER] A reading that swings hard and reverts the next day is
+  replaced with the median of its neighbours, and the row says so.**
+  Decided 2026-08-18 - the owner's framing was "if something swings -80%
+  and then picks right back up at its normal price then that is probably
+  an error," explicitly *not* a request to smooth every correction. The
+  test keys on PERSISTENCE, not magnitude: a real move leaves a new level
+  behind it, an error leaves the same level either side, so no threshold
+  on "how big a real move may be" is ever needed. Four things are
+  load-bearing:
+    * **Median, never mean.** A mean damps real moves and smears steps
+      across days - measured on Charizard Star (84198), mean-3 left a
+      phantom -25% *and* invented a +108% move that never happened, where
+      median-3 removed the artifact entirely and kept the real step intact.
+    * **A dollar gate**, because the effect is heavy-tailed: 4,700 events
+      in 90 days, but 15 of them carry 99.4% of the distortion. Default
+      $10.
+    * **`price_snapshots` is never written.** Substitution happens at read
+      time in `game_set_overview()`. Append-only is not negotiable.
+    * **It is a visible, defaultable-off toggle and every affected row is
+      marked.** It moved EX Dragon Frontiers from -20.91% to +8.43% on one
+      substitution; a correction that large which does not announce itself
+      is worse than either honest alternative. A correction you cannot
+      switch off is a correction you cannot check.
+  Two structural limits, both documented in Part 24: the newest date can
+  never be despiked (no next day exists yet), and a 3-window median only
+  catches one-day impulses - 20 two-day runs were missed over 90 days and
+  widening the window is an open question, not a decided one.
 - **[CLAUDE] A set-level percentage is shown with its biggest single
   contributor, never alone.** Measured 2026-08-18: 44 of 283 sets have
   over half their 30-day movement coming from one row, and the worst case
@@ -530,8 +557,9 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   decision.** Found building the set overview (Part 23). Some cards'
   `market_price` flips between two far-apart values for weeks at a time -
   Base Set (Shadowless) Charizard 1st Ed Holofoil sits at ~$250 or at
-  exactly $10,000, while low/mid/high stay parked at $100,000. It is not a
-  one-day spike, so `item_movers()` smoothing does not touch it. Effect is
+  exactly $10,000, while low/mid/high stay parked at $100,000. It is not a one-day spike (it holds $240 for two consecutive
+  days), so neither `item_movers()` smoothing nor Part 24 despiking
+  touches it. Effect is
   large: 44 of 283 sets have over half their 30-day movement from a single
   row. The set screen discloses this rather than correcting it. The open
   question is whether such readings should be flagged or treated as

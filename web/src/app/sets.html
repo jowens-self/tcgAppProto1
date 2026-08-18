@@ -29,6 +29,18 @@
     />
     Hide sets with no return
   </label>
+
+  <!-- Exposed rather than hidden because it changes reported numbers. A
+       correction you can't switch off is a correction you can't check. -->
+  <label class="toggle">
+    <input
+      type="checkbox"
+      [ngModel]="despike()"
+      (ngModelChange)="despike.set($event); load()"
+      name="despike"
+    />
+    Correct one-day price errors
+  </label>
 </form>
 
 @if (error()) {
@@ -50,6 +62,16 @@
     {{ window()?.from }} and {{ window()?.to }}, so a set gaining or losing
     cards mid-window can't look like a price move.
   </p>
+
+  @if (despike() && despikedCount() > 0) {
+    <p class="method fix-note">
+      ⤾ {{ despikedCount() }} of {{ visible().length }} sets shown had a price
+      that swung hard and was back to its previous level the next day. Those
+      readings were replaced with the median of the surrounding days —
+      stored prices are untouched, and unticking the box above shows the raw
+      comparison.
+    </p>
+  }
 
   @if (flaggedCount() > 0) {
     <p class="method warn-note">
@@ -128,6 +150,11 @@
                   [class.down]="r.pctReturn < 0"
                 >
                   {{ r.pctReturn >= 0 ? '+' : '' }}{{ r.pctReturn | number: '1.2-2' }}%
+                </span>
+              }
+              @if (r.nDespiked > 0) {
+                <span class="fixed" [title]="despikeTitle(r)">
+                  ⤾ adjusted
                 </span>
               }
             </td>

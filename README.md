@@ -346,7 +346,10 @@ and how it moved. Takes `game` (omit for all tracked games), `days`
 
 ```bash
 curl "localhost:7070/api/sets/overview?game=3&days=30"
+curl "localhost:7070/api/sets/overview?game=3&days=30&despike=false"   # raw
 ```
+
+Takes `game`, `days` (default 30), `asOf` and `despike` (default on).
 
 Backed by `game_set_overview()`, which computes `set_value()` and
 `set_return()` set-wide in one pass — there are 302 tracked groups, so
@@ -384,6 +387,30 @@ sortable so the untrustworthy rows can be found directly.
 Share is measured against **gross** movement (sum of absolute deltas), not
 net — net passes through zero, and ranking by share-of-net gave four-digit
 percentages for sets whose gains and losses nearly cancel.
+
+**One-day price errors are corrected, and the row says so.** A reading
+whose two neighbours agree with each other while it disagrees with both is
+almost certainly an upstream error rather than a move — the test is
+*persistence*, not magnitude — and it is replaced with the median of the
+three days. Rows where that happened show `⤾ adjusted`; the checkbox turns
+it off. Stored prices are never modified.
+
+Median, not mean, and that is the point. On Charizard Star (84198), which
+has a real step (970→4000) and a one-day artifact ($980 between $4,000
+either side): median-3 removes the artifact entirely and keeps the step at
+full size, while mean-3 leaves a phantom −25% *and* invents a +108% move on
+the day before by smearing the step across three days.
+
+It is gated at $10 of distortion because the effect is heavy-tailed: 4,700
+events over 90 days, of which 15 carry 99.4% of the money. On the default
+window today it changes nothing ($0.81 of sub-gate noise), but when a spike
+lands on an endpoint it is decisive — as of 2026-08-04 it moved EX Dragon
+Frontiers from **−20.91% to +8.43%** on a single substitution.
+
+Two structural limits: the newest date can never be despiked (its next day
+hasn't been observed yet), and a 3-day median only catches one-day
+impulses — 20 two-day runs were missed over 90 days, including the Base Set
+Charizard. See DEVELOPMENT_HISTORY.md Part 24.
 
 ## Card images
 

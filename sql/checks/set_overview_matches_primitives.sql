@@ -19,11 +19,17 @@
 -- per set, so the full sweep is slow, and the high-value sets are where a
 -- divergence would matter most. Raise the LIMIT for a fuller sweep.
 --
--- Background: DEVELOPMENT_HISTORY.md Part 23.
+-- DESPIKING IS DELIBERATELY OFF here (the FALSE argument). set_return() is
+-- a raw two-point comparison, so with despiking on the two legitimately
+-- disagree wherever a suspect reading was replaced - that is the feature
+-- working, not a regression. Passing FALSE keeps this check testing the
+-- aggregation logic, which is what it exists for.
+--
+-- Background: DEVELOPMENT_HISTORY.md Parts 23 and 24.
 WITH ov AS (
   SELECT group_id, set_name, n_priced, total_value, n_common,
          total_start, total_end, pct_return, start_date, end_date
-  FROM game_set_overview(3, 30)
+  FROM game_set_overview(3, 30, NULL, FALSE)  -- despiking OFF, see below
   ORDER BY total_value DESC NULLS LAST
   LIMIT 20
 ),

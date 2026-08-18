@@ -246,21 +246,25 @@ public class QueryRepository {
      * function's numbers are cross-checked against those primitives rather
      * than assumed equal - see DEVELOPMENT_HISTORY.md Part 23.
      *
-     * categoryId null = every tracked game.
+     * categoryId null = every tracked game. despike replaces readings that
+     * swung hard and reverted the next day with the median of their
+     * neighbours - see game_set_overview(). Pass false for a raw two-point
+     * comparison matching set_return().
      */
-    public List<SetOverview> setOverview(Integer categoryId, Integer days, LocalDate asOf)
-            throws Exception {
+    public List<SetOverview> setOverview(Integer categoryId, Integer days, LocalDate asOf,
+                                        boolean despike) throws Exception {
         String sql = """
                 SELECT group_id, set_name, game, published_on, n_priced, total_value,
                        n_common, total_start, total_end, pct_return,
                        top_product_id, top_name, top_sub_type, top_delta, top_share,
-                       top_url, start_date, end_date
-                  FROM game_set_overview(?, ?, ?)
+                       top_url, n_despiked, despike_usd, start_date, end_date
+                  FROM game_set_overview(?, ?, ?, ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             if (categoryId == null) ps.setNull(1, Types.INTEGER); else ps.setInt(1, categoryId);
             setIntOrDefault(ps, 2, days, 30);
             setDate(ps, 3, asOf);
+            ps.setBoolean(4, despike);
 
             List<SetOverview> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
@@ -282,6 +286,8 @@ public class QueryRepository {
                             rs.getBigDecimal("top_delta"),
                             rs.getBigDecimal("top_share"),
                             rs.getString("top_url"),
+                            rs.getInt("n_despiked"),
+                            rs.getBigDecimal("despike_usd"),
                             localDate(rs.getDate("start_date")),
                             localDate(rs.getDate("end_date"))));
                 }

@@ -40,9 +40,10 @@ origin through that date, then continuing forward from there).
 21. [Part 21 — The no_match audit: a matcher bug wearing upstream absence as a disguise](#part-21--the-no_match-audit-a-matcher-bug-wearing-upstream-absence-as-a-disguise)
 22. [Part 22 — Saying which printing you are looking at](#part-22--saying-which-printing-you-are-looking-at)
 23. [Part 23 — The set overview, and the one card that was the whole set](#part-23--the-set-overview-and-the-one-card-that-was-the-whole-set)
-24. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-25. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-26. [What's still open](#whats-still-open)
+24. [Part 24 — Prices that swing and come straight back](#part-24--prices-that-swing-and-come-straight-back)
+25. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+26. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+27. [What's still open](#whats-still-open)
 
 ---
 
@@ -1896,6 +1897,135 @@ what is stored; `price_snapshots` remains append-only and unmodified.
 
 ---
 
+## Part 24 — Prices that swing and come straight back
+
+The owner's question, immediately after Part 23: *"is there any way to
+intelligently disregard a price swing that seems obviously erroneous due to
+immediate correction? I'm not saying every time something corrects to
+smooth it out but if something swings -80% and then picks right back up at
+its normal price then that is probably an error."*
+
+The qualifier is the important half. This is not a request for smoothing —
+it is a request to distinguish two things that a smoother treats
+identically.
+
+### The formulation that makes it tractable
+
+Key on **persistence, not magnitude**. A genuine move leaves a *new level*
+behind it; an error leaves the *same level* on both sides. So the test never
+has to take a view on how large a real move is allowed to be — which is the
+thing nobody can specify, and the reason a percentage threshold alone would
+be arbitrary.
+
+Concretely: a reading is suspect when its two neighbours agree with each
+other and it disagrees with both.
+
+### Median, not mean — and the mean is actively harmful
+
+`item_movers()` already averages 3 days at each end. Replaying both filters
+against Charizard Star (84198), a card carrying **both** defects — a real
+step (970 → 4000 on 2026-07-24) and a one-day artifact ($980 on 2026-08-04
+between $4,000 either side):
+
+| date | raw | median-3 | mean-3 |
+|---|---|---|---|
+| 2026-07-23 | 950 | 970 | **1973** |
+| 2026-07-24 | 4000 | **4000** | 2983 |
+| 2026-08-04 | 980 | **4000** | 2993 |
+
+Median-3 deletes the artifact outright and preserves the real step at full
+size on the correct day. Mean-3 does worse than nothing: it leaves a
+phantom −25% on 08-04 *and* fabricates a +108% move on 07-23 that never
+happened, by smearing the genuine step across three days. A mean damps
+everything, including the signal; a median annihilates single-sample
+impulses and leaves steps and monotone trends untouched. That is a property
+of the filter, not a tuning choice.
+
+### Sizing it before building it
+
+Over the 90 days to 2026-08-18, across 4.47M interior observations:
+
+| distortion | spikes | total |
+|---|---|---|
+| under $1 | 4,652 | $138.51 |
+| $1–10 | 22 | $68.34 |
+| $10–100 | 11 | $614.64 |
+| $100–1,000 | 8 | $3,849.52 |
+| over $1,000 | 7 | $28,590.99 |
+
+4,700 events, 0.11% of observations — but **15 of them carry 99.4% of the
+money**. Heavy-tailed to the point that a filter tuned by *count* would
+look pointless while a filter tuned by *dollars* is clearly worth having.
+Hence the `p_despike_min_usd` gate at $10: it ignores 4,674 penny-card
+events and catches 99.6% of the distortion.
+
+The tail is all thin-market chase cards — Charizard 1st Ed, Pikachu Star,
+Flareon Star, Shining Tyranitar, Boa Hancock. Same population as the
+concentration problem in Part 23, which is not a coincidence: thin markets
+produce both.
+
+### What it actually changes
+
+On the default 30-day window: **nothing**. The 48 spikes on the start date
+totalled $0.81, all under the gate. That is the honest answer to "does this
+matter today" and it is worth stating plainly rather than hiding behind the
+feature existing.
+
+But when a spike *does* land on an endpoint it is decisive. Running the
+same query as of 2026-08-04, a date that held two large artifacts:
+
+| set | raw | despiked | one substitution worth |
+|---|---|---|---|
+| EX Dragon Frontiers | **−20.91%** | **+8.43%** | $3,020 |
+| EX Power Keepers | **−5.73%** | **+8.96%** | $1,250 |
+
+Both verdicts reversed by a single replaced reading. EX Dragon Frontiers'
+"driven by" card changed too — with the fake $3,020 move gone, a real card
+is correctly identified as the biggest contributor, so the Part 23
+concentration column reports on cleaned data rather than on the artifact.
+
+### Two limits, both structural, both worth knowing
+
+**1. Today can never be despiked.** The newest `snapshot_date` has no next
+day, so the confirming evidence does not exist yet. The "now" endpoint of
+every screen is exactly that date. This cleans history well and today not
+at all; today's reading gets its check tomorrow. Not an implementation gap
+— there is no way around it that doesn't involve predicting the future.
+
+**2. A 3-window median only kills one-day impulses.** The Base Set
+(Shadowless) Charizard from Part 23 dips to $240 on **both** 2026-08-04 and
+08-05, so `median(10000, 240, 240) = 240` and it is correctly left alone.
+Measured at the $10 gate over 90 days: **26 one-day runs caught, 20 two-day
+runs missed.** A 5-window median would catch those too, at the cost of
+erasing genuine two-day moves — a real trade-off, left as an open question
+rather than decided quietly.
+
+So despiking does *not* rescue the +59.96% Base Set headline. That number
+came from comparing two multi-week regimes, and both persisted. The two
+defects are related in cause and independent in treatment: Part 23
+discloses concentration, Part 24 corrects impulses, and neither subsumes
+the other.
+
+### Why it is a visible toggle
+
+The screen shows "Correct one-day price errors" as a checkbox, defaulted
+on, and any set whose numbers were altered carries an `⤾ adjusted` marker
+with a tooltip naming the count and dollar adjustment. A correction that
+changes a reported percentage by 29 points and does not announce itself is
+worse than either honest alternative. **A correction you cannot switch off
+is a correction you cannot check.**
+
+`price_snapshots` is untouched — append-only is not negotiable, and every
+substitution happens at read time inside `game_set_overview()`.
+
+`p_despike` is also why `sql/checks/set_overview_matches_primitives.sql`
+now passes `FALSE`: `set_return()` is a raw two-point comparison, so with
+despiking on the two legitimately disagree wherever a reading was replaced.
+That is the feature working, not a regression, and the check keeps testing
+the aggregation logic it exists to test.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -2107,8 +2237,8 @@ Not started. Schema not yet designed.
   Found while building Part 23. Some cards' `market_price` toggles between
   two very different values for weeks at a time (Base Set Shadowless
   Charizard 1st Ed Holo: ~$250 vs exactly $10,000, with low/mid/high parked
-  at $100,000). It is not a spike, so `item_movers()`-style smoothing does
-  not touch it. The set overview *discloses* the effect rather than
+  at $100,000). It is not a one-day spike, so neither
+  `item_movers()`-style smoothing nor Part 24's despiking touches it. The set overview *discloses* the effect rather than
   correcting it, which is the honest thing to do at the presentation layer,
   but the underlying question is unanswered: **should readings like these
   be flagged, or treated as suspect at ingest?** That is the same kind of

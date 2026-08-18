@@ -161,6 +161,18 @@ export interface SetOverview {
   topShare: number | null;
   /** Safe: an href fetches nothing until the user clicks it. */
   topUrl: string | null;
+  /**
+   * Readings replaced by the median of their two neighbours because the
+   * price swung hard and came straight back - an upstream error rather than
+   * a move. Usually 0, and that is expected: the effect is rare but
+   * heavy-tailed. When it fires it can be decisive (on 2026-08-04 a single
+   * substitution moved EX Dragon Frontiers from -20.91% to +8.43%), so a
+   * row with nDespiked > 0 must say so. A corrected number that doesn't
+   * admit it was corrected is worse than either honest alternative.
+   */
+  nDespiked: number;
+  /** Total absolute adjustment those substitutions made, in dollars. */
+  despikeUsd: number | null;
   startDate: string;
   endDate: string;
 }

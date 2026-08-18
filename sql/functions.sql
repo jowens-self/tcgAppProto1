@@ -747,17 +747,16 @@ RETURNS TABLE (
     GROUP BY g.group_id, g.name, g.published_on
     ORDER BY g.published_on DESC NULLS LAST, g.name;
 $$ LANGUAGE sql STABLE;
-
 -- ---------------------------------------------------------------------------
--- Set overview (added 2026-08-18)
+-- Set overview (added 2026-08-18, despiking added same day)
 --
 -- One row per set: what it's worth today and how it moved over a window.
 -- The per-set primitives set_value()/set_return() already answer this for
 -- ONE set, but the screen needs every set of a game at once - 302 tracked
 -- groups, so calling them per set is 604 round trips. This is those two
 -- functions' definitions computed set-wide in a single pass; the semantics
--- are deliberately identical, and set_return()'s numbers are the reference
--- these must match.
+-- are deliberately identical (with p_despike = FALSE, see below), and
+-- set_return()'s numbers are the reference these must match.
 --
 -- Three things carried over from the primitives, all load-bearing:
 --
@@ -769,42 +768,71 @@ $$ LANGUAGE sql STABLE;
 --   * pct_return is NULL, never 0, when the starting basket is <= 0.
 --
 -- Hence n_priced vs n_common, and total_value vs total_end: value is every
--- single priced on the end date, the return is only the common basket. They
--- differ whenever a card was priced today but not p_days ago, and the UI
--- says so rather than leaving a reader to notice two numbers that should
--- match and don't.
+-- single priced on the end date, the return is only the common basket.
 --
--- WHY THE CONCENTRATION COLUMNS EXIST (top_*). Measured 2026-08-18, not
--- theorized: among Pokemon sets with a >=2% 30-day move, the single largest
--- contributing row is routinely 50-87% of ALL movement in the set. Base Set
--- (Shadowless) read +59.96% on a basket of 202 - and $9,750 of the $10,718
--- move was one row, Charizard 1st Edition Holofoil, whose market_price
--- toggles between ~$250 and exactly $10,000 for weeks at a time while low,
--- mid and high sit parked at $100,000. That is a thin market flipping
--- regimes, not a 40x rally, and a two-point return lands on whichever
--- regime each chosen date happened to fall in.
+-- WHY THE CONCENTRATION COLUMNS EXIST (top_*). Measured 2026-08-18: among
+-- Pokemon sets with a >=2% 30-day move, the single largest contributing row
+-- is routinely 50-87% of ALL movement in the set. Base Set (Shadowless)
+-- read +59.96% on a basket of 202 - and $9,750 of the $10,718 move was one
+-- row, Charizard 1st Edition Holofoil, whose market_price sits at ~$250 or
+-- at exactly $10,000 for weeks at a time. Report the biggest single
+-- contributor and its share of gross movement, so a set carried by one row
+-- is visible instead of quietly trusted. top_share is a share of GROSS
+-- movement (SUM of |delta|), not of the net: net goes through zero, and
+-- ratios against it explode to meaningless four-digit percentages.
 --
--- Smoothing does NOT fix it and was tried first: the regimes run far longer
--- than a 3-day window, so item_movers()-style averaging returns $250 and
--- $10,000 unchanged. The measure that does help is disclosure - report the
--- biggest single contributor and its share of gross movement, so a set
--- carried by one oscillating row is visible instead of quietly trusted.
--- Same defect class as sealed product dominating set aggregates (Part 12
--- and 14); this one can't be fixed by excluding a category, because the
--- offending row is a legitimate single.
+-- DESPIKING (p_despike). A separate defect from the above, and the owner's
+-- call on 2026-08-18: a price that swings hard and is back to its previous
+-- level the very next day is almost certainly an upstream error, not a
+-- move. The test keys on PERSISTENCE, not magnitude - a real move leaves a
+-- new level behind it, an error leaves the same level on both sides - so it
+-- needs no opinion about how large a genuine move may be.
 --
--- top_share is a share of GROSS movement (SUM of |delta|), not of the net.
--- Net goes through zero - a set whose gains and losses cancel has a
--- near-zero denominator and every ratio against it explodes to meaningless
--- four-digit percentages. Gross is always >= |net| and stays interpretable.
+-- A reading is replaced with median(prev, cur, next) when all of:
+--   * both neighbour days exist and are positive;
+--   * the neighbours agree with each other within p_despike_tolerance;
+--   * cur deviates from their midpoint by >= p_despike_deviation;
+--   * and the distortion is at least p_despike_min_usd.
+--
+-- MEDIAN, not mean, and that is the whole point. Measured on Charizard
+-- Star (84198), which has both a real step (970 -> 4000 on 2026-07-24) and
+-- a one-day artifact ($980 on 2026-08-04 between $4,000 either side):
+--   median-3: artifact -> 4000 (gone entirely), step preserved at full size
+--             on the correct day.
+--   mean-3:   artifact -> 2993 (a phantom -25% survives), AND the real step
+--             smears across three days, inventing a +108% move on 07-23
+--             that never happened.
+-- A mean damps everything including real moves; a median annihilates
+-- single-sample impulses and leaves steps and trends untouched.
+--
+-- The dollar gate exists because the effect is heavily tailed. Over the 90
+-- days to 2026-08-18 there were 4,700 such spikes, but 4,652 were sub-$1
+-- penny cards worth $138 in total, while 15 spikes carried $32,440 - 99.4%
+-- of all distortion. Filtering everything would churn thousands of rows to
+-- fix rounding noise; $10 catches 26 spikes and 99.6% of the money.
+--
+-- LIMITATION, and it is structural, not an implementation gap: the newest
+-- snapshot_date has no next day, so its readings can NEVER be despiked -
+-- the confirming evidence hasn't been observed yet. The "now" endpoint of
+-- every screen is exactly that date. This cleans history well and today not
+-- at all; today's reading gets its check tomorrow.
+--
+-- p_despike defaults TRUE, but sql/checks/set_overview_matches_primitives.sql
+-- calls it FALSE: set_return() is a raw two-point comparison, so with
+-- despiking on the two legitimately disagree wherever a spike was replaced.
+-- Passing FALSE keeps that check testing the aggregation logic, which is
+-- what it is for.
 --
 -- p_days defaults to 30 rather than movers' 7: a set of 200+ cards averages
--- out most of what a week shows, and the seven-day view was mostly noise
--- when checked.
+-- out most of what a week shows.
 CREATE OR REPLACE FUNCTION game_set_overview(
     p_category_id INTEGER DEFAULT NULL,
     p_days        INTEGER DEFAULT 30,
-    p_as_of       DATE    DEFAULT NULL
+    p_as_of       DATE    DEFAULT NULL,
+    p_despike     BOOLEAN DEFAULT TRUE,
+    p_despike_min_usd   NUMERIC DEFAULT 10,
+    p_despike_tolerance NUMERIC DEFAULT 1.05,
+    p_despike_deviation NUMERIC DEFAULT 1.25
 ) RETURNS TABLE (
     group_id        INTEGER,
     set_name        TEXT,
@@ -822,6 +850,8 @@ CREATE OR REPLACE FUNCTION game_set_overview(
     top_delta       NUMERIC,
     top_share       NUMERIC,
     top_url         TEXT,
+    n_despiked      INTEGER,
+    despike_usd     NUMERIC,
     start_date      DATE,
     end_date        DATE
 ) AS $$
@@ -832,36 +862,83 @@ BEGIN
     -- Resolved to scalars before the query, not computed in a CTE. Same
     -- reason as item_movers(): from a sub-select the planner can't fold
     -- these into constants, misses idx_snapshots_date and aggregates far
-    -- more of the 41M-row table than needed. As scalars it's a two-day
-    -- indexed range scan.
+    -- more of the 41M-row table than needed.
     v_end   := COALESCE(p_as_of, (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps));
     v_start := v_end - GREATEST(COALESCE(p_days, 30), 1);
 
     RETURN QUERY
-    WITH now_rows AS (
-        SELECT p.group_id AS gid, ps.product_id AS pid,
-               ps.sub_type_name AS stn, ps.market_price AS price
+    WITH anchors AS (
+        SELECT v_start AS d, 's'::TEXT AS which
+        UNION ALL
+        SELECT v_end, 'e'::TEXT
+    ),
+    -- Six days rather than two: each endpoint needs its neighbours to be
+    -- despikeable. Still an indexed range scan.
+    win AS (
+        SELECT p.group_id AS gid, ps.product_id AS pid, ps.sub_type_name AS stn,
+               ps.snapshot_date AS sd, ps.market_price AS price
         FROM price_snapshots ps
         JOIN products p ON p.product_id = ps.product_id
-        WHERE ps.snapshot_date = v_end
-          AND ps.market_price IS NOT NULL
+        WHERE ps.snapshot_date BETWEEN v_start - 1 AND v_start + 1
+           OR ps.snapshot_date BETWEEN v_end - 1 AND v_end + 1
+    ),
+    kept AS (
+        SELECT w.* FROM win w
+        JOIN products p ON p.product_id = w.pid
+        WHERE w.price IS NOT NULL
           AND p.is_sealed = FALSE
           AND (p_category_id IS NULL OR p.category_id = p_category_id)
     ),
-    then_rows AS (
-        SELECT ps.product_id AS pid, ps.sub_type_name AS stn,
-               ps.market_price AS price
-        FROM price_snapshots ps
-        JOIN products p ON p.product_id = ps.product_id
-        WHERE ps.snapshot_date = v_start
-          AND ps.market_price IS NOT NULL
-          AND p.is_sealed = FALSE
-          AND (p_category_id IS NULL OR p.category_id = p_category_id)
+    -- (product, sub_type, date) is the primary key, so MAX() here is just
+    -- "the one row", not an aggregate over several.
+    resolved AS (
+        SELECT a.which, k.gid, k.pid, k.stn,
+               MAX(k.price) FILTER (WHERE k.sd = a.d)     AS cur,
+               MAX(k.price) FILTER (WHERE k.sd = a.d - 1) AS prv,
+               MAX(k.price) FILTER (WHERE k.sd = a.d + 1) AS nxt
+        FROM anchors a
+        JOIN kept k ON k.sd BETWEEN a.d - 1 AND a.d + 1
+        GROUP BY 1, 2, 3, 4
     ),
+    flagged AS (
+        SELECT r.*,
+               (p_despike
+                AND r.cur IS NOT NULL AND r.prv IS NOT NULL AND r.nxt IS NOT NULL
+                AND r.prv > 0 AND r.nxt > 0 AND r.cur > 0
+                AND GREATEST(r.prv, r.nxt) / LEAST(r.prv, r.nxt) <= p_despike_tolerance
+                AND GREATEST(r.cur, (r.prv + r.nxt) / 2)
+                    / NULLIF(LEAST(r.cur, (r.prv + r.nxt) / 2), 0) >= p_despike_deviation
+                AND ABS(r.cur - (r.prv + r.nxt) / 2) >= p_despike_min_usd
+               ) AS is_spike
+        FROM resolved r
+        WHERE r.cur IS NOT NULL
+    ),
+    -- median-of-3 as max(min(a,b), min(max(a,b), c)) - no sort, no
+    -- percentile_cont, and correct for any ordering of the three.
+    priced AS (
+        SELECT f.which, f.gid, f.pid, f.stn, f.is_spike,
+               CASE WHEN f.is_spike
+                    THEN GREATEST(LEAST(f.prv, f.cur), LEAST(GREATEST(f.prv, f.cur), f.nxt))
+                    ELSE f.cur END AS price,
+               CASE WHEN f.is_spike
+                    THEN ABS(f.cur - GREATEST(LEAST(f.prv, f.cur),
+                                              LEAST(GREATEST(f.prv, f.cur), f.nxt)))
+                    ELSE 0 END AS adjustment
+        FROM flagged f
+    ),
+    now_rows  AS (SELECT * FROM priced WHERE which = 'e'),
+    then_rows AS (SELECT * FROM priced WHERE which = 's'),
     -- set_value(): every single priced on the end date.
     val AS (
         SELECT nr.gid, COUNT(*)::INTEGER AS n_priced, SUM(nr.price) AS total_value
         FROM now_rows nr
+        GROUP BY 1
+    ),
+    -- Counted across BOTH endpoints, so a set says how many suspect
+    -- readings went into its numbers at all, not just the recent end.
+    spikes AS (
+        SELECT pd.gid, COUNT(*)::INTEGER AS n_despiked, SUM(pd.adjustment) AS despike_usd
+        FROM priced pd WHERE pd.is_spike
         GROUP BY 1
     ),
     -- set_return()'s basket: priced on both days.
@@ -881,11 +958,9 @@ BEGIN
         GROUP BY 1
     ),
     -- Biggest single contributor per set, by absolute move. DISTINCT ON is
-    -- the cheap form here: one ordered pass, no window function over every
-    -- row of every set.
+    -- one ordered pass, no window function over every row of every set.
     top AS (
-        SELECT DISTINCT ON (m.gid)
-               m.gid, m.pid, m.stn, m.delta
+        SELECT DISTINCT ON (m.gid) m.gid, m.pid, m.stn, m.delta
         FROM moves m
         ORDER BY m.gid, ABS(m.delta) DESC, m.pid
     )
@@ -910,6 +985,8 @@ BEGIN
              THEN ROUND(ABS(top.delta) / ret.gross * 100, 1)
              ELSE NULL END,
         pr.url,
+        COALESCE(spikes.n_despiked, 0),
+        ROUND(COALESCE(spikes.despike_usd, 0), 2),
         v_start,
         v_end
     FROM groups g
@@ -920,6 +997,7 @@ BEGIN
     LEFT JOIN ret ON ret.gid = g.group_id
     LEFT JOIN top ON top.gid = g.group_id
     LEFT JOIN products pr ON pr.product_id = top.pid
+    LEFT JOIN spikes ON spikes.gid = g.group_id
     WHERE (p_category_id IS NULL OR g.category_id = p_category_id)
     ORDER BY g.published_on DESC NULLS LAST, g.name;
 END;

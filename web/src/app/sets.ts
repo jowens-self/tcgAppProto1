@@ -62,6 +62,16 @@ export class Sets {
    * baked into the query.
    */
   protected readonly hideEmpty = signal(true);
+
+  /**
+   * Replace readings that swung hard and reverted the next day with the
+   * median of their neighbours. On by default (the server's default too).
+   * Exposed as a toggle rather than hidden because it CHANGES REPORTED
+   * NUMBERS - on 2026-08-04 it moved EX Dragon Frontiers from -20.91% to
+   * +8.43% - and a correction you cannot switch off is a correction you
+   * cannot check.
+   */
+  protected readonly despike = signal(true);
   protected readonly sortKey = signal<SortKey>('value');
   protected readonly sortAsc = signal(false);
 
@@ -99,6 +109,11 @@ export class Sets {
     () => this.visible().filter((r) => this.concentrated(r)).length,
   );
 
+  /** How many visible sets had at least one reading replaced. */
+  protected readonly despikedCount = computed(
+    () => this.visible().filter((r) => r.nDespiked > 0).length,
+  );
+
   constructor() {
     this.api.games().subscribe({
       next: (g) => {
@@ -112,16 +127,34 @@ export class Sets {
   protected load(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.api.setOverview({ game: this.game, days: this.days }).subscribe({
-      next: (r) => {
-        this.rows.set(r);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Could not load the set overview.');
-      },
-    });
+    this.api
+      .setOverview({ game: this.game, days: this.days, despike: this.despike() })
+      .subscribe({
+        next: (r) => {
+          this.rows.set(r);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.loading.set(false);
+          this.error.set('Could not load the set overview.');
+        },
+      });
+  }
+
+  /**
+   * Why a row's numbers were adjusted, spelled out per row rather than left
+   * to a legend - the tooltip is where someone checks a number they don't
+   * believe.
+   */
+  protected despikeTitle(r: SetOverview): string {
+    const n = r.nDespiked;
+    const noun = n === 1 ? 'reading' : 'readings';
+    return (
+      `${n} ${noun} in this set swung hard and returned to the previous level ` +
+      `the next day, so the median of the neighbouring days was used instead ` +
+      `(total adjustment $${r.despikeUsd ?? 0}). Stored prices are unchanged. ` +
+      `Untick "Correct one-day price errors" to see the raw comparison.`
+    );
   }
 
   /** Click a header to sort by it; click again to reverse. */

@@ -66,6 +66,12 @@
 .warn-note {
   color: var(--warn);
 }
+/* Distinct from .warn-note on purpose: a concentration warning says "this
+   number is true but narrow", an adjustment note says "this number was
+   changed". Same colour would merge two different claims. */
+.fix-note {
+  color: var(--accent);
+}
 
 /* Wide content scrolls in its own box, never the page. */
 .table-wrap {
@@ -189,6 +195,17 @@ tbody tr:hover td {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   margin-top: 0.1rem;
+}
+
+/* Marks a row whose numbers were altered by despiking. Accent, not warn:
+   it is a correction, not a caveat. */
+.fixed {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--accent);
+  font-weight: 400;
+  cursor: help;
+  white-space: nowrap;
 }
 
 /* A flagged row is one where a single card outweighs the rest of the set

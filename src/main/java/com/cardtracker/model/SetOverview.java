@@ -28,6 +28,15 @@ import java.time.LocalDate;
  * meaningful for sets whose gains and losses nearly cancel.
  *
  * {@code pctReturn} is null, never zero, when the starting basket is <= 0.
+ *
+ * {@code nDespiked} counts readings replaced by the median of their two
+ * neighbours because they swung hard and came straight back - an upstream
+ * error rather than a move (see game_set_overview()). It is usually 0, and
+ * that is expected: the effect is rare but heavy-tailed. When it fires it
+ * can be decisive - on 2026-08-04, one substitution moved EX Dragon
+ * Frontiers from -20.91% to +8.43%. Show it wherever the return is shown;
+ * a corrected number that doesn't say it was corrected is worse than either
+ * honest alternative.
  */
 public record SetOverview(
         int groupId,
@@ -46,6 +55,8 @@ public record SetOverview(
         BigDecimal topDelta,
         BigDecimal topShare,
         String topUrl,
+        int nDespiked,
+        BigDecimal despikeUsd,
         LocalDate startDate,
         LocalDate endDate) {
 }

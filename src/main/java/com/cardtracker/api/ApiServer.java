@@ -70,9 +70,13 @@ public class ApiServer {
         });
 
         // Every set of a game, with current value and windowed return.
-        //   ?game=3&days=30&asOf=2026-08-18
+        //   ?game=3&days=30&asOf=2026-08-18&despike=false
         // game omitted = all tracked games. days defaults to 30 in
         // game_set_overview() rather than here, so psql callers match.
+        //
+        // despike defaults ON: a price that swings hard and is back the next
+        // day is an upstream error, and the median of its neighbours is used
+        // instead. Pass despike=false for the raw two-point comparison.
         app.get("/api/sets/overview", ctx -> {
             Integer days = intParam(ctx.queryParam("days"), "days");
             if (days != null && days < 1) {
@@ -81,7 +85,8 @@ public class ApiServer {
             ctx.json(withRepo(url, user, pass, repo -> repo.setOverview(
                     intParam(ctx.queryParam("game"), "game"),
                     days,
-                    dateParam(ctx.queryParam("asOf"), "asOf"))));
+                    dateParam(ctx.queryParam("asOf"), "asOf"),
+                    !"false".equalsIgnoreCase(ctx.queryParam("despike")))));
         });
 
         // Biggest movers over a window.

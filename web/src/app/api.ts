@@ -55,11 +55,19 @@ export class CardTrackerApi {
    * Every set with its current value and windowed return. game omitted =
    * all tracked games. days is left unset unless changed so the server's
    * own default (30) stays the single definition of the default view.
+   *
+   * despike defaults on server-side: readings that swung hard and reverted
+   * the next day are replaced with the median of their neighbours. Pass
+   * false for the raw two-point comparison.
    */
-  setOverview(opts: { game?: number | null; days?: number } = {}): Observable<SetOverview[]> {
+  setOverview(
+    opts: { game?: number | null; days?: number; despike?: boolean } = {},
+  ): Observable<SetOverview[]> {
     let params = new HttpParams();
     if (opts.game != null) params = params.set('game', opts.game);
     if (opts.days != null) params = params.set('days', opts.days);
+    // Only sent when turning it off - the server defaults it on.
+    if (opts.despike === false) params = params.set('despike', 'false');
     return this.http.get<SetOverview[]>(`${this.base}/sets/overview`, { params });
   }
 
