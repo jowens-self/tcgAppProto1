@@ -69,6 +69,21 @@ public class ApiServer {
             ctx.json(withRepo(url, user, pass, repo -> repo.sets(id)));
         });
 
+        // Every set of a game, with current value and windowed return.
+        //   ?game=3&days=30&asOf=2026-08-18
+        // game omitted = all tracked games. days defaults to 30 in
+        // game_set_overview() rather than here, so psql callers match.
+        app.get("/api/sets/overview", ctx -> {
+            Integer days = intParam(ctx.queryParam("days"), "days");
+            if (days != null && days < 1) {
+                throw new BadRequestResponse("days must be at least 1");
+            }
+            ctx.json(withRepo(url, user, pass, repo -> repo.setOverview(
+                    intParam(ctx.queryParam("game"), "game"),
+                    days,
+                    dateParam(ctx.queryParam("asOf"), "asOf"))));
+        });
+
         // Biggest movers over a window.
         //   ?days=7&game=3&set=23353&sealed=false&minPrice=1&direction=down
         //   &smoothing=3&limit=50

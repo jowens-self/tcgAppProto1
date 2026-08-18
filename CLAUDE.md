@@ -238,6 +238,16 @@ individually.
   set aggregate. Sealed items had been dominating those numbers (one
   $8,441 display case was a third of a set's "total value"; Paldean Fates
   went $25,100.93 -> $2,792.05 once fixed). See Part 12 and Part 14.
+- **[CLAUDE] A set-level percentage is shown with its biggest single
+  contributor, never alone.** Measured 2026-08-18: 44 of 283 sets have
+  over half their 30-day movement coming from one row, and the worst case
+  (Base Set Shadowless, +59.96%) was 86.6% one oscillating card. The
+  metric itself is unchanged - `set_return()`'s definition is an [OWNER]
+  decision and `game_set_overview()` reproduces it exactly - but a bare
+  percentage invites a reader to treat a one-card artifact as a set-wide
+  verdict. Share is computed against GROSS movement (sum of absolute
+  deltas), not net: net passes through zero and produced four-digit
+  percentages on sets whose gains and losses cancel. Part 23.
 - **[OWNER] `product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
 - **[CLAUDE] "Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
@@ -282,6 +292,20 @@ Rules it establishes, worth keeping:
   query logic verifiable directly in psql - which is how this project
   checks its own numbers - and stops the API and hand-written analysis
   from quietly diverging. New endpoint, new SQL function.
+- **[CLAUDE] A bulk SQL function that restates a per-item one must be
+  cross-checked against it, not assumed equal.** `game_set_overview()`
+  recomputes `set_value()`/`set_return()` for every set in one pass
+  (302 groups; per-set calls would be 604 round trips). Two definitions of
+  the same number is exactly what "handlers call SQL functions" exists to
+  prevent, so the duplication is only acceptable with a check:
+  `sql/checks/set_overview_matches_primitives.sql` compares all six shared
+  columns with `IS NOT DISTINCT FROM` (so null matches null). Re-run it
+  after editing either side; every column must read `t`.
+- **[CLAUDE] Window bounds go in scalar `DATE` variables, never a CTE
+  sub-select.** In `item_movers()` and `game_set_overview()` both. From a
+  sub-select the planner cannot fold them to constants, misses
+  `idx_snapshots_date` and aggregates far more of the 41M-row table than
+  needed - measured at ~5x and ~6GB spilled to temp files.
 - **[CLAUDE] Reads go through `QueryRepository`, not `PriceRepository`.** The
   latter is write-only by design; keeping them apart stops ingestion and
   the API surface from coupling.
@@ -502,9 +526,18 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   a multi-user version is in scope, not a violation. The one genuinely
   open question is card-art redistribution - showing Pokemon art publicly
   is not the same act as showing it in a local tool.
-- Set overview screen - `set_return()`/`set_value()` are built and tested
-  but still unexposed. The cheapest screen left: one endpoint, one table,
-  no new SQL.
+- **Oscillating `market_price` on thin markets - needs an [OWNER]
+  decision.** Found building the set overview (Part 23). Some cards'
+  `market_price` flips between two far-apart values for weeks at a time -
+  Base Set (Shadowless) Charizard 1st Ed Holofoil sits at ~$250 or at
+  exactly $10,000, while low/mid/high stay parked at $100,000. It is not a
+  one-day spike, so `item_movers()` smoothing does not touch it. Effect is
+  large: 44 of 283 sets have over half their 30-day movement from a single
+  row. The set screen discloses this rather than correcting it. The open
+  question is whether such readings should be flagged or treated as
+  suspect at ingest - a domain call of the same kind as the code-card
+  exclusion, and it affects Movers and all-time-high too. See
+  DEVELOPMENT_HISTORY.md Part 23.
 - One Piece card images - no permitted source exists yet; needs its own
   conversation before any code.
 

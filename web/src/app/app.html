@@ -17,10 +17,21 @@
   >
     Movers
   </button>
+  <button
+    type="button"
+    class="tab"
+    [class.active]="tab() === 'sets'"
+    [attr.aria-current]="tab() === 'sets' ? 'page' : null"
+    (click)="tab.set('sets')"
+  >
+    Sets
+  </button>
 </nav>
 
 @if (tab() === 'search') {
   <app-search />
-} @else {
+} @else if (tab() === 'movers') {
   <app-movers />
+} @else {
+  <app-sets />
 }

@@ -4,6 +4,7 @@ import com.cardtracker.model.ItemSearchResult;
 import com.cardtracker.model.ItemVariant;
 import com.cardtracker.model.Mover;
 import com.cardtracker.model.PricePoint;
+import com.cardtracker.model.SetOverview;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -238,6 +239,58 @@ public class QueryRepository {
     }
 
     /**
+     * Every set of a game with its current value and windowed return.
+     *
+     * One query, not one per set: there are 302 tracked groups, so calling
+     * set_value()/set_return() per set would be 604 round trips. The bulk
+     * function's numbers are cross-checked against those primitives rather
+     * than assumed equal - see DEVELOPMENT_HISTORY.md Part 23.
+     *
+     * categoryId null = every tracked game.
+     */
+    public List<SetOverview> setOverview(Integer categoryId, Integer days, LocalDate asOf)
+            throws Exception {
+        String sql = """
+                SELECT group_id, set_name, game, published_on, n_priced, total_value,
+                       n_common, total_start, total_end, pct_return,
+                       top_product_id, top_name, top_sub_type, top_delta, top_share,
+                       top_url, start_date, end_date
+                  FROM game_set_overview(?, ?, ?)
+                """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (categoryId == null) ps.setNull(1, Types.INTEGER); else ps.setInt(1, categoryId);
+            setIntOrDefault(ps, 2, days, 30);
+            setDate(ps, 3, asOf);
+
+            List<SetOverview> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new SetOverview(
+                            rs.getInt("group_id"),
+                            rs.getString("set_name"),
+                            rs.getString("game"),
+                            localDate(rs.getDate("published_on")),
+                            rs.getInt("n_priced"),
+                            rs.getBigDecimal("total_value"),
+                            rs.getInt("n_common"),
+                            rs.getBigDecimal("total_start"),
+                            rs.getBigDecimal("total_end"),
+                            rs.getBigDecimal("pct_return"),
+                            nullableInt(rs, "top_product_id"),
+                            rs.getString("top_name"),
+                            rs.getString("top_sub_type"),
+                            rs.getBigDecimal("top_delta"),
+                            rs.getBigDecimal("top_share"),
+                            rs.getString("top_url"),
+                            localDate(rs.getDate("start_date")),
+                            localDate(rs.getDate("end_date"))));
+                }
+            }
+            return out;
+        }
+    }
+
+    /**
      * Biggest movers over a window. Every argument has a server-side default
      * in item_movers(); nulls here mean "use it" rather than "no filter", so
      * a caller that passes nothing still gets the sane default view (7 days,
@@ -283,6 +336,16 @@ public class QueryRepository {
             }
             return out;
         }
+    }
+
+    /**
+     * getInt() maps SQL NULL to 0, which for a product_id is a real-looking
+     * id rather than "absent" - a set with no priced rows would otherwise
+     * report a top mover with id 0.
+     */
+    private static Integer nullableInt(ResultSet rs, String column) throws Exception {
+        int v = rs.getInt(column);
+        return rs.wasNull() ? null : v;
     }
 
     private static void setIntOrDefault(PreparedStatement ps, int idx, Integer v, int dflt)

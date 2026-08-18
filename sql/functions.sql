@@ -747,3 +747,180 @@ RETURNS TABLE (
     GROUP BY g.group_id, g.name, g.published_on
     ORDER BY g.published_on DESC NULLS LAST, g.name;
 $$ LANGUAGE sql STABLE;
+
+-- ---------------------------------------------------------------------------
+-- Set overview (added 2026-08-18)
+--
+-- One row per set: what it's worth today and how it moved over a window.
+-- The per-set primitives set_value()/set_return() already answer this for
+-- ONE set, but the screen needs every set of a game at once - 302 tracked
+-- groups, so calling them per set is 604 round trips. This is those two
+-- functions' definitions computed set-wide in a single pass; the semantics
+-- are deliberately identical, and set_return()'s numbers are the reference
+-- these must match.
+--
+-- Three things carried over from the primitives, all load-bearing:
+--
+--   * Singles only (is_sealed = FALSE), hardcoded, not a parameter. Same
+--     hard rule as set_return() - see this file's header and CLAUDE.md.
+--   * The return uses only rows priced on BOTH days (an inner join on
+--     product_id + sub_type_name), so a set's composition changing inside
+--     the window can't masquerade as a price move.
+--   * pct_return is NULL, never 0, when the starting basket is <= 0.
+--
+-- Hence n_priced vs n_common, and total_value vs total_end: value is every
+-- single priced on the end date, the return is only the common basket. They
+-- differ whenever a card was priced today but not p_days ago, and the UI
+-- says so rather than leaving a reader to notice two numbers that should
+-- match and don't.
+--
+-- WHY THE CONCENTRATION COLUMNS EXIST (top_*). Measured 2026-08-18, not
+-- theorized: among Pokemon sets with a >=2% 30-day move, the single largest
+-- contributing row is routinely 50-87% of ALL movement in the set. Base Set
+-- (Shadowless) read +59.96% on a basket of 202 - and $9,750 of the $10,718
+-- move was one row, Charizard 1st Edition Holofoil, whose market_price
+-- toggles between ~$250 and exactly $10,000 for weeks at a time while low,
+-- mid and high sit parked at $100,000. That is a thin market flipping
+-- regimes, not a 40x rally, and a two-point return lands on whichever
+-- regime each chosen date happened to fall in.
+--
+-- Smoothing does NOT fix it and was tried first: the regimes run far longer
+-- than a 3-day window, so item_movers()-style averaging returns $250 and
+-- $10,000 unchanged. The measure that does help is disclosure - report the
+-- biggest single contributor and its share of gross movement, so a set
+-- carried by one oscillating row is visible instead of quietly trusted.
+-- Same defect class as sealed product dominating set aggregates (Part 12
+-- and 14); this one can't be fixed by excluding a category, because the
+-- offending row is a legitimate single.
+--
+-- top_share is a share of GROSS movement (SUM of |delta|), not of the net.
+-- Net goes through zero - a set whose gains and losses cancel has a
+-- near-zero denominator and every ratio against it explodes to meaningless
+-- four-digit percentages. Gross is always >= |net| and stays interpretable.
+--
+-- p_days defaults to 30 rather than movers' 7: a set of 200+ cards averages
+-- out most of what a week shows, and the seven-day view was mostly noise
+-- when checked.
+CREATE OR REPLACE FUNCTION game_set_overview(
+    p_category_id INTEGER DEFAULT NULL,
+    p_days        INTEGER DEFAULT 30,
+    p_as_of       DATE    DEFAULT NULL
+) RETURNS TABLE (
+    group_id        INTEGER,
+    set_name        TEXT,
+    game            TEXT,
+    published_on    DATE,
+    n_priced        INTEGER,
+    total_value     NUMERIC,
+    n_common        INTEGER,
+    total_start     NUMERIC,
+    total_end       NUMERIC,
+    pct_return      NUMERIC,
+    top_product_id  INTEGER,
+    top_name        TEXT,
+    top_sub_type    TEXT,
+    top_delta       NUMERIC,
+    top_share       NUMERIC,
+    top_url         TEXT,
+    start_date      DATE,
+    end_date        DATE
+) AS $$
+DECLARE
+    v_end   DATE;
+    v_start DATE;
+BEGIN
+    -- Resolved to scalars before the query, not computed in a CTE. Same
+    -- reason as item_movers(): from a sub-select the planner can't fold
+    -- these into constants, misses idx_snapshots_date and aggregates far
+    -- more of the 41M-row table than needed. As scalars it's a two-day
+    -- indexed range scan.
+    v_end   := COALESCE(p_as_of, (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps));
+    v_start := v_end - GREATEST(COALESCE(p_days, 30), 1);
+
+    RETURN QUERY
+    WITH now_rows AS (
+        SELECT p.group_id AS gid, ps.product_id AS pid,
+               ps.sub_type_name AS stn, ps.market_price AS price
+        FROM price_snapshots ps
+        JOIN products p ON p.product_id = ps.product_id
+        WHERE ps.snapshot_date = v_end
+          AND ps.market_price IS NOT NULL
+          AND p.is_sealed = FALSE
+          AND (p_category_id IS NULL OR p.category_id = p_category_id)
+    ),
+    then_rows AS (
+        SELECT ps.product_id AS pid, ps.sub_type_name AS stn,
+               ps.market_price AS price
+        FROM price_snapshots ps
+        JOIN products p ON p.product_id = ps.product_id
+        WHERE ps.snapshot_date = v_start
+          AND ps.market_price IS NOT NULL
+          AND p.is_sealed = FALSE
+          AND (p_category_id IS NULL OR p.category_id = p_category_id)
+    ),
+    -- set_value(): every single priced on the end date.
+    val AS (
+        SELECT nr.gid, COUNT(*)::INTEGER AS n_priced, SUM(nr.price) AS total_value
+        FROM now_rows nr
+        GROUP BY 1
+    ),
+    -- set_return()'s basket: priced on both days.
+    moves AS (
+        SELECT nr.gid, nr.pid, nr.stn,
+               tr.price AS start_price, nr.price AS end_price,
+               (nr.price - tr.price) AS delta
+        FROM then_rows tr
+        JOIN now_rows nr ON nr.pid = tr.pid AND nr.stn = tr.stn
+    ),
+    ret AS (
+        SELECT m.gid, COUNT(*)::INTEGER AS n_common,
+               SUM(m.start_price) AS total_start,
+               SUM(m.end_price) AS total_end,
+               SUM(ABS(m.delta)) AS gross
+        FROM moves m
+        GROUP BY 1
+    ),
+    -- Biggest single contributor per set, by absolute move. DISTINCT ON is
+    -- the cheap form here: one ordered pass, no window function over every
+    -- row of every set.
+    top AS (
+        SELECT DISTINCT ON (m.gid)
+               m.gid, m.pid, m.stn, m.delta
+        FROM moves m
+        ORDER BY m.gid, ABS(m.delta) DESC, m.pid
+    )
+    SELECT
+        g.group_id,
+        g.name,
+        c.name,
+        g.published_on::DATE,
+        val.n_priced,
+        ROUND(val.total_value, 2),
+        COALESCE(ret.n_common, 0),
+        ROUND(ret.total_start, 2),
+        ROUND(ret.total_end, 2),
+        CASE WHEN ret.total_start > 0
+             THEN ROUND((ret.total_end - ret.total_start) / ret.total_start * 100, 2)
+             ELSE NULL END,
+        top.pid,
+        pr.name,
+        top.stn,
+        ROUND(top.delta, 2),
+        CASE WHEN ret.gross > 0
+             THEN ROUND(ABS(top.delta) / ret.gross * 100, 1)
+             ELSE NULL END,
+        pr.url,
+        v_start,
+        v_end
+    FROM groups g
+    JOIN categories c ON c.category_id = g.category_id
+    -- Inner join on val: a set with nothing priced on the end date has no
+    -- value and no return, so it is absent rather than a row of nulls.
+    JOIN val ON val.gid = g.group_id
+    LEFT JOIN ret ON ret.gid = g.group_id
+    LEFT JOIN top ON top.gid = g.group_id
+    LEFT JOIN products pr ON pr.product_id = top.pid
+    WHERE (p_category_id IS NULL OR g.category_id = p_category_id)
+    ORDER BY g.published_on DESC NULLS LAST, g.name;
+END;
+$$ LANGUAGE plpgsql STABLE;

@@ -187,6 +187,7 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | `GET /api/items/{id}/history?subType=` | Price time series for one variant |
 | `GET /api/movers` | Biggest price moves over a window |
 | `GET /api/games/{id}/sets` | Sets in a game, for the movers filter |
+| `GET /api/sets/overview` | Every set's value and windowed return |
 | `GET /api/items/{id}/image` | Cached card thumbnail (404 = no image) |
 
 Search takes `q` (required), plus optional `game` (category id),
@@ -272,8 +273,9 @@ both that rule and the connection-per-request in `ApiServer.withRepo`.
 
 ## Front end (`web/`)
 
-Angular 22 app over the read API. Card / product search: find an item, see
-its variants and their current prices, chart one variant's history.
+Angular 22 app over the read API. Three screens: card / product search
+(find an item, see its variants and their prices, chart one's history),
+Movers, and Sets.
 
 ```bash
 docker compose up -d                                              # Postgres
@@ -292,6 +294,7 @@ Structure, all standalone components with signals:
 | `api.ts` | The only file that knows a server exists |
 | `search.ts/.html/.css` | Search screen: query, filters, results, detail |
 | `movers.ts/.html/.css` | Movers screen: window/game/set filters, table |
+| `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library |
 
 Layout is two columns — results left, detail right and sticky, so the
@@ -334,6 +337,53 @@ keep artifacts off the top of the board without hiding real moves.
 **`minPrice` defaults to $1** because percent change flatters cheap cards.
 Without it the week's top decliner was Shuckle at $0.06 → $0.01 (-83%),
 and four of the top twelve were sub-$1 cards moving pennies.
+
+### Sets
+
+`GET /api/sets/overview` — every set of a game with what it is worth now
+and how it moved. Takes `game` (omit for all tracked games), `days`
+(default 30) and `asOf`.
+
+```bash
+curl "localhost:7070/api/sets/overview?game=3&days=30"
+```
+
+Backed by `game_set_overview()`, which computes `set_value()` and
+`set_return()` set-wide in one pass — there are 302 tracked groups, so
+calling the per-set primitives would be 604 round trips. Its numbers are
+cross-checked against those primitives rather than assumed equal:
+
+```bash
+docker compose exec -T db psql -U cardtracker -d cardtracker \
+  -f - < sql/checks/set_overview_matches_primitives.sql
+```
+
+Every column must read `t`. Re-run it after editing either side.
+
+**Singles only.** Sealed product never counts toward a set aggregate — the
+same hard rule as `set_return()`.
+
+**Value and change are computed over different baskets, on purpose.**
+Value is every single priced on the end date. Change compares only cards
+priced on *both* dates, so a set gaining or losing cards mid-window can't
+masquerade as a price move. The row shows `+N new` when they differ.
+
+**Every set's percentage is shown with the single card that drove it**, and
+flagged when that card is over half the set's gross movement. This is not
+decoration. Measured 2026-08-18: **44 of 283 sets** have over half their
+30-day movement from one row. Base Set (Shadowless) reads **+59.96%**, and
+$9,750 of that $10,718 move is one card — Charizard 1st Edition Holofoil,
+whose `market_price` toggles between ~$250 and exactly $10,000 for weeks at
+a time while low/mid/high sit parked at $100,000.
+
+Smoothing does not help here and was tried first: the regimes last weeks,
+so `item_movers()`-style 3-day averaging returns $250 and $10,000
+unchanged. Disclosure is the honest response, and the "driven by" column is
+sortable so the untrustworthy rows can be found directly.
+
+Share is measured against **gross** movement (sum of absolute deltas), not
+net — net passes through zero, and ranking by share-of-net gave four-digit
+percentages for sets whose gains and losses nearly cancel.
 
 ## Card images
 

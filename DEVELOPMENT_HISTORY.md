@@ -39,9 +39,10 @@ origin through that date, then continuing forward from there).
 20. [Part 20 — Card images, from a source that wants to be used](#part-20--card-images-from-a-source-that-wants-to-be-used)
 21. [Part 21 — The no_match audit: a matcher bug wearing upstream absence as a disguise](#part-21--the-no_match-audit-a-matcher-bug-wearing-upstream-absence-as-a-disguise)
 22. [Part 22 — Saying which printing you are looking at](#part-22--saying-which-printing-you-are-looking-at)
-23. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-24. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-25. [What's still open](#whats-still-open)
+23. [Part 23 — The set overview, and the one card that was the whole set](#part-23--the-set-overview-and-the-one-card-that-was-the-whole-set)
+24. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+25. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+26. [What's still open](#whats-still-open)
 
 ---
 
@@ -1771,6 +1772,130 @@ to generalize" from "it generalizes."
 
 ---
 
+## Part 23 — The set overview, and the one card that was the whole set
+
+The backlog had described this screen, twice, as the cheapest one left:
+*"one endpoint, one table, no new SQL"* — `set_return()` and `set_value()`
+were built and tested in Part 14 and simply never exposed. Both halves of
+that description turned out to be wrong, and the second one mattered.
+
+### It needed new SQL after all
+
+`set_value()` and `set_return()` answer for **one** set. The screen wants
+every set of a game at once, and there are 302 tracked groups — calling the
+primitives per set is 604 round trips on a connection-per-request API. So
+`game_set_overview()` computes both definitions set-wide in a single pass.
+
+Its numbers are not *assumed* to match the primitives, they are checked
+against them. The check is checked in, at
+`sql/checks/set_overview_matches_primitives.sql`: it runs the bulk function,
+then calls `set_value()` and `set_return()` for each of the top 20 sets by
+value, and compares all six shared columns with `IS NOT DISTINCT FROM` so a
+null matches a null rather than failing. All 20 sets agreed on all six
+columns. Re-run it after any edit to either definition — it is the only thing
+stopping the bulk path and the per-set path from quietly diverging, which
+is the same failure mode the "handlers call SQL functions, not inline SQL"
+rule exists to prevent.
+
+Two performance notes carried over from `item_movers()`: the window bounds
+are resolved into scalar `DATE` variables before the query rather than
+computed in a CTE (from a sub-select the planner cannot fold them into
+constants and aggregates far more of the 41M-row table than needed), and
+`DISTINCT ON` finds each set's biggest contributor in one ordered pass
+instead of a window function over every row. Every window — 7, 30, 90, 365
+days — comes back in 0.19-0.31s, because the query is always a two-day
+indexed scan regardless of how far apart the two days are.
+
+### The finding: a set-level percentage is often one card
+
+Sorting the first working version by value put **Base Set (Shadowless) at
++59.96% over 30 days**, on a basket of 202 cards. A 60% month for a 1999
+set is not impossible, but it is a big enough claim to check, so it got
+checked.
+
+$9,750 of the $10,718 move was **one row** — Charizard, 1st Edition
+Holofoil. Its history explains itself:
+
+```
+2026-07-12 .. 2026-07-22   market   250.00     low/mid/high all 100000.00
+2026-07-23 .. 2026-08-03   market 10000.00     low/mid/high all 100000.00
+2026-08-04 .. 2026-08-05   market   240.00     low/mid/high all 100000.00
+2026-08-06 .. 2026-08-18   market 10000.00     low/mid/high all 100000.00
+```
+
+`market_price` toggles between ~$250 and exactly $10,000 for weeks at a
+time, while low, mid and high sit parked at $100,000 — a textbook
+price-parked listing of the kind that made the "never compute on
+`high_price`" rule (Part 12), except here the *market* price is the one
+oscillating. That is a thin market flipping regimes, not a 40x rally, and a
+two-point return simply lands on whichever regime each chosen date fell in.
+
+**Smoothing was tried first and does not fix it.** The obvious response was
+to reuse `item_movers()`'s 3-day averaging at each end. Replayed against
+this card, the smoothed values come back $250.00 and $10,000.00 —
+completely unchanged, because the regimes run for weeks and a 3-day window
+sits entirely inside one of them. Averaging only helps against single-day
+spikes; this is not one.
+
+**And it is not one weird card.** Measured across every Pokemon set with a
+>=2% 30-day move, ranked by the biggest single row's share of gross
+movement:
+
+| set | basket | 30d | biggest single row | its share |
+|---|---|---|---|---|
+| Base Set (Shadowless) | 202 | +59.96% | Charizard 1st Ed Holo | 86.6% |
+| Dark Explorers | 207 | +9.99% | Darkrai EX Full Art | 79.5% |
+| Next Destinies | 190 | +10.60% | Zoroark Holofoil | 72.0% |
+| Neo Destiny | 215 | -8.06% | Shining Charizard | 60.0% |
+| Aquapolis | 325 | +20.35% | Lugia Holofoil | 59.4% |
+
+In the shipped screen, **44 of 283 sets** have over half their movement
+coming from a single card. That is 15%, not a rare edge case.
+
+### What was done about it
+
+Not a change to the metric. `set_return()`'s definition is an owner
+decision (portfolio-style, singles only, both-days-present basket) and the
+bulk function reproduces it exactly. What changed is what gets shown
+*beside* it: every row names its biggest single contributor, that card's
+dollar move, and its share of the set's gross movement, with a `--warn`
+flag past 50% — the point where one card outweighs every other card in the
+set combined. The column is sortable, so "which of these numbers should I
+not trust" is one click.
+
+The share is computed against **gross** movement (sum of absolute deltas),
+not net. Net passes through zero: a set whose gains and losses nearly
+cancel has a near-zero denominator, and ranking by share-of-net produced
+meaningless four-digit percentages (`SWSH03: Darkness Ablaze`, whose net
+30-day move is +0.01%, came out at 6100%). Gross is always >= |net| and
+stays interpretable.
+
+This is the same defect class as sealed product dominating set aggregates
+(Parts 12 and 14) — but it cannot be fixed the same way. Sealed product was
+excludable because it was a genuinely separate category; a Base Set
+Charizard is a legitimate single that belongs in its set's total. The only
+honest move left is disclosure.
+
+### The other thing the screen has to say out loud
+
+`total_value` and the return's `total_end` are different numbers and always
+will be. Value covers every single priced on the end date; the return
+covers only cards priced on **both** dates, so that a set gaining or losing
+cards mid-window cannot masquerade as a price move. Legendary Collection
+prices 217 cards today but only 213 have a July price, and that $1,259.85
+difference would otherwise look like an arithmetic bug. The row shows
+`+4 new` next to the count with the explanation in a tooltip.
+
+### What this does not do
+
+It does not smooth, cap, exclude, or otherwise touch the oscillating rows —
+only labels their effect. Whether `market_price` readings like Charizard's
+should be treated as data quality problems at ingest is a domain call and a
+real open question (see "What's still open"). Nothing in this part changes
+what is stored; `price_snapshots` remains append-only and unmodified.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
@@ -1974,9 +2099,24 @@ Not started. Schema not yet designed.
   resolved 2026-08-15 (Part 18): removed entirely, verified zero requests
   to any TCGplayer host. The rule is now explicit in CLAUDE.md that this
   includes CDN subdomains and images, not just crawling.
-- **Set overview screen** — `set_return()`/`set_value()` exist and are
-  tested but still unexposed over the API. The cheapest remaining screen:
-  an endpoint and a table, no new SQL.
+- ~~**Set overview screen**~~ — built (Part 23). `GET /api/sets/overview`
+  and a third tab in `web/`. Note it did need new SQL after all
+  (`game_set_overview()`, a set-wide single pass — the per-set primitives
+  would have been 604 round trips).
+- **Oscillating `market_price` on thin markets — open, and a domain call.**
+  Found while building Part 23. Some cards' `market_price` toggles between
+  two very different values for weeks at a time (Base Set Shadowless
+  Charizard 1st Ed Holo: ~$250 vs exactly $10,000, with low/mid/high parked
+  at $100,000). It is not a spike, so `item_movers()`-style smoothing does
+  not touch it. The set overview *discloses* the effect rather than
+  correcting it, which is the honest thing to do at the presentation layer,
+  but the underlying question is unanswered: **should readings like these
+  be flagged, or treated as suspect at ingest?** That is the same kind of
+  judgment as the code-card exclusion and the sealed rule — a domain call
+  about what the data means, not an implementation detail. It also affects
+  Movers and all-time-high, not just this screen. Do not guess at it.
+  Data to hand: 44 of 283 sets have >50% of their 30-day movement from a
+  single row.
 - **API hardening if it ever leaves localhost** — connection-per-request
   should become a pool (`ApiServer.withRepo` is the only place to
   change), and the CORS rule would need revisiting. Fine as-is for a

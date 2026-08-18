@@ -1,7 +1,15 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { Game, GameSet, ItemSearchResult, ItemVariant, Mover, PricePoint } from './api.models';
+import {
+  Game,
+  GameSet,
+  ItemSearchResult,
+  ItemVariant,
+  Mover,
+  PricePoint,
+  SetOverview,
+} from './api.models';
 
 /**
  * The only thing in this app that knows a server exists.
@@ -41,6 +49,18 @@ export class CardTrackerApi {
 
   sets(categoryId: number): Observable<GameSet[]> {
     return this.http.get<GameSet[]>(`${this.base}/games/${categoryId}/sets`);
+  }
+
+  /**
+   * Every set with its current value and windowed return. game omitted =
+   * all tracked games. days is left unset unless changed so the server's
+   * own default (30) stays the single definition of the default view.
+   */
+  setOverview(opts: { game?: number | null; days?: number } = {}): Observable<SetOverview[]> {
+    let params = new HttpParams();
+    if (opts.game != null) params = params.set('game', opts.game);
+    if (opts.days != null) params = params.set('days', opts.days);
+    return this.http.get<SetOverview[]>(`${this.base}/sets/overview`, { params });
   }
 
   /**

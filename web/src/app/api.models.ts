@@ -118,3 +118,49 @@ export interface Mover {
   pctChange: number;
   url: string | null;
 }
+
+/**
+ * One set's current value and windowed return, from
+ * GET /api/sets/overview.
+ *
+ * Singles only - sealed product never contributes to a set aggregate (see
+ * CLAUDE.md). Sealed items stay individually trackable via search.
+ *
+ * TWO count/total pairs, and they are not redundant. nPriced/totalValue
+ * cover every single priced on endDate; nCommon/totalStart/totalEnd cover
+ * only rows priced on BOTH dates, which is the basket pctReturn is computed
+ * over. They diverge when a card was priced today but not at the window's
+ * start, and the UI says so rather than showing two numbers that look like
+ * they should match and don't.
+ *
+ * The top* fields are an honesty measure, not decoration. Measured
+ * 2026-08-18: among Pokemon sets with a >=2% 30-day move, the single
+ * biggest contributing row is routinely 50-87% of ALL movement in the set.
+ * Show them wherever pctReturn is shown - a set-wide percentage produced by
+ * one thin-market card should not read like a broad verdict.
+ *
+ * topShare is a share of GROSS movement (sum of absolute deltas), so it
+ * stays meaningful for sets whose gains and losses nearly cancel.
+ */
+export interface SetOverview {
+  groupId: number;
+  setName: string;
+  game: string;
+  publishedOn: string | null;
+  nPriced: number;
+  totalValue: number | null;
+  nCommon: number;
+  totalStart: number | null;
+  totalEnd: number | null;
+  /** Null, never 0, when the starting basket was <= 0. */
+  pctReturn: number | null;
+  topProductId: number | null;
+  topName: string | null;
+  topSubType: string | null;
+  topDelta: number | null;
+  topShare: number | null;
+  /** Safe: an href fetches nothing until the user clicks it. */
+  topUrl: string | null;
+  startDate: string;
+  endDate: string;
+}
