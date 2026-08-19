@@ -3,6 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
 import { Game, SetOverview } from './api.models';
+import { defaultGame } from './game-default';
 
 /** Columns the table can be ordered by. */
 type SortKey = 'set' | 'value' | 'change' | 'cards' | 'concentration';
@@ -118,6 +119,8 @@ export class Sets {
     this.api.games().subscribe({
       next: (g) => {
         this.games.set(g);
+        // Same reasoning as Movers: one game to start, not a mixed table.
+        this.game = defaultGame(g);
         this.load();
       },
       error: () => this.error.set('Could not reach the API. Is ApiServer running on :7070?'),

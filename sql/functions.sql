@@ -873,6 +873,12 @@ $$ LANGUAGE sql STABLE;
 --
 -- p_days defaults to 30 rather than movers' 7: a set of 200+ cards averages
 -- out most of what a week shows.
+-- Adding the despike parameters changed this function's signature, and
+-- CREATE OR REPLACE does not replace across signatures - it creates a second
+-- OVERLOAD, leaving the old 3-argument version behind. Two candidates then
+-- make game_set_overview(NULL, 30) ambiguous and it fails to resolve at all.
+-- Same guard as item_movers() above, for the same reason.
+DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE);
 CREATE OR REPLACE FUNCTION game_set_overview(
     p_category_id INTEGER DEFAULT NULL,
     p_days        INTEGER DEFAULT 30,

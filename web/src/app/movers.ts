@@ -3,14 +3,20 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
 import { Game, GameSet, Mover, PricePoint } from './api.models';
+import { defaultGame } from './game-default';
 import { PriceChart } from './price-chart';
 
 /**
  * Movers - "what moved this week".
  *
- * Defaults to the biggest decliners over 7 days across a whole game, which
- * is the question a seller actually opens the app with. Set filter narrows
- * it once you know where you're looking.
+ * Defaults to the biggest decliners over 7 days within the LARGEST tracked
+ * game, which is the question a seller actually opens the app with. Set
+ * filter narrows it once you know where you're looking.
+ *
+ * It used to default to all games at once; that ranked Pokemon and One
+ * Piece against each other in one list, which compares markets the owner
+ * considers separately. "All games" is still selectable - see
+ * defaultGame().
  *
  * Every default here is the SERVER's default (see item_movers()), not a
  * restatement: days, direction, min price and smoothing are all left unset
@@ -46,7 +52,11 @@ export class Movers {
     this.api.games().subscribe({
       next: (g) => {
         this.games.set(g);
-        this.load();
+        // Land on one game rather than a mixed board. onGameChange() both
+        // loads the set filter for it and triggers the first search, so the
+        // opening view is the same one you get by picking a game by hand.
+        this.game = defaultGame(g);
+        this.onGameChange();
       },
       error: () => this.error.set('Could not reach the API. Is ApiServer running on :7070?'),
     });
