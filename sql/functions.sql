@@ -720,6 +720,39 @@ BEGIN
           AND ps.market_price IS NOT NULL
         GROUP BY 1, 2
     )
+    ,
+    -- Rank and cut BEFORE joining the display tables. This is a 10x
+    -- difference, not tidiness. The planner cannot estimate selectivity
+    -- through the CTEs and guesses 2 rows out of this join when the truth is
+    -- ~23,000; believing 2, it picks nested loops against groups (302 rows)
+    -- and categories, materialises the real 23,000 and rescans them once per
+    -- group - loops=302, ~7GB of temp file traffic, measured. Cutting to the
+    -- LIMIT here means groups, categories and the extended_data unwrap only
+    -- ever see 50 rows, so the bad estimate stops mattering.
+    -- Only products is joined at this stage, and only because the filters
+    -- need it; it is a primary-key lookup.
+    moves AS (
+        SELECT prior.product_id AS pid,
+               prior.sub_type_name AS stn,
+               prior.p AS then_p,
+               recent.p AS now_p,
+               (recent.p - prior.p) / prior.p AS chg
+        FROM prior
+        JOIN recent USING (product_id, sub_type_name)
+        JOIN products pr ON pr.product_id = prior.product_id
+        WHERE prior.n = v_smooth
+          AND recent.n = v_smooth
+          AND prior.p >= COALESCE(p_min_price, 0)
+          AND prior.p > 0
+          AND (p_category_id IS NULL OR pr.category_id = p_category_id)
+          AND (p_group_id IS NULL OR pr.group_id = p_group_id)
+          AND (p_include_sealed OR pr.is_sealed = FALSE)
+        ORDER BY
+            CASE WHEN p_direction = 'up' THEN (recent.p - prior.p) / prior.p END DESC NULLS LAST,
+            CASE WHEN p_direction <> 'up' THEN (recent.p - prior.p) / prior.p END ASC NULLS LAST,
+            prior.product_id
+        LIMIT LEAST(COALESCE(p_limit, 50), 200)
+    )
     SELECT
         pr.product_id,
         pr.name,
@@ -727,29 +760,21 @@ BEGIN
         extended_field(pr.extended_data, 'Rarity'),
         g.name,
         c.name,
-        prior.sub_type_name,
+        m.stn,
         pr.is_sealed,
-        ROUND(prior.p, 2),
-        ROUND(recent.p, 2),
-        ROUND((recent.p - prior.p) / prior.p * 100, 2),
+        ROUND(m.then_p, 2),
+        ROUND(m.now_p, 2),
+        ROUND(m.chg * 100, 2),
         pr.url
-    FROM prior
-    JOIN recent USING (product_id, sub_type_name)
-    JOIN products pr ON pr.product_id = prior.product_id
+    FROM moves m
+    JOIN products pr ON pr.product_id = m.pid
     JOIN groups g ON g.group_id = pr.group_id
     JOIN categories c ON c.category_id = pr.category_id
-    WHERE prior.n = v_smooth
-      AND recent.n = v_smooth
-      AND prior.p >= COALESCE(p_min_price, 0)
-      AND prior.p > 0
-      AND (p_category_id IS NULL OR pr.category_id = p_category_id)
-      AND (p_group_id IS NULL OR pr.group_id = p_group_id)
-      AND (p_include_sealed OR pr.is_sealed = FALSE)
+    -- Repeated because a LIMIT in a CTE does not guarantee the outer order.
     ORDER BY
-        CASE WHEN p_direction = 'up' THEN (recent.p - prior.p) / prior.p END DESC NULLS LAST,
-        CASE WHEN p_direction <> 'up' THEN (recent.p - prior.p) / prior.p END ASC NULLS LAST,
-        pr.product_id
-    LIMIT LEAST(COALESCE(p_limit, 50), 200);
+        CASE WHEN p_direction = 'up' THEN m.chg END DESC NULLS LAST,
+        CASE WHEN p_direction <> 'up' THEN m.chg END ASC NULLS LAST,
+        pr.product_id;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
