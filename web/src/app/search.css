@@ -141,20 +141,6 @@
 .thumb.loaded {
   opacity: 1;
 }
-/* Variant marker. At 40x56 there is no room for words - roughly 5px of
-   type - so the thumbnail gets a mark and .tag.variant carries the text.
-   Drawn as a border triangle rather than an overlaid box so it costs the
-   artwork only the corner it occupies. */
-.thumb-box.is-variant::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  border-style: solid;
-  border-width: 0 11px 11px 0;
-  border-color: transparent var(--warn) transparent transparent;
-  pointer-events: none;
-}
 .meta {
   display: flex;
   flex-direction: column;
@@ -202,14 +188,16 @@
   border-color: var(--warn);
   color: var(--warn);
 }
-/* Filled where .sealed is outlined: both are --warn, and a variant is the
-   stronger claim of the two - it says this row is a different product from
-   the card it otherwise looks identical to. */
+/* Deliberately the quiet default: same weight as the base .tag, no fill and
+   no --warn. It reads as identity, sitting with card number and rarity,
+   because that is what it is. It was a filled --warn pill until 2026-08-19,
+   which made it the loudest thing in the row while usually just repeating
+   the card's own name, and implied doubt about artwork that is correct.
+   --warn is reserved for a real caution - a picture that is genuinely
+   another printing's art - which nothing currently qualifies for. Part 25. */
 .tag.variant {
-  border-color: var(--warn);
-  background: var(--warn);
-  color: var(--bg);
-  font-weight: 600;
+  border-color: var(--line);
+  color: var(--muted);
   /* One-offs run long ("Galarian Articuno, Galarian Zapdos, & Galarian
      Moltres"); the row must not stretch to fit one. */
   max-width: 14rem;

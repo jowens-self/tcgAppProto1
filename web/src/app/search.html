@@ -64,10 +64,12 @@
         <!-- Placeholder is always the backdrop; the image fades in over it
              once it actually loads. Avoids a broken-image flash on the ~40%
              of cards with no upstream image. -->
-        <!-- is-variant draws a corner wedge: at 40x56 a text overlay is
-             illegible, so the thumbnail carries a mark and the chip below
-             carries the words. -->
-        <span class="thumb-box" [class.is-variant]="item.variantLabel" aria-hidden="true">
+        <!-- No variant marker on the thumbnail. It used to carry an amber
+             corner wedge, but that marked every labelled product - 12,200 of
+             them - to warn about borrowed artwork that, as of 2026-08-19,
+             none of our 16 labelled-product images actually is. See
+             DEVELOPMENT_HISTORY.md Part 25. -->
+        <span class="thumb-box" aria-hidden="true">
           @if (!noImage().has(item.productId)) {
             <img
               class="thumb"
@@ -93,9 +95,11 @@
             @if (item.rarity) {
               <span class="tag rarity">{{ item.rarity }}</span>
             }
-            <!-- Filled, not outlined: .tag.sealed is already an outlined
-                 --warn pill, and these two must not read as the same thing. -->
-            @if (item.variantLabel) {
+            <!-- Only when it isn't already in the name beside it: the label
+                 is extracted FROM that name, so 78.7% of the time this chip
+                 was repeating words already on screen - and doing it louder
+                 than the name itself. -->
+            @if (variantLabelAddsInfo(item.name, item.variantLabel)) {
               <span class="tag variant">{{ item.variantLabel }}</span>
             }
             @if (item.isSealed) {
@@ -146,8 +150,9 @@
 
       <!-- Served off our own disk by /api/items/{id}/image - never a third
            party. Hidden entirely once the image 404s, which is an ordinary
-           outcome rather than an error. The band names the printing because
-           the picture may be the base card's art, not this variant's. -->
+           outcome rather than an error. The band names the printing, but
+           only when that adds something the name above doesn't already say
+           - same rule as the list chip. -->
       @if (!noImage().has(selected()!.productId)) {
         <figure class="detail-art">
           <img
@@ -158,7 +163,7 @@
             (load)="imageLoaded(selected()!.productId)"
             (error)="imageFailed(selected()!.productId)"
           />
-          @if (selected()!.variantLabel) {
+          @if (variantLabelAddsInfo(selected()!.name, selected()!.variantLabel)) {
             <figcaption class="variant-band" [title]="selected()!.variantLabel!">
               {{ selected()!.variantLabel }}
             </figcaption>

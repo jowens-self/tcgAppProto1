@@ -374,20 +374,44 @@ Rules it establishes, worth keeping:
   match the set size or the set code instead. The digits-only match is
   allowed only when the typed number has no letters, otherwise `XY67a`
   would also match `XY67`.
-- **[OWNER] A variant's image must be labelled** (decided 2026-08-18). The
-  owner's answer to the Part 21 question: when a variant printing shows the
-  base card's artwork, show it *and* say which printing it is. So wherever a
-  variant's image appears, `variantLabel` appears with it - a `--warn` corner
-  wedge plus a filled pill in the list (at 40x56 a text overlay renders at
-  ~5px and is illegible), and a semi-transparent band across the bottom of
-  the 160x220 detail image. `variant_label()` derives it from the product
-  name, not from the image match, so it is correct whether or not a card has
-  a picture. Two rules inside it are load-bearing and were both bugs first:
-  a trailing bracket faces the same validity test as a parenthetical
-  (`is_variant_word()`, shared by both - otherwise all 26 `Unown [A]`..`[Z]`
-  get a one-letter "variant"), and a trailing card number is stripped before
-  extraction (`... [Professor Magnolia] - 223`). See DEVELOPMENT_HISTORY.md
-  Part 22.
+- **[OWNER] A variant label is shown only when it adds something the name
+  doesn't already say** (decided 2026-08-19, revising the 2026-08-18 rule
+  below). `variant_label()` derives the label FROM the product name, so
+  78.7% of the time it repeated words already on screen beside it -
+  "Professor's Research [Professor Magnolia]" labelled "Professor
+  Magnolia". The test is containment (`variantLabelAddsInfo()` in
+  `web/src/app/variant-label.ts`), and it cannot mis-fire across cards
+  because the label always comes from the very name it is tested against.
+  What survives is the ~21% that reformats rather than repeats:
+  `Night Stretcher - 2025 (Riley McKay)` -> `2025 World Championship`,
+  `(Prerelease) [Staff]` -> `Prerelease · Staff`.
+  **Styling is deliberately quiet** - an ordinary `--line`/`--muted` chip
+  sitting with card number and rarity, because it is identity, not a
+  warning.
+  **What this revises.** The 2026-08-18 rule said a variant's image must
+  *always* be labelled, rendered as a `--warn` corner wedge plus a filled
+  pill in the list and a band across the detail image. That styling was
+  built for a real but different job - warning that a picture might be
+  another printing's artwork (Part 21) - and applying it to all 12,200
+  labelled products made the loudest thing in every row a duplicate of the
+  card's own name. Measured 2026-08-19: of 16,841 cached images only
+  **16** belong to a labelled product, and **none** is a borrowed image
+  (`[Ice]`, `[Ghetsis]`, `(Plant Cloak)`, `[Professor X]` are all
+  genuinely different cards whose art is correct). The warning guarded a
+  population of zero, because the Part 21 matcher bugs mean variant
+  products are precisely the ones that failed to get images.
+  **`--warn` stays reserved for a genuine borrowed image.** If the Part 21
+  matcher fix lands and cross-printing matches arrive, the loud treatment
+  should come back for exactly those rows - and the matcher should
+  *record* that it borrowed, not have the UI infer it from a set-name
+  heuristic (Part 21 found that heuristic unreliable).
+  **Unchanged and still load-bearing:** `variant_label()` derives from the
+  product name, not the image match, so it is correct whether or not a card
+  has a picture; a trailing bracket faces the same validity test as a
+  parenthetical (`is_variant_word()`, shared by both - otherwise all 26
+  `Unown [A]`..`[Z]` get a one-letter "variant"); and a trailing card
+  number is stripped before extraction (`... [Professor Magnolia] - 223`).
+  See DEVELOPMENT_HISTORY.md Parts 22 and 25.
 - **[OWNER] Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03

@@ -5,6 +5,7 @@ import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
 import { Game, ItemSearchResult, ItemVariant, PricePoint } from './api.models';
 import { PriceChart } from './price-chart';
+import { variantLabelAddsInfo } from './variant-label';
 
 /**
  * Card / Product Search - the first screen.
@@ -26,6 +27,13 @@ import { PriceChart } from './price-chart';
 })
 export class Search {
   private readonly api = inject(CardTrackerApi);
+
+  /**
+   * Templates can only call class members, so the shared rule is re-exposed
+   * here rather than reimplemented - search and any future screen showing
+   * labels must agree on when one is worth showing.
+   */
+  protected readonly variantLabelAddsInfo = variantLabelAddsInfo;
 
   protected readonly games = signal<Game[]>([]);
   protected readonly results = signal<ItemSearchResult[]>([]);

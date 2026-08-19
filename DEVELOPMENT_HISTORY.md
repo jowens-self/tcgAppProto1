@@ -41,9 +41,10 @@ origin through that date, then continuing forward from there).
 22. [Part 22 — Saying which printing you are looking at](#part-22--saying-which-printing-you-are-looking-at)
 23. [Part 23 — The set overview, and the one card that was the whole set](#part-23--the-set-overview-and-the-one-card-that-was-the-whole-set)
 24. [Part 24 — Prices that swing and come straight back](#part-24--prices-that-swing-and-come-straight-back)
-25. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-26. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-27. [What's still open](#whats-still-open)
+25. [Part 25 — The label that shouted the card's own name](#part-25--the-label-that-shouted-the-cards-own-name)
+26. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+27. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+28. [What's still open](#whats-still-open)
 
 ---
 
@@ -2080,6 +2081,100 @@ median would have erased a genuine two-day move completely and reported the
 card as unmoved. Two-day steps are clearly common enough that this is not a
 tolerable trade for the 20 two-day artifacts it would also catch.
 **Decided against**, on evidence rather than caution.
+
+---
+
+## Part 25 — The label that shouted the card's own name
+
+The owner, unprompted: *"i really don't like how the labels are for the
+images that were variants."* A taste complaint, which turned out to have a
+measurable cause and to point at a feature guarding nothing.
+
+### Two things wearing one style
+
+Part 22 built variant labels to answer a real question from Part 21: if a
+variant printing displays the *base* card's artwork, say which printing this
+actually is. That is a **caution**, and it was styled like one — a `--warn`
+corner wedge on the thumbnail, a filled `--warn` pill in the row, a band
+across the detail image.
+
+But the label was applied to every labelled product, and most labelled
+products are not that case at all. They are **identity**: `Professor's
+Research [Professor Magnolia]`, `Ancient Technical Machine [Ice]`,
+`Burmy (Plant Cloak)`. Caution's styling on identity's population, which is
+why every row looked like a problem.
+
+### The measurement that explained the irritation
+
+`variant_label()` derives the label **from the product name**. So the pill
+usually repeats words already on screen a couple of inches to its left:
+
+| labelled products | label already in the name |
+|---|---|
+| 12,200 | 9,607 (**78.7%**) |
+
+The loudest element in the row was, most of the time, a duplicate of the
+row's own title — set in a heavier weight than the title itself.
+
+The other ~21% earn their place by reformatting rather than repeating:
+`Night Stretcher - 2025 (Riley McKay)` → `2025 World Championship`,
+`Cleffa - 037 (Prerelease) [Staff]` → `Prerelease · Staff`.
+
+### The finding that reframed the fix
+
+The obvious move was to restyle the pill. The better question was how often
+the caution is *warranted*, and the answer is essentially never:
+
+| cached images | belonging to a labelled product |
+|---|---|
+| 16,841 | **16** |
+
+Sixteen. And inspecting all sixteen, **not one is a borrowed image** —
+`[Ice]`, `[Rock]`, `[Steel]`, `[Ghetsis]`, `(Plant Cloak)` and the
+`[Professor X]` cards are genuinely different cards whose artwork is
+correct. Every one matched under the strictest rule, `name+number+total`.
+
+There is a neat reason for that overlap being so small, and it is the Part
+21 bug: `normName()` doesn't strip trailing parentheticals, so variant
+products are *precisely* the ones that fail to match an image. The warning
+system was guarding a population of zero, and could only acquire one if the
+Part 21 fix were applied.
+
+### What shipped
+
+The label is shown only when it isn't already in the name, and rendered as
+an ordinary `--line`/`--muted` chip beside card number and rarity. The
+corner wedge is gone. The detail band follows the same rule, so it too is
+effectively gone until a genuine borrowed image exists.
+
+Verified against the live app: searching `Professor's Research` drops from
+50 amber pills to 7 quiet chips, and all 7 are World Championship decks —
+exactly the reformatting case. `Ancient Technical Machine` keeps 4 chips,
+all of them World Championship decks, while the plain `[Ice]`/`[Rock]`/
+`[Steel]` rows carry none.
+
+There is a small joke in the detail panel that makes the point: the
+`[Ice]` card's own printed artwork reads "Ancient Technical Machine [Ice]".
+The band was covering the card's art in order to repeat what the heading
+above it *and* the picture underneath it both already said.
+
+### The part deliberately left in place
+
+`--warn` is now reserved for a genuine borrowed image rather than retired.
+Four treatments were mocked up and compared side by side before choosing;
+the one chosen ("only when it adds something") renders identically today to
+the more ambitious version that also handles borrowed art, because there
+are no borrowed images to handle. So nothing was lost by taking the simpler
+one first.
+
+When the Part 21 matcher fix lands, the caution should return for exactly
+those rows — and the **matcher** should record that it borrowed, rather than
+the UI inferring it by comparing set names. Part 21 already established that
+the set-name comparison is a heuristic that undercounts.
+
+**The pattern worth keeping:** a styling complaint is worth taking as far as
+"what population does this styling actually serve?" The answer here was
+zero, and no amount of restyling would have found that.
 
 ---
 
