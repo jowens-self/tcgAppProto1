@@ -55,6 +55,14 @@ cd web && npx ng serve                                                 # UI :420
 catches up gaps automatically). `com.cardtracker.images.ImportCardImages`
 fetches card images - resumable, run it from the project root.
 
+**Use `ImportCardImages --dry-run` before changing any matching rule.** It
+matches and reports without downloading, writing, or recording a single
+`no_match`. That matters because a `no_match` is never re-queried, so a
+wrong rule writes a permanent lie - and the dry run has already caught one
+(it flagged `Aerodactyl (1)` as a printing variant when `(1)` is a card
+number). `--group <id>` scopes a real run to one set, which is how a rule
+change should be validated before it touches 10,000 rows.
+
 **Traps that have actually bitten, all of them more than theory:**
 
 - **Never `mvn package` while ANY process is running from the jar.** It
@@ -83,10 +91,18 @@ fetches card images - resumable, run it from the project root.
 - **Don't pipe a long-running Java process through `head`.** It ignores
   the resulting SIGPIPE and keeps running with output discarded, which
   looks exactly like a hang.
-- **pokemontcg.io is flaky.** Expect 5-11 of 174 sets to fail per attempt,
-  and deep pagination is broken past ~12k rows. The importer retries and
-  caches a complete catalog under `images/.catalog-cache` (7-day TTL);
-  delete that file to force a refresh.
+- **pokemontcg.io is flaky, in two different ways.** Expect 5-11 of 174
+  sets to fail per attempt, and deep pagination is broken past ~12k rows.
+  The importer retries and caches a complete catalog under
+  `images/.catalog-cache` (7-day TTL); delete that file to force a refresh.
+  Separately, **image downloads can fail in sustained bursts** - observed
+  2026-08-19, an 11-minute stretch of zero successes and ~2 failures a
+  minute, which then recovered on its own. With 6 retries at up to 60s
+  each, a single image can occupy minutes, so **a silent log is not
+  necessarily a hang**. Check progress in the DB
+  (`SELECT status, COUNT(*) FROM card_images GROUP BY status`) before
+  killing anything; failures are recorded as `failed`, which a later run
+  retries.
 
 ---
 
@@ -278,10 +294,8 @@ individually.
   behind it, an error leaves the same level either side, so no threshold
   on "how big a real move may be" is ever needed. Four things are
   load-bearing:
-    * **Median, never mean.** A mean damps real moves and smears steps
-      across days - measured on Charizard Star (84198), mean-3 left a
-      phantom -25% *and* invented a +108% move that never happened, where
-      median-3 removed the artifact entirely and kept the real step intact.
+    * **Median, never mean** - same reasoning and evidence as the rule
+      above; do not re-derive it.
     * **A dollar gate**, because the effect is heavy-tailed: 4,700 events
       in 90 days, but 15 of them carry 99.4% of the distortion. Default
       $10.
@@ -292,10 +306,13 @@ individually.
       substitution; a correction that large which does not announce itself
       is worse than either honest alternative. A correction you cannot
       switch off is a correction you cannot check.
-  Two structural limits, both documented in Part 24: the newest date can
-  never be despiked (no next day exists yet), and a 3-window median only
-  catches one-day impulses - 20 two-day runs were missed over 90 days and
-  widening the window is an open question, not a decided one.
+  Two structural limits, both in Part 24: the newest date can never be
+  despiked (its next day has not been observed yet), and a 3-window median
+  catches one-day impulses only. Widening it to catch two-day runs was
+  **considered and decided against** - median-5 over Flaaffy (85475)
+  returns $1.69, erasing a genuine two-day move entirely. Real two-day
+  steps are too common for that trade; do not reopen it without new
+  evidence.
 - **[CLAUDE] A set-level percentage is shown with its biggest single
   contributor, never alone.** Measured 2026-08-18: 44 of 283 sets have
   over half their 30-day movement coming from one row, and the worst case
@@ -396,43 +413,27 @@ Rules it establishes, worth keeping:
   allowed only when the typed number has no letters, otherwise `XY67a`
   would also match `XY67`.
 - **[OWNER] A variant label is shown only when it adds something the name
-  doesn't already say** (decided 2026-08-19, revising the 2026-08-18 rule
-  below). `variant_label()` derives the label FROM the product name, so
-  78.7% of the time it repeated words already on screen beside it -
-  "Professor's Research [Professor Magnolia]" labelled "Professor
-  Magnolia". The test is containment (`variantLabelAddsInfo()` in
-  `web/src/app/variant-label.ts`), and it cannot mis-fire across cards
+  doesn't already say** (2026-08-19, replacing a 2026-08-18 rule that
+  labelled every variant loudly). `variant_label()` derives the label FROM
+  the product name, so 78.7% of the time it repeated words already on
+  screen beside it. The test is containment - `variantLabelAddsInfo()` in
+  `web/src/app/variant-label.ts` - and it cannot mis-fire across cards
   because the label always comes from the very name it is tested against.
   What survives is the ~21% that reformats rather than repeats:
-  `Night Stretcher - 2025 (Riley McKay)` -> `2025 World Championship`,
-  `(Prerelease) [Staff]` -> `Prerelease · Staff`.
-  **Styling is deliberately quiet** - an ordinary `--line`/`--muted` chip
-  sitting with card number and rarity, because it is identity, not a
-  warning.
-  **What this revises.** The 2026-08-18 rule said a variant's image must
-  *always* be labelled, rendered as a `--warn` corner wedge plus a filled
-  pill in the list and a band across the detail image. That styling was
-  built for a real but different job - warning that a picture might be
-  another printing's artwork (Part 21) - and applying it to all 12,200
-  labelled products made the loudest thing in every row a duplicate of the
-  card's own name. Measured 2026-08-19: of 16,841 cached images only
-  **16** belong to a labelled product, and **none** is a borrowed image
-  (`[Ice]`, `[Ghetsis]`, `(Plant Cloak)`, `[Professor X]` are all
-  genuinely different cards whose art is correct). The warning guarded a
-  population of zero, because the Part 21 matcher bugs mean variant
-  products are precisely the ones that failed to get images.
-  **`--warn` stays reserved for a genuine borrowed image.** If the Part 21
-  matcher fix lands and cross-printing matches arrive, the loud treatment
-  should come back for exactly those rows - and the matcher should
-  *record* that it borrowed, not have the UI infer it from a set-name
-  heuristic (Part 21 found that heuristic unreliable).
-  **Unchanged and still load-bearing:** `variant_label()` derives from the
-  product name, not the image match, so it is correct whether or not a card
-  has a picture; a trailing bracket faces the same validity test as a
-  parenthetical (`is_variant_word()`, shared by both - otherwise all 26
-  `Unown [A]`..`[Z]` get a one-letter "variant"); and a trailing card
-  number is stripped before extraction (`... [Professor Magnolia] - 223`).
-  See DEVELOPMENT_HISTORY.md Parts 22 and 25.
+  `Night Stretcher - 2025 (Riley McKay)` -> `2025 World Championship`.
+  **Styling is deliberately quiet** - an ordinary chip beside card number
+  and rarity, because it is identity, not a warning. **`--warn` is
+  reserved, not retired:** it belongs to a genuinely borrowed image, and
+  nothing can earn it until the `stripped_qualifier` vocabulary in the
+  Backlog is classified.
+  Three internals are load-bearing, all bugs first: a trailing bracket
+  faces the same validity test as a parenthetical (`is_variant_word()`,
+  shared by both - otherwise all 26 `Unown [A]`..`[Z]` get a one-letter
+  "variant"); a trailing card number is stripped before extraction
+  (`... [Professor Magnolia] - 223`); and `is_variant_word()` is mirrored
+  in Java as `ImportCardImages.isVariantWord()` so the rule deciding a
+  row's label and the rule deciding its image cannot drift - change both
+  or neither. Parts 22, 25, 26.
 - **[OWNER] Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03
@@ -526,32 +527,25 @@ narrative bloat.
 
 ## Known unknowns — verify before trusting  **[VERIFIED]**
 
-1. ~~Field names in `TcgCsvPriceSource` are unverified.~~ **Verified 2026-08-12**
-   via direct curl against `tcgcsv.com/tcgplayer/3/groups` and
-   `.../3/604/prices` (Base Set) — `productId`, `subTypeName`, `marketPrice`,
-   `lowPrice`, `midPrice`, `highPrice`, `directLowPrice` all present and
-   correctly named, no live pull needed to confirm this. Live data also
-   showed a real price-parked row (`marketPrice` ~70, `highPrice` 9999),
-   confirming the high_price decision above is warranted.
-2. **The Seller Portal CSV's columns have never been seen.** `InventorySource`
-   is an interface with no implementation on purpose. Do not guess the columns;
-   ask for a sample export first. Whether it contains a SKU ID or only a
-   product ID determines whether per-condition joins are possible at all.
-3. ~~Product identity across time is unproven.~~ **Checked 2026-08-13** by
-   mapping every `product_id -> group_id` from the raw 2024-02-08 archive
-   (24,980 products) and diffing against the current `products` table
-   (32,547 products, from the live pull). 24,891 product_ids overlap; 37
-   (0.15%) show a different `group_id` now than in 2024. Inspected all 37 by
-   name: every one is a promo/code card, basic energy card, or special-holo
-   variant that TCGplayer re-filed into a different catalog bucket (e.g. into
-   "SVE: Scarlet & Violet Energies" or "Miscellaneous Cards & Products") -
-   the card name is identical before and after in every case, only the group
-   changed. No product_id was found reassigned to an unrelated card.
-   `price_snapshots` keys on `product_id` alone (no `group_id`), so this
-   reclassification churn doesn't touch price history at all. Long-range
-   trends and all-time-high queries are safe to trust.
-   Caveat: this only tests 2024-02-08 vs now (the earliest archive available)
-   and only within Pokemon. Good enough to stop treating this as an open risk.
+**One genuine unknown remains.** The Seller Portal CSV's columns have never
+been seen. `InventorySource` is an interface with no implementation on
+purpose - do not guess the columns; ask for a sample export first. Whether
+it carries a SKU ID or only a product ID decides whether per-condition joins
+are possible at all.
+
+Two former unknowns are settled and should not be re-litigated:
+
+- **tcgcsv field names are correct** (verified 2026-08-12 by direct curl).
+  The live response also contained a genuine price-parked row - `marketPrice`
+  ~70 against `highPrice` 9999 - which is what justifies the `high_price`
+  rule above. Names live in `TcgCsvPriceSource`.
+- **`product_id` is stable across time**, so long-range trends and
+  all-time-high are safe to trust. Checked 2026-08-13 against the earliest
+  archive: of 24,891 overlapping ids only 37 (0.15%) changed `group_id`, all
+  of them catalog re-filing of promos/energies with identical card names, and
+  `price_snapshots` keys on `product_id` alone so the churn never touches
+  price history. Method and the inspection of all 37: DEVELOPMENT_HISTORY.md
+  Part 6.
 
 ## Excluded products and sealed classification  **[MIXED]**
 
@@ -612,9 +606,9 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   decision.** Found building the set overview (Part 23). Some cards'
   `market_price` flips between two far-apart values for weeks at a time -
   Base Set (Shadowless) Charizard 1st Ed Holofoil sits at ~$250 or at
-  exactly $10,000, while low/mid/high stay parked at $100,000. It is not a one-day spike (it holds $240 for two consecutive
-  days), so neither `item_movers()` smoothing nor Part 24 despiking
-  touches it. Effect is
+  exactly $10,000, while low/mid/high stay parked at $100,000. It is not a
+  one-day spike (it holds $240 for two consecutive days), so neither
+  `item_movers()` smoothing nor Part 24 despiking touches it. The effect is
   large: 44 of 283 sets have over half their 30-day movement from a single
   row. The set screen discloses this rather than correcting it. The open
   question is whether such readings should be flagged or treated as
