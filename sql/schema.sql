@@ -155,6 +155,25 @@ CREATE TABLE IF NOT EXISTS card_images (
     -- How the match was made, kept so a bad match can be traced back to the
     -- rule that produced it rather than guessed at.
     match_rule    TEXT,
+    -- The printing qualifier that had to be stripped from the product name
+    -- before this image would match - "cracked ice holo", "poke ball
+    -- pattern", "delta species" - or NULL when the name matched as-is.
+    --
+    -- A FACT about how the match was made, deliberately not a verdict on
+    -- whether the artwork is wrong. Some stripped qualifiers mean the image
+    -- really is the base printing (foil treatments like Cracked Ice Holo are
+    -- applied to existing art); others mean nothing is wrong at all, because
+    -- pokemontcg.io just spells the card differently ("Aerodactyl (Delta
+    -- Species)" is their "Aerodactyl δ"). Classifying the vocabulary is a
+    -- domain call; storing the word lets it be made once in SQL and applied
+    -- retroactively without re-running the import.
+    --
+    -- Decided at match time, where the importer holds both the product and
+    -- the card it matched. Deliberately NOT derived later by comparing set
+    -- names, which the two catalogs disagree on ("SWSH: Sword & Shield Promo
+    -- Cards" vs "SWSH Black Star Promos", ~900 cards a name comparison would
+    -- wrongly flag). See DEVELOPMENT_HISTORY.md Part 26.
+    stripped_qualifier TEXT,
     checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

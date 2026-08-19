@@ -63,13 +63,32 @@ import java.util.regex.Pattern;
  *    trailing parenthetical or letter-number token, so "Alakazam (H1)" and
  *    "Rillaboom V - SWSH014" never match their bare catalog names.
  *
- * Not yet fixed: ~half the recoverable matches come from a different set
- * than the product's own (championship stamps, Cracked Ice holos, Poke Ball
- * patterns, jumbos), and whether a variant may show its base printing's
- * image is the owner's call, still open.
+ * **Both were fixed 2026-08-19** (Part 26). Matching now runs in two tiers:
+ * tier 1 uses the product's name with its printing qualifier intact, and
+ * only if that finds nothing does tier 2 retry with the qualifier stripped.
+ * Tier 1 is preferred because the catalog usually carries the qualifier too
+ * ("Professor's Research (Professor Magnolia)"), so it resolves to the
+ * card's own artwork. Reaching tier 2 means the catalog holds no card
+ * bearing that printing, so the image is the base printing's - and the
+ * qualifier that had to be dropped is stored in
+ * {@code card_images.stripped_qualifier}.
+ *
+ * That column is a FACT about the match, not a verdict on the artwork.
+ * Whether a stripped qualifier means the picture is wrong has no mechanical
+ * answer - "Cracked Ice Holo" is a foil treatment over existing art, while
+ * "Delta Species" is card identity pokemontcg.io spells as "Aerodactyl δ" -
+ * so the word is stored and the classification left to be made once, in SQL,
+ * retroactively. Note this is decided at match time and never by comparing
+ * set names: the two catalogs disagree on those.
+ *
+ * Use {@code --dry-run} to measure rules without writing or downloading
+ * anything. It exists because the misses this records are permanent, and
+ * the rules have been wrong before - the dry run caught a defect in the
+ * first version of the tier-2 test, which mistook parenthesised card
+ * numbers ("Aerodactyl (1)") for printing qualifiers.
  *
  * Misses are recorded as status='no_match' so they are never re-queried -
- * which is why fixing the above also requires clearing those rows.
+ * which is why changing any of the above also requires clearing those rows.
  */
 public class ImportCardImages {
 
@@ -84,11 +103,16 @@ public class ImportCardImages {
         int limit = Integer.MAX_VALUE;
         Integer onlyGroup = null;
         boolean matchOnly = false;
+        boolean dryRun = false;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--limit" -> limit = Integer.parseInt(args[++i]);
                 case "--group" -> onlyGroup = Integer.parseInt(args[++i]);
                 case "--match-only" -> matchOnly = true;
+                // Measure without consequences: no download, no DB write, no
+                // no_match row. Exists because the matching rules have been
+                // wrong before and the misses they record are permanent.
+                case "--dry-run" -> dryRun = true;
                 default -> throw new IllegalArgumentException("unknown arg: " + args[i]);
             }
         }
@@ -103,7 +127,7 @@ public class ImportCardImages {
         PokemonTcgCatalog api = new PokemonTcgCatalog();
 
         try (Connection conn = DriverManager.getConnection(url, user, pass)) {
-            List<Product> todo = productsNeedingImages(conn, onlyGroup, limit);
+            List<Product> todo = productsNeedingImages(conn, onlyGroup, limit, dryRun);
             if (todo.isEmpty()) {
                 // Distinguish "there is nothing pending" from "you asked for
                 // none" - the old message claimed the former in both cases.
@@ -191,36 +215,62 @@ public class ImportCardImages {
             }
 
             int matched = 0, noMatch = 0, downloaded = 0, failed = 0, skippedUnknown = 0;
+            int baseArtMatches = 0, baseArtStrict = 0, baseArtLoose = 0;
+            List<String> baseArtSample = new ArrayList<>();
+            List<String> baseArtLooseSample = new ArrayList<>();
             for (Product p : todo) {
-                String n = normName(p.name);
+                String nFull = normName(p.name);
+                String nBase = normNameBase(p.name);
                 String d = numberDigits(p.cardNumber);
                 String t = numberTotal(p.cardNumber);
 
                 Card hit = null;
                 String rule = null;
-                if (n != null && d != null) {
-                    if (t != null) {
-                        List<Card> c = byKeyStrict.get(n + "|" + d + "|" + t);
-                        if (c != null && !c.isEmpty()) {
-                            hit = c.get(0);
-                            rule = "name+number+total";
-                        }
-                    }
+                String strippedQualifier = null;
+
+                // Tier 1 - the product's own name, printing qualifier intact.
+                // Preferred always: when the catalog carries the qualifier too
+                // this resolves to the card's actual artwork.
+                if (nFull != null && d != null) {
+                    hit = strict(byKeyStrict, nFull, d, t);
+                    if (hit != null) rule = "name+number+total";
                     if (hit == null) {
-                        List<Card> c = byKeyLoose.get(n + "|" + d);
-                        // Only accept a loose match when it is unambiguous - a
-                        // wrong image is worse than no image for someone
-                        // pricing inventory.
-                        if (c != null && c.size() == 1) {
-                            hit = c.get(0);
-                            rule = "name+number";
+                        hit = loose(byKeyLoose, nFull, d);
+                        if (hit != null) rule = "name+number";
+                    }
+                }
+
+                // Tier 2 - qualifier stripped. Only reached when tier 1 found
+                // nothing, which means the catalog has no card bearing this
+                // printing: whatever comes back is the BASE printing's art.
+                // Which tier succeeded is the whole signal - no set-name
+                // comparison is involved, and none should be (Part 21 showed
+                // the two catalogs disagree on set names).
+                if (hit == null && nBase != null && d != null && !nBase.equals(nFull)) {
+                    hit = strict(byKeyStrict, nBase, d, t);
+                    if (hit != null) rule = "name+number+total/base-art";
+                    if (hit == null) {
+                        hit = loose(byKeyLoose, nBase, d);
+                        if (hit != null) rule = "name+number/base-art";
+                    }
+                    if (hit != null) {
+                        strippedQualifier = strippedQualifier(p.name);
+                        baseArtMatches++;
+                        boolean strictHit = rule.startsWith("name+number+total");
+                        if (strictHit) baseArtStrict++; else baseArtLoose++;
+                        List<String> bucket = strictHit ? baseArtSample : baseArtLooseSample;
+                        if (bucket.size() < 12) {
+                            bucket.add(String.format("%s  ->  %s (%s #%s)",
+                                    p.name, hit.name(), hit.setName(), hit.number()));
                         }
                     }
                 }
 
                 if (hit == null || hit.imageUrl() == null) {
-                    if (catalogComplete) {
-                        record(conn, p.productId, null, "no_match", null, null, null);
+                    if (dryRun) {
+                        noMatch++;
+                    } else if (catalogComplete) {
+                        record(conn, p.productId, null, "no_match", null, null, null, null);
                         noMatch++;
                     } else {
                         skippedUnknown++;
@@ -228,8 +278,9 @@ public class ImportCardImages {
                     continue;
                 }
                 matched++;
+                if (dryRun) continue;
                 if (matchOnly) {
-                    record(conn, p.productId, hit.id(), "failed", null, null, rule);
+                    record(conn, p.productId, hit.id(), "failed", null, null, rule, strippedQualifier);
                     continue;
                 }
 
@@ -240,7 +291,7 @@ public class ImportCardImages {
                     Path dest = imageDir.resolve(rel);
                     Files.createDirectories(dest.getParent());
                     Files.write(dest, thumb);
-                    record(conn, p.productId, hit.id(), "ok", rel, thumb.length, rule);
+                    record(conn, p.productId, hit.id(), "ok", rel, thumb.length, rule, strippedQualifier);
                     downloaded++;
                     if (downloaded % 100 == 0) {
                         System.out.printf("  %d downloaded, %d no-match, %d failed%n",
@@ -249,14 +300,35 @@ public class ImportCardImages {
                 } catch (Exception e) {
                     // 'failed' rather than 'no_match': the card exists upstream,
                     // so this is retryable on a later run.
-                    record(conn, p.productId, hit.id(), "failed", null, null, rule);
+                    record(conn, p.productId, hit.id(), "failed", null, null, rule, strippedQualifier);
                     failed++;
                 }
                 api.pace();
             }
 
+            if (dryRun) {
+                System.out.printf("%nDRY RUN - nothing written, nothing downloaded.%n");
+                System.out.printf("  checked      %d%n", todo.size());
+                System.out.printf("  would match  %d  (%.1f%%)%n",
+                        matched, 100.0 * matched / Math.max(todo.size(), 1));
+                System.out.printf("  would miss   %d%n", noMatch);
+                System.out.printf("  of matches, base-art (tier 2): %d%n", baseArtMatches);
+                System.out.printf("     via name+number+TOTAL (set size agrees): %d%n", baseArtStrict);
+                System.out.printf("     via name+number only:                    %d%n", baseArtLoose);
+                if (!baseArtSample.isEmpty()) {
+                    System.out.println("  -- tier 2, total agreed:");
+                    for (String line : baseArtSample) System.out.println("    " + line);
+                }
+                if (!baseArtLooseSample.isEmpty()) {
+                    System.out.println("  -- tier 2, total did NOT agree:");
+                    for (String line : baseArtLooseSample) System.out.println("    " + line);
+                }
+                return;
+            }
             System.out.printf("Done. matched=%d (downloaded=%d, failed=%d), no_match=%d%n",
                     matched, downloaded, failed, noMatch);
+            System.out.printf("  base-art matches (image is the base printing): %d%n",
+                    baseArtMatches);
             if (skippedUnknown > 0) {
                 System.out.printf("  %d unmatched product(s) left unrecorded because the "
                         + "catalog was incomplete - re-run to resolve them.%n", skippedUnknown);
@@ -272,20 +344,22 @@ public class ImportCardImages {
      * retried; 'ok' and 'no_match' are not - that negative caching is what
      * stops ~11,000 unmatchable cards being re-checked on every run.
      */
-    private static List<Product> productsNeedingImages(Connection conn, Integer group, int limit)
-            throws Exception {
+    private static List<Product> productsNeedingImages(Connection conn, Integer group, int limit,
+                                                      boolean includeNoMatch) throws Exception {
         StringBuilder sql = new StringBuilder("""
                 SELECT p.product_id, p.name, extended_field(p.extended_data, 'Number') AS num
                   FROM products p
                   LEFT JOIN card_images ci ON ci.product_id = p.product_id
                  WHERE p.category_id = ? AND p.is_sealed = FALSE
-                   AND (ci.product_id IS NULL OR ci.status = 'failed')
+                   AND (ci.product_id IS NULL OR ci.status = 'failed'
+                        OR (? AND ci.status = 'no_match'))
                 """);
         if (group != null) sql.append(" AND p.group_id = ").append(group);
         sql.append(" ORDER BY p.product_id LIMIT ").append(limit);
 
         try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
             ps.setInt(1, POKEMON);
+            ps.setBoolean(2, includeNoMatch);
             List<Product> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -296,16 +370,35 @@ public class ImportCardImages {
         }
     }
 
+    /** Strictest lookup: name + number + printed total. Null total = skip. */
+    private static Card strict(Map<String, List<Card>> idx, String n, String d, String t) {
+        if (t == null) return null;
+        List<Card> c = idx.get(n + "|" + d + "|" + t);
+        return (c == null || c.isEmpty()) ? null : c.get(0);
+    }
+
+    /**
+     * Name + number only, and only when it is unambiguous - a confidently
+     * wrong image is worse than an obvious blank for someone pricing
+     * inventory, so an ambiguous key is treated as no match at all.
+     */
+    private static Card loose(Map<String, List<Card>> idx, String n, String d) {
+        List<Card> c = idx.get(n + "|" + d);
+        return (c != null && c.size() == 1) ? c.get(0) : null;
+    }
+
     private static void record(Connection conn, int productId, String sourceId, String status,
-                               String path, Integer bytes, String rule) throws Exception {
+                               String path, Integer bytes, String rule, String strippedQualifier)
+            throws Exception {
         String sql = """
                 INSERT INTO card_images (product_id, source_id, status, file_path, bytes,
-                                         match_rule, checked_at)
-                VALUES (?, ?, ?, ?, ?, ?, now())
+                                         match_rule, stripped_qualifier, checked_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, now())
                 ON CONFLICT (product_id) DO UPDATE SET
                     source_id = EXCLUDED.source_id, status = EXCLUDED.status,
                     file_path = EXCLUDED.file_path, bytes = EXCLUDED.bytes,
-                    match_rule = EXCLUDED.match_rule, checked_at = now()
+                    match_rule = EXCLUDED.match_rule,
+                    stripped_qualifier = EXCLUDED.stripped_qualifier, checked_at = now()
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, productId);
@@ -314,6 +407,7 @@ public class ImportCardImages {
             ps.setString(4, path);
             if (bytes == null) ps.setNull(5, java.sql.Types.INTEGER); else ps.setInt(5, bytes);
             ps.setString(6, rule);
+            ps.setString(7, strippedQualifier);
             ps.executeUpdate();
         }
     }
@@ -359,28 +453,149 @@ public class ImportCardImages {
     // these rules actually produce.
 
     private static final Pattern TRAILING_FRACTION = Pattern.compile("\\s*-\\s*[0-9a-z]+/[0-9a-z]+\\s*$");
-    private static final Pattern TRAILING_NUMBER = Pattern.compile("\\s*-\\s*[0-9]+\\s*$");
+    /**
+     * A trailing card number TCGplayer appended to the name. Widened from
+     * digits-only to allow a letter prefix: "Rillaboom V - SWSH014" is the
+     * same card as the catalog's bare "Rillaboom V", and the old
+     * digits-only rule left the token attached so it never matched.
+     */
+    private static final Pattern TRAILING_ALNUM_TOKEN =
+            Pattern.compile("\\s*-\\s*[a-z]*[0-9]+[a-z0-9]*\\s*$");
+    /** A trailing parenthesised or bracketed group, with its contents. */
+    private static final Pattern TRAILING_GROUP =
+            Pattern.compile("\\s*[\\(\\[]([^\\)\\]]*)[\\)\\]]\\s*$");
+    private static final Pattern HAS_LETTER = Pattern.compile("[A-Za-z]");
+    /** "2", "147", "XY72", "H1" - a card number wearing a parenthesis. */
+    private static final Pattern CARD_CODE = Pattern.compile("^[A-Za-z]{0,4}[0-9]+[A-Za-z]?$");
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9 ]");
     private static final Pattern SPACES = Pattern.compile("\\s+");
-    private static final Pattern LEADING_DIGITS = Pattern.compile("^\\s*([0-9]+)");
+    /**
+     * Digits anywhere in the number, not anchored to its start. Anchoring was
+     * the Part 21 defect: "H1", "SV066", "SWSH014", "RC4", "TG12" and "GG46"
+     * all begin with a letter, so the old pattern returned null - which was
+     * fatal on BOTH sides of the match, dropping 1,550 of 20,479 catalog
+     * cards from the index and stopping those products ever attempting one.
+     */
+    private static final Pattern ANY_DIGITS = Pattern.compile("([0-9]+)");
 
-    /** "Mew ex - 232/091" -> "mew ex", so it lines up with their bare names. */
+    /**
+     * Is a trailing bracketed token a printing qualifier, or just a card
+     * number in disguise?
+     *
+     * A direct port of {@code is_variant_word()} in sql/functions.sql, and it
+     * must stay one - the two answer the same question about the same
+     * strings, and a disagreement would mean the label a row displays and the
+     * image it displays were decided by different rules. Both were bugs
+     * first: without the length floor all 26 "Unown [A]".."[Z]" read as
+     * variants, and without the card-code test so do "Alakazam (2)",
+     * "Crobat (147)" and "Latios EX (XY72)".
+     */
+    static boolean isVariantWord(String token) {
+        if (token == null) return false;
+        String t = token.trim();
+        return t.length() >= 3
+                && HAS_LETTER.matcher(t).find()
+                && !CARD_CODE.matcher(t).matches();
+    }
+
+    /**
+     * "Mew ex - 232/091" -> "mew ex", so it lines up with their bare names.
+     *
+     * A genuine printing qualifier is deliberately KEPT: the catalog usually
+     * carries it too ("Professor's Research (Professor Magnolia)", "Ancient
+     * Technical Machine [Ice]"), so keeping it is what makes those resolve to
+     * their own artwork rather than the base card's. A parenthesised card
+     * NUMBER is still stripped here - "Aerodactyl (1)" is simply Fossil #1
+     * and matching it is not borrowing anything.
+     */
     static String normName(String s) {
         if (s == null) return null;
-        String v = s.toLowerCase(Locale.ROOT);
-        v = TRAILING_FRACTION.matcher(v).replaceAll("");
-        v = TRAILING_NUMBER.matcher(v).replaceAll("");
+        return finish(stripTrailingNoise(s.toLowerCase(Locale.ROOT), false));
+    }
+
+    /**
+     * As {@link #normName}, but printing qualifiers removed too:
+     * "Blastoise - 13/95 (Cracked Ice Holo)" -> "blastoise".
+     *
+     * A match found with THIS and not with {@link #normName} means the
+     * catalog holds no card bearing the qualifier, so the image that comes
+     * back is the base printing's artwork rather than this product's. That is
+     * the stripped_qualifier signal: decided by which name matched, never by
+     * comparing set names, because the two catalogs disagree on those
+     * (TCGplayer's "SWSH: Sword & Shield Promo Cards" is pokemontcg.io's
+     * "SWSH Black Star Promos" - ~900 cards a name comparison would wrongly
+     * call borrowed). See DEVELOPMENT_HISTORY.md Parts 21 and 26.
+     */
+    static String normNameBase(String s) {
+        if (s == null) return null;
+        return finish(stripTrailingNoise(s.toLowerCase(Locale.ROOT), true));
+    }
+
+    private static String finish(String v) {
         v = NON_ALNUM.matcher(v).replaceAll(" ");
         v = SPACES.matcher(v).replaceAll(" ").trim();
         return v.isEmpty() ? null : v;
     }
 
-    /** "004/102" -> "4"; "196" -> "196". Leading zeros are padding, not data. */
+    /**
+     * Strips trailing card numbers always, and trailing printing qualifiers
+     * only when asked. Loops because the shapes nest: TCGplayer writes
+     * "Professor's Research [Professor Magnolia] - 223", so the number has to
+     * come off before the qualifier is even visible to a trailing match.
+     *
+     * @param dropQualifiers also remove a trailing qualifier that
+     *                       {@link #isVariantWord} accepts
+     */
+    private static String stripTrailingNoise(String v, boolean dropQualifiers) {
+        String prev;
+        do {
+            prev = v;
+            v = TRAILING_FRACTION.matcher(v).replaceAll("");
+            v = TRAILING_ALNUM_TOKEN.matcher(v).replaceAll("");
+            Matcher m = TRAILING_GROUP.matcher(v);
+            if (m.find() && (dropQualifiers || !isVariantWord(m.group(1)))) {
+                v = v.substring(0, m.start());
+            }
+        } while (!v.equals(prev));
+        return v;
+    }
+
+    /**
+     * The printing qualifier {@link #normNameBase} would remove, or null if
+     * there isn't one - "Blastoise - 13/95 (Cracked Ice Holo)" -> "cracked
+     * ice holo".
+     *
+     * Recorded rather than interpreted. Whether a stripped qualifier means
+     * the artwork is actually wrong is a domain question with no mechanical
+     * answer: "Cracked Ice Holo" and "Poke Ball Pattern" are foil treatments
+     * applied to existing art, so the picture really is the base printing's,
+     * while "Delta Species" and "Team Plasma" are card identity that
+     * pokemontcg.io simply spells differently ("Aerodactyl δ"), so the
+     * picture is correct. Storing the word itself lets that classification be
+     * made once, later, in SQL - and applied retroactively without
+     * re-running this import. See DEVELOPMENT_HISTORY.md Part 26.
+     */
+    static String strippedQualifier(String name) {
+        if (name == null) return null;
+        String v = name.toLowerCase(Locale.ROOT);
+        String prev;
+        do {
+            prev = v;
+            v = TRAILING_FRACTION.matcher(v).replaceAll("");
+            v = TRAILING_ALNUM_TOKEN.matcher(v).replaceAll("");
+            Matcher m = TRAILING_GROUP.matcher(v);
+            if (m.find()) {
+                if (isVariantWord(m.group(1))) return m.group(1).trim();
+                v = v.substring(0, m.start());
+            }
+        } while (!v.equals(prev));
+        return null;
+    }
+
+    /** "004/102" -> "4"; "H1" -> "1"; "196" -> "196". Leading zeros are padding. */
     static String numberDigits(String s) {
         if (s == null) return null;
-        String head = s.split("/")[0];
-        Matcher m = LEADING_DIGITS.matcher(head);
-        return m.find() ? String.valueOf(Integer.parseInt(m.group(1))) : null;
+        return firstNumber(s.split("/")[0]);
     }
 
     /** "004/102" -> "102"; anything without a denominator -> null. */
@@ -388,7 +603,17 @@ public class ImportCardImages {
         if (s == null) return null;
         String[] parts = s.split("/");
         if (parts.length != 2) return null;
-        Matcher m = LEADING_DIGITS.matcher(parts[1]);
-        return m.find() ? String.valueOf(Integer.parseInt(m.group(1))) : null;
+        return firstNumber(parts[1]);
+    }
+
+    /**
+     * Leading zeros are dropped by string, not by parseInt - a pathological
+     * run of digits would overflow an int, and this never needs the value.
+     */
+    private static String firstNumber(String s) {
+        Matcher m = ANY_DIGITS.matcher(s);
+        if (!m.find()) return null;
+        String digits = m.group(1).replaceFirst("^0+(?=.)", "");
+        return digits.isEmpty() ? null : digits;
     }
 }
