@@ -42,9 +42,10 @@ origin through that date, then continuing forward from there).
 23. [Part 23 — The set overview, and the one card that was the whole set](#part-23--the-set-overview-and-the-one-card-that-was-the-whole-set)
 24. [Part 24 — Prices that swing and come straight back](#part-24--prices-that-swing-and-come-straight-back)
 25. [Part 25 — The label that shouted the card's own name](#part-25--the-label-that-shouted-the-cards-own-name)
-26. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-27. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-28. [What's still open](#whats-still-open)
+26. [Part 26 — Fixing the matcher, and refusing to guess the verdict](#part-26--fixing-the-matcher-and-refusing-to-guess-the-verdict)
+27. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+28. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+29. [What's still open](#whats-still-open)
 
 ---
 
@@ -2190,6 +2191,145 @@ the set-name comparison is a heuristic that undercounts.
 **The pattern worth keeping:** a styling complaint is worth taking as far as
 "what population does this styling actually serve?" The answer here was
 zero, and no amount of restyling would have found that.
+
+---
+
+## Part 26 — Fixing the matcher, and refusing to guess the verdict
+
+Part 21 audited the `no_match` rows and found two normalization defects
+worth 8,834 recoverable images, then stopped: applying them meant deciding
+whether a variant may display its base printing's artwork, and that was the
+owner's call. Part 22 answered the display half ("show it, but label it").
+This part applies the fix, and finds that the *hard* half of the question
+was never really about display at all.
+
+### The two defects, and a third thing that was needed
+
+1. **`LEADING_DIGITS` was anchored** (`^\s*([0-9]+)`), so `numberDigits()`
+   returned null for any number not starting with a digit — `H1`, `SV066`,
+   `SWSH014`, `TG12`, `GG46`. That null was fatal on *both* sides: 1,550 of
+   20,479 catalog cards never entered the index, and the matching products
+   never attempted a lookup. Now unanchored, with leading zeros stripped by
+   string rather than `parseInt` (a long digit run would overflow an int and
+   the value is never needed numerically).
+2. **`normName()` left trailing letter-number tokens attached**, so
+   `Rillaboom V - SWSH014` never met the catalog's bare `Rillaboom V`. The
+   trailing-token rule was widened from digits-only to allow a letter prefix.
+3. **A `--dry-run` mode**, which was not in the plan and earned its place
+   immediately. It matches and reports without downloading, writing, or
+   recording a single `no_match`. That mattered because the misses this
+   importer records are *permanent* — they are never re-queried — so a rule
+   that is wrong writes a lie that no later run corrects.
+
+Measured before anything was written: **9,386 of 10,966 checked (85.6%)**,
+against Part 21's replayed prediction of 8,834.
+
+### Two tiers, and why the tier is the answer
+
+The owner's instruction was to record cross-printing **at match time**
+rather than infer it later by comparing set names — Part 21 had already
+shown that comparison is unreliable, because the two catalogs disagree
+(`SWSH: Sword & Shield Promo Cards` is pokemontcg.io's `SWSH Black Star
+Promos`, ~900 cards a name comparison would wrongly call borrowed).
+
+Inspecting the cached catalog showed why that instruction was right, and
+gave a cleaner signal than expected: **the catalog carries the printing
+qualifier in the card's own name** when the qualifier is real identity.
+`swsh35-62` is `Professor's Research (Professor Magnolia)`; `ex5-84` is
+`Ancient Technical Machine [Ice]`. So:
+
+- **Tier 1** matches on the product's name with the qualifier intact. When
+  the catalog has that card, this resolves to its actual artwork.
+- **Tier 2** retries with the qualifier stripped. Reaching tier 2 *means*
+  the catalog holds no card bearing this printing.
+
+Which tier succeeded is the entire signal. No set names are compared
+anywhere in the importer.
+
+### The dry run catching a defect on its first outing
+
+The first version of the tier-2 test flagged 8,056 matches as base-art,
+including `Aerodactyl (1) → Fossil #1`. But `(1)` is a *card number*, not a
+printing qualifier, and that match is perfectly correct.
+
+Part 22 had already solved exactly this problem in SQL — `is_variant_word()`
+rejects a parenthetical that is really a card number, and carries a length
+floor so all 26 `Unown [A]`..`[Z]` do not read as variants. Rather than
+write a second rule that could drift from it, it was ported to Java
+verbatim. The rule deciding a row's *label* and the rule deciding its
+*image* are now the same rule.
+
+That took base-art matches from 8,056 to 6,827.
+
+### Where a mechanical answer ran out
+
+6,827 was still visibly too many, and inspection showed why — tier 2 fires
+on two genuinely different situations:
+
+| product | catalog match | is the picture wrong? |
+|---|---|---|
+| `Blastoise - 13/95 (Cracked Ice Holo)` | plain `Blastoise` | **yes** — foil treatment over base art |
+| `Aerodactyl (Delta Species)` | `Aerodactyl δ` | **no** — same card, spelled differently |
+| `Absol (Team Plasma)` | `Absol`, Plasma Freeze #67 | **no** — same card |
+| `Altaria - BW48 (Prerelease)` | plain `Altaria` BW48 | **yes** — prerelease stamp |
+
+"Did the printed set total agree?" looked like a discriminator and splits
+cleanly 6,097 / 730 — but it fails on the headline case. `Gliscor - 4/90
+(Cracked Ice Holo)` carries number `004/090` and the catalog's Gliscor is #4
+of 90, because a foil reprint keeps the original's numbering. Total agrees;
+the artwork is still the base printing.
+
+So there is no mechanical answer. Distinguishing "Cracked Ice Holo is a foil
+treatment" from "Delta Species is card identity" is *vocabulary knowledge* —
+exactly the domain judgment Part 21 reserved for the owner.
+
+### Storing the fact instead of the verdict
+
+`card_images.stripped_qualifier` records **the word that had to be dropped**,
+not a boolean verdict. That was the change that resolved the impasse: the
+classification can then be made once, in SQL, and applied retroactively to
+every row without re-running an 80-minute import. Early distribution:
+
+```
+delta species 177 | cosmos holo 118 | team plasma 99 | full art 39
+prime 28 | cracked ice holo 27 | shiny 24 | staff 20 | prerelease 16
+```
+
+Nothing is surfaced in the UI. Part 25 had just established that `--warn`
+should not be spent until something earns it, and a caution shown on
+`delta species` would be exactly the false alarm that argument was about.
+
+### Rollout, and two things that broke
+
+Validated on group 2289 (Blister Exclusives, 140 rows) before anything
+wider — that set is where the Cracked Ice Holo cards live, so it exercises
+the contentious case directly. 140/140 matched and downloaded; spot-checking
+Zoroark 71/114 showed the correct card in its *normal* printing, which is
+precisely what `stripped_qualifier = 'cracked ice holo'` claims.
+
+Then `DELETE FROM card_images WHERE status='no_match'` (10,912 rows, none
+carrying a `file_path`, so no image file was destroyed) and a full run.
+
+Two failures worth recording:
+
+- **The jar trap, applied to only one process.** `mvn package` was run while
+  the API server was live off the same jar. The import was protected; the
+  API was forgotten. Java loads classes lazily, so it kept serving until it
+  needed `QueryRepository$GameSet`, then threw `ClassNotFoundException` and
+  500'd the Sets screen. The rule in CLAUDE.md said "a running import or
+  backfill" — it is *any* process running from that jar, and the API is
+  always one of them.
+- **`CREATE OR REPLACE` does not replace across signatures.** Adding the
+  despike parameters to `game_set_overview()` created a second *overload*
+  and left the 3-argument version behind, making `game_set_overview(NULL,
+  30)` ambiguous and unresolvable. `item_movers()` already carried a
+  `DROP FUNCTION IF EXISTS` guard for this exact reason; the same guard was
+  added.
+
+**The pattern worth keeping:** the useful move was not solving the hard
+question but *changing what gets stored* so the question could be answered
+later, cheaply, by the person who can answer it. A boolean would have forced
+a guess into 6,827 rows; a string left the decision open at no cost.
 
 ---
 

@@ -22,13 +22,21 @@ a shipped app.
 
 ---
 
-## Where the project actually is (updated 2026-08-17)
+## Where the project actually is (updated 2026-08-19)
 
 Built and working: daily price ingest for Pokemon (3) and One Piece (68)
 with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
 in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
-front end in `web/` with two screens (Card/Product Search, Movers); and
-locally-cached Pokemon card images.
+front end in `web/` with three screens (Card/Product Search, Movers,
+Sets); and locally-cached Pokemon card images.
+
+Behaviour changed 2026-08-18/19, worth knowing before reading the code:
+smoothing is a **median**, never a mean (Part 24 addendum); the Sets screen
+corrects one-day price errors and says so per row (Part 24); variant labels
+appear only when not already in the card's name (Part 25); Movers and Sets
+**open on the largest tracked game, not "All games"** - picked from
+`productCount`, never a hardcoded category id (Part 25/f409cc8); and the
+image matcher was fixed, roughly tripling image coverage (Part 26).
 
 **Check state before assuming anything** - `./status.sh` reports what's
 running, image-import progress and data freshness in one shot. The backlog
@@ -49,9 +57,22 @@ fetches card images - resumable, run it from the project root.
 
 **Traps that have actually bitten, all of them more than theory:**
 
-- **Never `mvn package` while a long job is using the jar.** It overwrites
-  in place and Java loads classes lazily, so a running import or backfill
-  can die partway through.
+- **Never `mvn package` while ANY process is running from the jar.** It
+  overwrites in place and Java loads classes lazily, so a long job dies
+  partway through. **That includes the API server, which is easy to
+  forget** - it happened 2026-08-19: the import was protected, the running
+  `ApiServer` was not, and it kept serving until it needed a class it had
+  not yet loaded, then threw `ClassNotFoundException` and 500'd the Sets
+  screen. The fix is a restart, not a rebuild. Check first with
+  `pgrep -fl 'java .*cardtracker'`.
+- **`CREATE OR REPLACE FUNCTION` does not replace across signatures.**
+  Adding a parameter creates a second OVERLOAD and leaves the old one
+  behind; a call fitting both then fails as ambiguous rather than picking
+  one. This bit `game_set_overview()` on 2026-08-19. Any function whose
+  signature changes needs an explicit `DROP FUNCTION IF EXISTS
+  name(old,arg,types);` above its CREATE - `item_movers()` and
+  `game_set_overview()` both carry one. Inspect with
+  `SELECT oid::regprocedure FROM pg_proc WHERE proname='...';`
 - **Run tools from the project root.** `ImportCardImages` resolves its
   image directory against the working directory; launched elsewhere it
   writes images the API cannot find, silently.
@@ -555,22 +576,22 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
-- **Image matcher: two normalization bugs, 8,834 images recoverable
-  (audited 2026-08-18, nothing applied).** `numberDigits()`'s
-  `LEADING_DIGITS` is anchored, so any number not starting with a digit
-  (`H1`, `SV066`, `SWSH014`, `TG12`) returns null - which drops the card
-  from *both* the catalog index and the match attempt; 1,550 of 20,479
-  catalog cards are invisible. `normName()` doesn't strip trailing
-  parentheticals or letter-number tokens, so `Alakazam (H1)` and
-  `Rillaboom V - SWSH014` never match. Replayed offline: fixing both
-  recovers 81% of the 10,912 `no_match` rows. **Blocked on an [OWNER]
-  decision** - about half those matches come from a different set than the
-  product's own (championship stamps, Cracked Ice holos, Poke Ball
-  patterns, jumbos), and whether a variant may display its base printing's
-  image is a domain call, not an implementation detail. Applying any fix
-  also needs `DELETE FROM card_images WHERE status='no_match'`, since
-  those rows are never re-queried. Full analysis: DEVELOPMENT_HISTORY.md
-  Part 21.
+- **Classify the `stripped_qualifier` vocabulary - needs an [OWNER]
+  decision.** The matcher was fixed 2026-08-19 (Part 26) and now records
+  which printing qualifier had to be stripped before a card matched, in
+  `card_images.stripped_qualifier`. It deliberately does NOT record whether
+  that means the picture is wrong, because no mechanical test exists:
+  `cracked ice holo`, `cosmos holo`, `poke ball pattern` and `prerelease`
+  are foil/stamp treatments over base art (picture IS the base printing),
+  while `delta species` and `team plasma` are card identity pokemontcg.io
+  spells differently (`Aerodactyl δ` - picture is correct). "Did the
+  printed total agree?" was tried and fails: a foil reprint keeps the
+  original's numbering, so `Gliscor - 4/90 (Cracked Ice Holo)` agrees on
+  4-of-90 and is still base art.
+  Classifying the vocabulary is a one-time SQL exercise applying
+  retroactively - no re-import. Until then nothing about base art is shown
+  in the UI, deliberately (Part 25: don't spend `--warn` until something
+  earns it). Full reasoning: DEVELOPMENT_HISTORY.md Part 26.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
 - **`ImportCardImages` resolves its image directory relative to the
