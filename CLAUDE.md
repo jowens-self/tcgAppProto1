@@ -366,7 +366,7 @@ Rules it establishes, worth keeping:
   `Connection` is not thread-safe and Javalin is multithreaded - sharing
   one corrupts results intermittently instead of failing cleanly. That
   method is the single place to add a pool if this ever leaves localhost.
-- **`high_price` is absent from every response**, and `PricePoint` has no
+- **`high_price` is absent from every response** (owner's rule, made structural), and `PricePoint` has no
   field for it - the "store it, ignore it" rule made structural rather
   than left as something a future chart author must remember. Same for
   `trendable_price`, which is returned precomputed so the
@@ -375,7 +375,7 @@ Rules it establishes, worth keeping:
   product carrying `variant_count`; `item_variants()` supplies real
   per-variant prices. Anything that puts a single "price" on a
   multi-variant product violates the sub-type invariant above.
-- **Search parses "name + number" from one string** (added 2026-08-14).
+- **Search parses "name + number" from one string** (owner, 2026-08-14).
   `item_search('Charizard 004')` splits into name + card number; `#` forces
   the split. Two rules worth not breaking: (1) the last token becomes a
   number only if it contains a digit, which is what keeps `Charizard ex`,
@@ -391,8 +391,8 @@ Rules it establishes, worth keeping:
   allowed only when the typed number has no letters, otherwise `XY67a`
   would also match `XY67`.
 - **A variant label is shown only when it adds something the name
-  doesn't already say** (2026-08-19, replacing a 2026-08-18 rule that
-  labelled every variant loudly). `variant_label()` derives the label FROM
+  doesn't already say** (owner, 2026-08-19, replacing their own
+  2026-08-18 rule that labelled every variant loudly). `variant_label()` derives the label FROM
   the product name, so 78.7% of the time it repeated words already on
   screen beside it. The test is containment - `variantLabelAddsInfo()` in
   `web/src/app/variant-label.ts` - and it cannot mis-fire across cards
