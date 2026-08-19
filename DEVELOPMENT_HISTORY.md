@@ -2073,6 +2073,21 @@ this work — the median adds ~13%, not the 7x a first glance suggested. That
 pre-existing cost is worth its own look: the Movers screen defaults to all
 games, so its default view is the slow path.
 
+**Followed up the next day, and it was a bad plan rather than heavy work.**
+All-games took ~3.6s while each game alone took ~0.4s — slower than the sum
+of its parts, which is never a data-volume shape. The planner cannot
+estimate selectivity through the CTEs and guessed **2 rows** out of the
+prior/recent join against ~23,000 actual; on that estimate it chose nested
+loops over `groups` (302 rows) and `categories`, materialised the real
+23,000 rows and rescanned them once per group — `loops=302`, and
+`temp read=889,352` blocks (~7GB) in the plan. Fixed by ranking and cutting
+to the LIMIT in a `moves` CTE *before* joining the display tables, so
+`groups`, `categories` and the `extended_data` unwrap never see more than
+50 rows and the misestimate stops costing anything. **3.6s → 0.33s**, output
+byte-identical in both directions. Worth keeping as a shape: a plan showing
+a tiny estimate against a huge actual is usually fixed by shrinking the
+input to the bad join, not by hinting the planner.
+
 ### And a question closed rather than left open
 
 Part 24 left "should a 5-window median catch two-day runs?" open. Flaaffy
