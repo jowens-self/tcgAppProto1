@@ -14,11 +14,10 @@ enough to warrant shipping." It runs locally today because that is how far
 it has got, not because it is meant to stay there. Design for other people
 using it.
 
-Several things written before that was clear now read as too small, and
-are marked **[SHIPPING GAP]** below where they'll need revisiting - the
-read-only API, connection-per-request, localhost-only CORS, and the
-"personal tool" framing generally. None are wrong today; all are wrong for
-a shipped app.
+Several things written before that was clear now read as too small and will
+need revisiting: the read-only API, connection-per-request,
+localhost-only CORS, and the "personal tool" framing generally. None are
+wrong today; all are wrong for a shipped app.
 
 ---
 
@@ -106,38 +105,19 @@ change should be validated before it touches 10,000 rows.
 
 ---
 
-## How to read this file: provenance
+## Before you cite a rule here
 
-Rules here have three different origins, and they do not carry the same
-weight. This section exists because one of them - "Not a product. No
-users, no auth, no server, nothing public" - was written by Claude in the
-initial commit as a *description*, then quoted by later sessions as though
-the owner had forbidden a hosted version, and eventually used to argue
-against the owner's own feature idea. They had never said it.
+Not every line in this file came from the owner. Some are design decisions
+Claude made and recorded as description, and one of those - "Not a product.
+No users, no auth, no server, nothing public" - was later quoted back at the
+owner as though they had forbidden a hosted version. They never said it, and
+it was used to argue against their own feature idea.
 
-Every rule below is tagged:
+So: if something here appears to block what the owner is asking for, raise it
+rather than treating it as settled. Sections that say a rule came from the
+owner mean it; the rest is revisable.
 
-- **[OWNER]** - the owner said this. Treat as binding. If it seems to
-  block something, raise it with them; don't reinterpret it.
-- **[VERIFIED]** - an external fact checked against a real source or
-  measured directly (tcgcsv's published limits, an API's actual behaviour,
-  a number produced by a query). Binding while it stays true; re-check if
-  circumstances change.
-- **[CLAUDE]** - a design decision Claude made and recorded. Usually
-  reasonable, sometimes load-bearing, but **not** something the owner
-  ruled on. Revisit freely when there's a reason; say so rather than
-  citing it as a constraint.
-
-Untagged older text predates this audit (2026-08-16); treat it as
-**[CLAUDE]** unless it says otherwise inline.
-
-**Goal: one `price_snapshots` row per day for every card the owner has
-included, with no gaps.** Completeness over time is the point — a missing
-day is a defect, not a rounding error. `ingest_runs` exists so a gap is
-visible rather than silently swallowed; a failed or skipped day should be
-noticed and backfilled, not shrugged off.
-
-## tcgcsv.com usage constraints — do not violate  **[VERIFIED]**
+## tcgcsv.com usage constraints — do not violate
 
 Checked against tcgcsv's own docs/FAQ on 2026-08-12. Their published
 limits, not our policy.
@@ -171,7 +151,7 @@ Any change to request volume, retry logic, or concurrency in
 `TcgCsvPriceSource` or `Throttle` should be checked against these numbers
 before merging.
 
-## Hard constraints — do not violate, do not "improve"  **[OWNER]**
+## Hard constraints — do not violate, do not "improve"
 
 Every rule in this section came from the owner directly, most of them
 reaffirmed forcefully. These are the ones that protect real income.
@@ -188,7 +168,7 @@ reason from "this specific request seems harmless" to "therefore it's
 allowed." The owner's livelihood is on the other side of that judgment
 call, and it is not one to make on their behalf.
 
-- **[OWNER] Never contact eBay.** Added 2026-08-15 at the owner's explicit
+- **Never contact eBay.** Added 2026-08-15 at the owner's explicit
   instruction: they sell there as well. No API calls, no page fetches, no
   image hotlinking, no scraping, no automation - and not "just to check
   something." Same standard as TCGplayer below, for the same reason:
@@ -212,15 +192,15 @@ permission covers Pokemon images specifically; it is not a general
 licence to add image providers. One Piece has no source yet and needs its
 own conversation.
 
-- **[OWNER] Never scrape tcgplayer.com.** Their terms prohibit crawling without
+- **Never scrape tcgplayer.com.** Their terms prohibit crawling without
   permission. No HTML fetching, no headless browser, no "public search API"
   calls. Not for one card, not as a fallback, not behind a flag.
-- **[OWNER] Never automate a login to TCGPlayer or eBay.** Inventory arrives as a CSV the owner exports by
+- **Never automate a login to TCGPlayer or eBay.** Inventory arrives as a CSV the owner exports by
   hand from the Seller Portal and drops in `inbox/`. That manual step is the
   design, not a gap to close.
-- **[OWNER] All outbound traffic goes to tcgcsv.com only.** If a task seems to require
+- **All outbound traffic goes to tcgcsv.com only.** If a task seems to require
   hitting TCGplayer directly, stop and ask rather than finding a way.
-- **[OWNER] No product images. Not from any TCGplayer host, in any component.**
+- **No product images. Not from any TCGplayer host, in any component.**
   Reinforced 2026-08-15 after the front end shipped with result thumbnails
   bound to `products.image_url`, which points at
   `tcgplayer-cdn.tcgplayer.com` - roughly 50 browser requests to a
@@ -244,22 +224,21 @@ own conversation.
 
 If asked to add scraping, say what it risks before writing it.
 
-## Data invariants  **[MIXED]**
+## Data invariants
 
 Domain facts the owner supplied (sub-types trade separately, sellers
-price-park) plus engineering rules Claude derived from them. Tagged
-individually.
+price-park) plus engineering rules derived from them.
 
-- **[OWNER] Prices key on `(product_id, sub_type_name, snapshot_date)`.** Pokemon cards
+- **Prices key on `(product_id, sub_type_name, snapshot_date)`.** Pokemon cards
   exist as Normal / Holofoil / Reverse Holofoil of the same product and trade
   at different prices. Never collapse sub-types or aggregate across them.
-- **[CLAUDE] `price_snapshots` is append-only.** Inserts use `ON CONFLICT DO NOTHING`.
+- **`price_snapshots` is append-only.** Inserts use `ON CONFLICT DO NOTHING`.
   Never change this to `DO UPDATE`. Re-running a pull must be safe; a bad run
   must never overwrite a good observation. The history is the whole asset.
-- **[OWNER] Never compute on `high_price`.** Sellers "price park" — listing at absurd
+- **Never compute on `high_price`.** Sellers "price park" — listing at absurd
   values so nothing sells. Store it, ignore it. Trend on `market_price`, with
   `mid` then `low` as fallback (see `PriceSnapshot.trendablePrice`).
-- **[CLAUDE] All-time high is computed on demand, never stored.**
+- **All-time high is computed on demand, never stored.**
   `MAX(COALESCE(market_price, mid_price, low_price))` in
   `item_all_time_high()`. Not an incrementally-updated table: that would
   only compare against *new* rows, so a backfill turning up an older,
@@ -267,7 +246,7 @@ individually.
   correct. Uses the mid/low fallback deliberately - a MAX over all history
   has no anchor-bias risk, unlike the two-point comparisons in
   `item_return`/`set_return`, which withhold it on purpose.
-- **[OWNER] A set's price/return covers its singles only - never sealed
+- **A set's price/return covers its singles only - never sealed
   product.** `set_return()`/`set_value()` hardcode `is_sealed = FALSE`
   internally; it is *not* a caller-adjustable parameter. Sealed product
   stays fully trackable individually via
@@ -275,7 +254,7 @@ individually.
   set aggregate. Sealed items had been dominating those numbers (one
   $8,441 display case was a third of a set's "total value"; Paldean Fates
   went $25,100.93 -> $2,792.05 once fixed). See Part 12 and Part 14.
-- **[CLAUDE] Smoothing is a MEDIAN, never a mean** - `item_movers()` since
+- **Smoothing is a MEDIAN, never a mean** - `item_movers()` since
   2026-08-18, `game_set_overview()`'s despiking from the start. A mean
   damps real moves and leaks prices across a step: measured live, it
   reported Lillie 125a/156's genuine $41.10 -> $123.32 step (+200.0%) as
@@ -285,7 +264,7 @@ individually.
   -25.17% that still reached the board. Prefer odd window sizes: at odd
   sizes the median is an actually-observed price, at even sizes
   `percentile_cont` interpolates and can invent one. Part 24.
-- **[OWNER] A reading that swings hard and reverts the next day is
+- **A reading that swings hard and reverts the next day is
   replaced with the median of its neighbours, and the row says so.**
   Decided 2026-08-18 - the owner's framing was "if something swings -80%
   and then picks right back up at its normal price then that is probably
@@ -313,19 +292,18 @@ individually.
   returns $1.69, erasing a genuine two-day move entirely. Real two-day
   steps are too common for that trade; do not reopen it without new
   evidence.
-- **[CLAUDE] A set-level percentage is shown with its biggest single
+- **A set-level percentage is shown with its biggest single
   contributor, never alone.** Measured 2026-08-18: 44 of 283 sets have
   over half their 30-day movement coming from one row, and the worst case
   (Base Set Shadowless, +59.96%) was 86.6% one oscillating card. The
-  metric itself is unchanged - `set_return()`'s definition is an [OWNER]
-  decision and `game_set_overview()` reproduces it exactly - but a bare
+  metric itself is unchanged - `set_return()`'s definition is an decision and `game_set_overview()` reproduces it exactly - but a bare
   percentage invites a reader to treat a one-card artifact as a set-wide
   verdict. Share is computed against GROSS movement (sum of absolute
   deltas), not net: net passes through zero and produced four-digit
   percentages on sets whose gains and losses cancel. Part 23.
-- **[OWNER] `product_id` rides on every row through every transform.** Outbound links
+- **`product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
-- **[CLAUDE] "Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
+- **"Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
   Decided 2026-08-12. `App`, `BackfillArchive`, and `ProductPullTest` all
   compute it this way, matching the archive backfill's own day boundary and
   the container's default clock - so `snapshot_date` means the same thing
@@ -334,14 +312,14 @@ individually.
   explicitly - bare `LocalDate.now()` is the bug this fixed.
   (One pre-fix run is stamped under the old convention and was left
   alone on purpose - append-only means it was valid when written.)
-- **[CLAUDE] Percent change returns null on a zero or negative starting
+- **Percent change returns null on a zero or negative starting
   price.** Do not "fix" it to 0 or infinity. Lives in SQL only
   (`CASE WHEN start_price > 0 ...`); there is no Java implementation.
 
-## Architecture intent  **[CLAUDE]**
+## Architecture intent
 
-Claude's design decisions unless marked otherwise. Revisit as needed -
-and several now need it, see [SHIPPING GAP] markers.
+Design decisions, revisable - though the ones the owner set are called out
+in the text where it matters.
 
 `PriceSource` and `InventorySource` exist so the data sources are swappable.
 TCGCSV has no per-condition pricing and no uptime guarantee; a paid provider
@@ -356,18 +334,18 @@ ingested server-side).
 2026-08-14 - see DEVELOPMENT_HISTORY.md Part 16 and README "Read API").
 Rules it establishes, worth keeping:
 
-- **[CLAUDE] [SHIPPING GAP] It is read-only, and should stay that way.**
+- **It is read-only, and should stay that way.**
   *The community showcase needs writes. "Ingestion stays separate from the
   API" is the part actually worth keeping; "no endpoint ever writes" is
   not a rule the owner set.* No endpoint writes.
   Ingestion lives in `App`/`BackfillArchive` where the append-only
   guarantees are; an API that can write is an API that can violate them.
-- **[CLAUDE] Handlers call SQL functions, not inline SQL.** Every method on
+- **Handlers call SQL functions, not inline SQL.** Every method on
   `QueryRepository` is a thin call into `sql/functions.sql`. That keeps
   query logic verifiable directly in psql - which is how this project
   checks its own numbers - and stops the API and hand-written analysis
   from quietly diverging. New endpoint, new SQL function.
-- **[CLAUDE] A bulk SQL function that restates a per-item one must be
+- **A bulk SQL function that restates a per-item one must be
   cross-checked against it, not assumed equal.** `game_set_overview()`
   recomputes `set_value()`/`set_return()` for every set in one pass
   (302 groups; per-set calls would be 604 round trips). Two definitions of
@@ -376,28 +354,28 @@ Rules it establishes, worth keeping:
   `sql/checks/set_overview_matches_primitives.sql` compares all six shared
   columns with `IS NOT DISTINCT FROM` (so null matches null). Re-run it
   after editing either side; every column must read `t`.
-- **[CLAUDE] Window bounds go in scalar `DATE` variables, never a CTE
+- **Window bounds go in scalar `DATE` variables, never a CTE
   sub-select.** In `item_movers()` and `game_set_overview()` both. From a
   sub-select the planner cannot fold them to constants, misses
   `idx_snapshots_date` and aggregates far more of the 41M-row table than
   needed - measured at ~5x and ~6GB spilled to temp files.
-- **[CLAUDE] Reads go through `QueryRepository`, not `PriceRepository`.** The
+- **Reads go through `QueryRepository`, not `PriceRepository`.** The
   latter is write-only by design; keeping them apart stops ingestion and
   the API surface from coupling.
-- **[CLAUDE] [SHIPPING GAP] One DB connection per request** (`ApiServer.withRepo`). A JDBC
+- **One DB connection per request** (`ApiServer.withRepo`). A JDBC
   `Connection` is not thread-safe and Javalin is multithreaded - sharing
   one corrupts results intermittently instead of failing cleanly. That
   method is the single place to add a pool if this ever leaves localhost.
-- **[OWNER] `high_price` is absent from every response**, and `PricePoint` has no
+- **`high_price` is absent from every response**, and `PricePoint` has no
   field for it - the "store it, ignore it" rule made structural rather
   than left as something a future chart author must remember. Same for
   `trendable_price`, which is returned precomputed so the
   market->mid->low fallback can't be re-derived wrong.
-- **[CLAUDE] Search returns products, not (product, variant) rows.** One hit per
+- **Search returns products, not (product, variant) rows.** One hit per
   product carrying `variant_count`; `item_variants()` supplies real
   per-variant prices. Anything that puts a single "price" on a
   multi-variant product violates the sub-type invariant above.
-- **[OWNER] Search parses "name + number" from one string** (added 2026-08-14).
+- **Search parses "name + number" from one string** (added 2026-08-14).
   `item_search('Charizard 004')` splits into name + card number; `#` forces
   the split. Two rules worth not breaking: (1) the last token becomes a
   number only if it contains a digit, which is what keeps `Charizard ex`,
@@ -412,7 +390,7 @@ Rules it establishes, worth keeping:
   match the set size or the set code instead. The digits-only match is
   allowed only when the typed number has no letters, otherwise `XY67a`
   would also match `XY67`.
-- **[OWNER] A variant label is shown only when it adds something the name
+- **A variant label is shown only when it adds something the name
   doesn't already say** (2026-08-19, replacing a 2026-08-18 rule that
   labelled every variant loudly). `variant_label()` derives the label FROM
   the product name, so 78.7% of the time it repeated words already on
@@ -434,7 +412,7 @@ Rules it establishes, worth keeping:
   in Java as `ImportCardImages.isVariantWord()` so the rule deciding a
   row's label and the rule deciding its image cannot drift - change both
   or neither. Parts 22, 25, 26.
-- **[OWNER] Search results must carry `card_number` and `rarity`.** Added
+- **Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03
   Obsidian Flames has four "Charizard ex" - 125/197 Double Rare $5.65,
@@ -446,34 +424,34 @@ Rules it establishes, worth keeping:
   34,435 singles), while `extendedData` carries `Number` and `Rarity`
   for 100% of singles in both tracked games (verified 2026-08-14). Any
   new endpoint returning product identity should carry them too.
-- **[CLAUDE] [SHIPPING GAP] CORS is scoped to `localhost:4200`.** The data isn't secret, but no
+- **CORS is scoped to `localhost:4200`.** The data isn't secret, but no
   site a browser happens to visit should be able to query it.
 
-## Multi-game support  **[MIXED]**
+## Multi-game support
 
 Which games get pulled is **data, not code**: `tracked_categories`
 (schema.sql) lists the category_ids `App`/`BackfillArchive` pull. Adding a
 game is an INSERT. Currently Pokemon (3) and One Piece (68).
 
-- **[OWNER] Do not assume a quirk found in one game generalizes.**
+- **Do not assume a quirk found in one game generalizes.**
   Code-card exclusion is gated on `categoryId == TcgCsvUrls.POKEMON`
   specifically, because it's a Pokemon packaging quirk, not an industry
   fact. A new game's quirk gets its own condition alongside it, never a
   broadened check. Same caution applies to `is_sealed`'s classifier -
   spot-checked on Magic and One Piece, not verified at Pokemon's depth.
-- **[CLAUDE] `ingest_runs.source` is category-scoped** (`tcgcsv-3`,
+- **`ingest_runs.source` is category-scoped** (`tcgcsv-3`,
   `tcgcsv-archive-68`) so each game has independent idempotency and
   failure tracking; one game failing never masks another.
-- **[CLAUDE] `Throttle` is one shared instance across all categories** in
+- **`Throttle` is one shared instance across all categories** in
   a run - the 9000-request breaker is a whole-process limit, not per
   game. `App` logs each category's own count as a delta.
-- **[VERIFIED] Watch the 10,000/24h ban ceiling as games are added.** One
+- **Watch the 10,000/24h ban ceiling as games are added.** One
   Pokemon-sized category is ~436 requests/day.
 
 Background and the verification behind all of this: DEVELOPMENT_HISTORY.md
 Part 15.
 
-## Environment  **[CLAUDE]**
+## Environment
 
 Java 21, Maven, Postgres 16 via `docker compose up -d`, macOS. Schema
 loads from `sql/schema.sql` on first container boot. Rebuild with
@@ -507,7 +485,7 @@ days before pulling today. Both verified end-to-end against an isolated
 scratch database, not just by code review - see DEVELOPMENT_HISTORY.md
 Parts 9 and 10.
 
-## Commit message style (decided 2026-08-14)  **[OWNER]**
+## Commit message style (decided 2026-08-14)
 
 Owner asked for tighter commit bodies that don't re-narrate what
 DEVELOPMENT_HISTORY.md already covers.
@@ -525,7 +503,7 @@ rows deleted," "$25,100.93 -> $2,792.05") - that's the kind of thing a
 diff alone won't show and is genuinely useful at commit-message scope, not
 narrative bloat.
 
-## Known unknowns — verify before trusting  **[VERIFIED]**
+## Known unknowns — verify before trusting
 
 **One genuine unknown remains.** The Seller Portal CSV's columns have never
 been seen. `InventorySource` is an interface with no implementation on
@@ -547,21 +525,21 @@ Two former unknowns are settled and should not be re-litigated:
   price history. Method and the inspection of all 37: DEVELOPMENT_HISTORY.md
   Part 6.
 
-## Excluded products and sealed classification  **[MIXED]**
+## Excluded products and sealed classification
 
-- **[OWNER] Code cards are excluded from ingestion entirely** - not
+- **Code cards are excluded from ingestion entirely** - not
   filtered at query time. They're digital redemption codes that crater
   toward $0 and wreck set-level aggregates. Classified by name prefix
   ("Code Card...") in `App`, Pokemon only. The 1,253 already backfilled
   (810,451 price rows) were deleted.
-- **[CLAUDE] `excluded_products` is a standalone table**, independent of
+- **`excluded_products` is a standalone table**, independent of
   `products`, and this matters: `BackfillArchive` only ever sees a bare
   `product_id` from archives, never a name, so once an excluded product's
   row leaves `products` there'd be no way to know to skip it. Records
   `category_id` too, so an exclusion found for one game is never mistaken
   for a universal rule. Reuse this table for any future exclusion -
   `reason` is free text for exactly that.
-- **[CLAUDE] `is_sealed` is set at ingest from `extendedData`** (a real
+- **`is_sealed` is set at ingest from `extendedData`** (a real
   single always carries a `Number` field; sealed product never does) -
   data-driven, not name-guessing, and computed in
   `TcgCsvPriceSource.products()` rather than re-derived in SQL later.
@@ -570,8 +548,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
-- **Classify the `stripped_qualifier` vocabulary - needs an [OWNER]
-  decision.** The matcher was fixed 2026-08-19 (Part 26) and now records
+- **Classify the `stripped_qualifier` vocabulary - needs an decision.** The matcher was fixed 2026-08-19 (Part 26) and now records
   which printing qualifier had to be stripped before a card matched, in
   `card_images.stripped_qualifier`. It deliberately does NOT record whether
   that means the picture is wrong, because no mechanical test exists:
@@ -602,8 +579,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   a multi-user version is in scope, not a violation. The one genuinely
   open question is card-art redistribution - showing Pokemon art publicly
   is not the same act as showing it in a local tool.
-- **Oscillating `market_price` on thin markets - needs an [OWNER]
-  decision.** Found building the set overview (Part 23). Some cards'
+- **Oscillating `market_price` on thin markets - needs an decision.** Found building the set overview (Part 23). Some cards'
   `market_price` flips between two far-apart values for weeks at a time -
   Base Set (Shadowless) Charizard 1st Ed Holofoil sits at ~$250 or at
   exactly $10,000, while low/mid/high stay parked at $100,000. It is not a
