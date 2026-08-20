@@ -2480,6 +2480,71 @@ shown — but whether a borrowed picture is even worth flagging to someone
 pricing inventory is a product question, not a data one. The function exists;
 what reads it is the next decision.
 
+### Addendum, same day — the blind spot the owner found in one sentence
+
+The verdicts above were shown to the owner, who replied with two facts:
+*Delta Species was an attribute some cards had during those sets*, and
+*Prerelease almost always has a stamp*.
+
+The first confirmed what the structural test already said. The second broke
+it.
+
+`Bronzong - SWSH091 (Prerelease)` is a **sole claimant** — nothing else in
+our catalog wants `swshp-SWSH091` — so it was classified `own_art`. Opening
+the file shows the ordinary Battle Styles promo, no prerelease stamp
+anywhere on it. The verdict was wrong, and wrong for a reason worth stating
+plainly:
+
+> Sole-claimancy proves that no *other* product took the picture. It never
+> proves the picture matches the physical card.
+
+Where a stamped printing has no unstamped sibling listed on TCGplayer,
+there is nothing for the structural test to notice, and it returns a
+confident `own_art`. Eighteen prerelease cards had that false all-clear.
+
+The same structural fact reads oppositely depending on the word: Delta
+Species has **159** sole claimants and every one is genuinely correct,
+because the catalog lists those cards in their own right as `Aerodactyl δ`.
+Identical evidence, opposite verdicts, and only Pokemon printing knowledge
+separates them. Part 26's instinct — that this specific question belongs to
+the owner — was right; it was only the scope that was overstated.
+
+### The vocabulary as data
+
+`image_qualifier_class` classifies a qualifier as `identity` (the catalog
+holds this card in its own right) or `treatment` (a stamp or foil over a
+base printing the catalog holds unstamped). A treatment is `base_art`
+regardless of claimancy; an identity claimant can *own* a shared card, which
+also gives the borrower an owner to name — `ex15-28` now resolves, with
+`Dragonair (Delta Species)` holding the art and its `(Prerelease)` reprint
+borrowing it.
+
+It is a table rather than a `CASE`, for the reason `tracked_categories` is:
+adding a classification is an INSERT the owner can make without a code
+change, and an unclassified qualifier falls back to the structural test
+rather than being guessed at. The owner's hedge is preserved verbatim in the
+`note` column — "almost always" is not flattened into "always."
+
+Two classifications moved 123 cards out of `unknown` and corrected 18:
+
+| verdict | before | after |
+|---|---|---|
+| `own_art` | 21,096 | 21,095 |
+| `base_art` | 4,462 | **4,586** |
+| `unknown` | 608 | **485** |
+
+What remains is 485 cards, the largest bucket being `staff` (121 cards
+across 120 groups), then `team plasma` (28) and the World Championship
+player names. Each is one INSERT away from resolving, whenever the owner
+has an opinion about it.
+
+**The second pattern worth keeping:** a test validated against 26,166 rows
+and eight passing invariants was still wrong about a category no query
+could have surfaced, because the evidence that would have contradicted it
+does not exist in the data. It took one sentence from someone who knows the
+cards. Cross-checking a derived signal against the domain is not a
+formality after the numbers look good — the numbers looked good.
+
 **The pattern worth keeping:** "no mechanical test exists" is a claim about
 the observables someone thought to try, not about the problem. Part 26
 tested one property of the product name, found it insufficient, and

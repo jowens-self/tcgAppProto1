@@ -30,6 +30,48 @@ INSERT INTO tracked_categories (category_id, name)
 VALUES (3, 'Pokemon')
 ON CONFLICT (category_id) DO NOTHING;
 
+-- Is a printing qualifier part of the card's IDENTITY, or a TREATMENT
+-- applied over a base printing? This is the vocabulary judgment Part 26
+-- reserved for the owner and Part 27 could not derive: no property of our
+-- data distinguishes them, because it is knowledge about how Pokemon cards
+-- are printed.
+--
+--   'identity'  the qualifier names a genuinely different card that
+--               pokemontcg.io lists in its own right, usually spelled its
+--               own way. Delta Species was an attribute some cards carried
+--               during those sets (owner, 2026-08-19), and the catalog has
+--               them as "Aerodactyl d". The catalog art IS this card.
+--   'treatment' the qualifier is a foil pattern or a stamp applied over a
+--               base printing the catalog holds unstamped. Prerelease
+--               cards almost always carry a stamp (owner, 2026-08-19), so
+--               the catalog picture is missing something the physical card
+--               has.
+--
+-- Kept as DATA, not a CASE in a function, for the same reason
+-- tracked_categories is: adding a classification is an INSERT, and the
+-- owner can add one without a code change. Deliberately incomplete - an
+-- unclassified qualifier falls back to the structural test in
+-- card_image_provenance() rather than being guessed at.
+--
+-- NOTE the hedge on 'treatment': "almost always" is the owner's own
+-- wording and is not flattened into "always" here. A treatment verdict
+-- means the picture is probably not this exact printing, not certainly.
+CREATE TABLE IF NOT EXISTS image_qualifier_class (
+    qualifier  TEXT PRIMARY KEY,
+    class      TEXT NOT NULL CHECK (class IN ('identity','treatment')),
+    note       TEXT,
+    decided_on DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+INSERT INTO image_qualifier_class (qualifier, class, note, decided_on) VALUES
+    ('delta species', 'identity',
+     'An attribute some cards carried during those sets; catalog lists them separately as "Aerodactyl d". Owner, 2026-08-19.',
+     DATE '2026-08-19'),
+    ('prerelease', 'treatment',
+     'Prerelease cards almost always carry a stamp; the catalog art is the unstamped printing. Owner, 2026-08-19. Note "almost always" - not universal.',
+     DATE '2026-08-19')
+ON CONFLICT (qualifier) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS groups (
     group_id        INTEGER PRIMARY KEY,
     category_id     INTEGER NOT NULL REFERENCES categories(category_id),

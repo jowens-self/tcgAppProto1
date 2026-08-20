@@ -1064,50 +1064,57 @@ $$ LANGUAGE plpgsql STABLE;
 -- qualifier it had to drop before a product matched a pokemontcg.io card
 -- (DEVELOPMENT_HISTORY.md Part 26). That column was deliberately a fact
 -- ("the word dropped") rather than a verdict ("the picture is wrong"),
--- because Part 26 concluded no mechanical test could tell the two apart:
---   Blastoise - 13/95 (Cracked Ice Holo) -> foil over base art  (wrong)
---   Aerodactyl (Delta Species)           -> catalog spells it d (right)
+-- because Part 26 concluded no mechanical test could tell the two apart.
 -- Part 26 tested "did the printed set total agree?" and correctly rejected
 -- it, since a foil reprint keeps the original's numbering.
 --
--- But a different question does decide most of it, and is provable rather
--- than inferred: WHO ELSE CLAIMS THE SAME CATALOG CARD? One pokemontcg.io
--- card is one picture, so when several of our products resolve to the same
--- source_id they are all displaying that one picture, whatever their names
--- promise. Verified on disk before this was written (Part 27): plain
--- Blastoise 13/95 (Unleashed) and both the Cracked Ice Holo and Prerelease
--- listings of it are three byte-identical files (md5 4cc2be6f...), while
--- Acerola 112/147 and Acerola (Full Art) 142/147 hash differently and are
--- visibly different cards - bordered art against full-bleed.
+-- TWO signals decide it, and they answer different halves.
 --
--- So the verdict is a property of the GROUP sharing a source_id:
---   'own_art'  sole claimant, or the unqualified claimant of a shared card
---   'base_art' qualified, and an unqualified product claims the same card
---   'unknown'  shared, but EVERY claimant is qualified - nobody in our
---              catalog holds the plain printing, so which one (if any) owns
---              the art is exactly the vocabulary judgment Part 26 reserved
---              for the owner. ex15-28 is this case: "Dragonair (Delta
---              Species)" and "Dragonair (Delta Species) - 28/101
---              (Prerelease)" share it and there is no plain listing.
---              Answering it needs to know that delta species is card
---              identity while prerelease is a stamp over base art - which
---              is knowledge about Pokemon printings, not about our data.
+-- 1. STRUCTURAL - who else claims the same catalog card? One pokemontcg.io
+--    card is one picture, so when several of our products resolve to the
+--    same source_id they are all displaying that one picture, whatever
+--    their names promise. Verified on disk (Part 27): plain Blastoise
+--    13/95 (Unleashed) and both the Cracked Ice Holo and Prerelease
+--    listings of it are three byte-identical files (md5 4cc2be6f...),
+--    while Acerola 112/147 and Acerola (Full Art) 142/147 hash differently
+--    and are visibly different cards - bordered art against full-bleed.
 --
--- Measured 2026-08-19 over 26,166 ok rows: 1,750 flagged cards are sole
--- claimants (the flag is a false alarm), 4,462 are decided base_art, and
--- 608 across 238 image groups remain 'unknown'. That is ~91% of the 6,820
--- flagged rows resolved without a domain call.
+-- 2. VOCABULARY - image_qualifier_class, the owner's domain calls. The
+--    structural test has a blind spot it cannot see on its own: a sole
+--    claimant is only proof that no OTHER product took the picture, not
+--    that the picture matches the physical card. "Bronzong - SWSH091
+--    (Prerelease)" is a sole claimant and its file is the ordinary Battle
+--    Styles promo with no prerelease stamp. Since prerelease cards almost
+--    always carry a stamp (owner, 2026-08-19), sole-claimancy gave 18 such
+--    cards a false all-clear until the vocabulary table was consulted.
+--    Conversely Delta Species is card identity, not a treatment, so its
+--    159 sole claimants are genuinely correct - the same structural fact
+--    reads oppositely depending on the word, which is exactly why the word
+--    has to come from someone who knows Pokemon printings.
+--
+-- Verdicts:
+--   'own_art'  sole claimant, or the unqualified claimant of a shared
+--              card, or an 'identity' qualifier among qualified claimants
+--   'base_art' the picture is not this printing - either an unqualified
+--              product claims the same card, or the qualifier is a
+--              'treatment' whose stamp/foil the catalog art never carries.
+--              owner_product_id names the holder when one exists; a
+--              treatment with no plain sibling listed has none.
+--   'unknown'  shared, every claimant qualified, and no classification
+--              settles it. Genuinely open, not a guess.
+--
+-- Measured 2026-08-19 over 26,166 ok rows, with two qualifiers classified.
 --
 -- Two things this deliberately does NOT do. It does not write a verdict
--- column: a later import that finally matches the missing plain printing
--- would silently invalidate a stored value, exactly the staleness argument
--- that keeps all-time-high computed on demand (CLAUDE.md, Data invariants).
--- And it does not treat 'unknown' as a synonym for base_art - guessing is
--- what storing a boolean in Part 26 would have done to 6,827 rows.
+-- column: a later import that finally matches the missing plain printing,
+-- or one more row in image_qualifier_class, would silently invalidate a
+-- stored value - the staleness argument that keeps all-time-high computed
+-- on demand (CLAUDE.md, Data invariants). And it does not treat 'unknown'
+-- as a synonym for base_art.
 --
 -- Note it also catches rows stripped_qualifier never flagged at all: a
--- product can match on its own name and still share a picture (1,560 such
--- rows). Provenance is about the image, not about how the name matched.
+-- product can match on its own name and still share a picture. Provenance
+-- is about the image, not about how the name matched.
 DROP FUNCTION IF EXISTS card_image_provenance(INTEGER, INTEGER);
 CREATE OR REPLACE FUNCTION card_image_provenance(
     p_category_id INTEGER DEFAULT NULL,
@@ -1117,48 +1124,65 @@ CREATE OR REPLACE FUNCTION card_image_provenance(
     name TEXT,
     source_id TEXT,
     stripped_qualifier TEXT,
+    qualifier_class TEXT,
     claimants INTEGER,
     provenance TEXT,
     owner_product_id INTEGER,
     owner_name TEXT
 ) AS $$
     WITH ok AS (
-        SELECT ci.product_id, ci.source_id, ci.stripped_qualifier, p.name, p.category_id
+        SELECT ci.product_id, ci.source_id, ci.stripped_qualifier, p.name,
+               p.category_id, q.class AS qclass
         FROM card_images ci
         JOIN products p ON p.product_id = ci.product_id
+        LEFT JOIN image_qualifier_class q ON q.qualifier = ci.stripped_qualifier
         WHERE ci.status = 'ok' AND ci.source_id IS NOT NULL
     ),
     grp AS (
         SELECT source_id,
                COUNT(*)::INTEGER AS claimants,
-               COUNT(*) FILTER (WHERE stripped_qualifier IS NULL) AS unqualified
+               COUNT(*) FILTER (WHERE stripped_qualifier IS NULL) AS unqualified,
+               COUNT(*) FILTER (WHERE qclass = 'identity')        AS identities
         FROM ok GROUP BY source_id
     ),
-    -- The owner is the unqualified claimant. Several may exist - duplicate
-    -- TCGplayer listings of one card, and the same card listed with and
-    -- without its number in the name ("Houndoom" / "Houndoom - 008/064").
-    -- Those are equivalent, not borrowed, so the shortest name is picked
-    -- purely to name one of them for display.
+    -- Who holds the printing the catalog art actually depicts? An
+    -- unqualified claimant first - several may exist (duplicate TCGplayer
+    -- listings, or the same card with and without its number in the name,
+    -- "Houndoom" / "Houndoom - 008/064"), so the shortest name is picked
+    -- purely to name one of them. Failing that, an 'identity' claimant:
+    -- ex15-28 has no plain listing, but "Dragonair (Delta Species)" holds
+    -- the art its "(Prerelease)" reprint is borrowing.
     owner AS (
         SELECT DISTINCT ON (source_id) source_id, product_id, name
-        FROM ok WHERE stripped_qualifier IS NULL
-        ORDER BY source_id, length(name), name, product_id
+        FROM ok
+        WHERE stripped_qualifier IS NULL OR qclass = 'identity'
+        ORDER BY source_id,
+                 (stripped_qualifier IS NOT NULL),  -- unqualified wins
+                 length(name), name, product_id
     )
-    SELECT o.product_id, o.name, o.source_id, o.stripped_qualifier,
+    SELECT o.product_id, o.name, o.source_id, o.stripped_qualifier, o.qclass,
            g.claimants,
            CASE
+               -- A stamp or foil the catalog art never carries: the picture
+               -- is the plain printing however few products claim it.
+               WHEN o.qclass = 'treatment'             THEN 'base_art'
                WHEN g.claimants = 1                    THEN 'own_art'
                WHEN o.stripped_qualifier IS NULL       THEN 'own_art'
                WHEN g.unqualified > 0                  THEN 'base_art'
+               WHEN o.qclass = 'identity'              THEN 'own_art'
                ELSE 'unknown'
            END,
-           CASE WHEN o.stripped_qualifier IS NOT NULL AND g.unqualified > 0
+           CASE WHEN o.qclass = 'treatment'
+                      OR (o.stripped_qualifier IS NOT NULL
+                          AND (g.unqualified > 0 OR g.identities > 0))
                 THEN w.product_id END,
-           CASE WHEN o.stripped_qualifier IS NOT NULL AND g.unqualified > 0
+           CASE WHEN o.qclass = 'treatment'
+                      OR (o.stripped_qualifier IS NOT NULL
+                          AND (g.unqualified > 0 OR g.identities > 0))
                 THEN w.name END
     FROM ok o
     JOIN grp g ON g.source_id = o.source_id
-    LEFT JOIN owner w ON w.source_id = o.source_id
+    LEFT JOIN owner w ON w.source_id = o.source_id AND w.product_id <> o.product_id
     WHERE (p_category_id IS NULL OR o.category_id = p_category_id)
       AND (p_product_id IS NULL OR o.product_id = p_product_id)
     ORDER BY o.name, o.product_id;

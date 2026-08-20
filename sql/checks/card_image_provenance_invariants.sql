@@ -35,10 +35,15 @@ SELECT
     ((SELECT COUNT(*) FROM prov WHERE provenance NOT IN ('own_art','base_art','unknown')) = 0)
         AS no_unexpected_verdict,
 
-    -- base_art means "some other product holds the plain printing", so the
-    -- owner must exist and must not be the row itself.
-    ((SELECT COUNT(*) FROM prov WHERE provenance='base_art' AND owner_product_id IS NULL) = 0)
-        AS base_art_always_names_an_owner,
+    -- base_art means the picture is not this printing. An owner is named
+    -- only when some product actually holds it - a 'treatment' qualifier
+    -- (a stamp or foil the catalog art never carries) can be a sole
+    -- claimant with nobody to have borrowed from, e.g. Bronzong - SWSH091
+    -- (Prerelease). So the invariant is "owner named, OR treatment".
+    ((SELECT COUNT(*) FROM prov
+       WHERE provenance='base_art' AND owner_product_id IS NULL
+         AND qualifier_class IS DISTINCT FROM 'treatment') = 0)
+        AS base_art_names_owner_unless_treatment,
     ((SELECT COUNT(*) FROM prov WHERE provenance='base_art' AND owner_product_id = product_id) = 0)
         AS owner_is_never_the_borrower,
 
@@ -53,6 +58,22 @@ SELECT
       WHERE p.provenance='unknown' AND g.unqualified > 0) = 0)
         AS unknown_groups_have_no_plain_listing,
 
-    -- A sole claimant has nobody to borrow from, so it is always own_art.
-    ((SELECT COUNT(*) FROM prov WHERE claimants = 1 AND provenance <> 'own_art') = 0)
-        AS sole_claimants_are_own_art;
+    -- A sole claimant has nobody to borrow from, so it is own_art - UNLESS
+    -- the vocabulary says the qualifier is a treatment. Sole-claimancy only
+    -- proves no other product took the picture, never that the picture
+    -- matches the physical card; that blind spot is why the vocabulary
+    -- table exists (Part 27 addendum).
+    ((SELECT COUNT(*) FROM prov
+       WHERE claimants = 1 AND provenance <> 'own_art'
+         AND qualifier_class IS DISTINCT FROM 'treatment') = 0)
+        AS sole_claimants_own_art_unless_treatment,
+
+    -- A treatment qualifier is never own_art: the catalog art cannot carry
+    -- a stamp or foil pattern the catalog does not have a card for.
+    ((SELECT COUNT(*) FROM prov WHERE qualifier_class='treatment' AND provenance='own_art') = 0)
+        AS treatments_are_never_own_art,
+
+    -- 'unknown' means nothing settles the group - neither a plain listing
+    -- nor a classified claimant.
+    ((SELECT COUNT(*) FROM prov WHERE provenance='unknown' AND qualifier_class IS NOT NULL) = 0)
+        AS unknown_rows_are_unclassified;

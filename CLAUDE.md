@@ -39,8 +39,9 @@ image matcher was fixed and re-run, taking Pokemon singles image coverage
 from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
 `card_image_provenance()` decides whose artwork a card actually shows by
 asking which other products claim the same catalog card - 91% of the
-6,820 qualifier-stripped rows resolve without a domain call, and it
-showed `stripped_qualifier` alone overstates the problem ~3.5x (Part 27).
+6,820 qualifier-stripped rows resolve structurally; the owner's
+vocabulary calls in `image_qualifier_class` settle the rest, 485 still
+open (Part 27 + addendum).
 Nothing reads it in the UI yet.
 
 **Check state before assuming anything** - `./status.sh` reports what's
@@ -554,27 +555,33 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
-- **Classify the `unknown` image groups - needs an owner decision, now
-  238 groups rather than 754 words.** Most of this item is done. Part 26
-  recorded `card_images.stripped_qualifier` (the printing qualifier dropped
-  before a card matched) but stored no verdict, having concluded no
-  mechanical test could say whether the picture was therefore wrong. Part 27
-  found one it had not tried: **one pokemontcg.io card is one picture, so
-  ask who else claims the same `source_id`.** `card_image_provenance()`
-  returns `own_art` / `base_art` / `unknown` and resolves 91% of the 6,820
-  flagged rows - 1,750 were false alarms (the flag overstated the problem
-  ~3.5x) and 4,462 are decided base art naming the product they borrow from.
-  What remains is 608 cards in 238 groups where every claimant is qualified
-  and no plain listing exists to anchor them - e.g. `ex15-28`, claimed only
-  by `Dragonair (Delta Species)` and its `(Prerelease)` reprint. Deciding
-  those needs to know `delta species` is card identity while `prerelease` is
-  a stamp over base art: Pokemon printing knowledge, not a data question.
-  Verdicts are **computed, never stored** - a later import matching a missing
-  plain printing would silently invalidate a stored value, the same argument
-  that keeps all-time-high computed. Invariants:
-  `sql/checks/card_image_provenance_invariants.sql` (all eight must read
-  `t`). Nothing is surfaced in the UI yet, still deliberately (Part 25).
-  Full reasoning: DEVELOPMENT_HISTORY.md Part 27.
+- **Classify the remaining `unknown` image qualifiers - owner's call, one
+  INSERT each.** Part 26 recorded `card_images.stripped_qualifier` but stored
+  no verdict, concluding no mechanical test could say whether the picture was
+  therefore wrong. Part 27 found one it had not tried - **one pokemontcg.io
+  card is one picture, so ask who else claims the same `source_id`** - and
+  then found that test's blind spot: **sole-claimancy proves no other product
+  took the picture, never that the picture matches the physical card.**
+  `Bronzong - SWSH091 (Prerelease)` was a sole claimant showing an unstamped
+  promo, confidently mislabelled `own_art` until the owner pointed out that
+  prerelease cards almost always carry a stamp.
+  So two signals decide it, and the second cannot be derived:
+  `card_image_provenance()` combines the structural test with
+  **`image_qualifier_class`**, a table of the owner's domain calls -
+  `identity` (catalog holds this card in its own right, e.g. `delta species`
+  -> `Aerodactyl δ`) or `treatment` (a stamp/foil over a base printing, e.g.
+  `prerelease`). A treatment is `base_art` whatever its claimancy.
+  **Adding a classification is an INSERT, not a code change**, and an
+  unclassified qualifier falls back to the structural test rather than being
+  guessed at. Current state: 4,586 `base_art`, 21,095 `own_art`, **485
+  `unknown`** - largest remaining buckets `staff` (121), `team plasma` (28),
+  `cosmos holo` (12), then World Championship player names. Verdicts are
+  **computed, never stored**: a later import, or one more row in the
+  vocabulary table, would silently invalidate a stored value - the same
+  argument that keeps all-time-high computed. Invariants (all ten must read
+  `t`): `sql/checks/card_image_provenance_invariants.sql`. Nothing is
+  surfaced in the UI yet, still deliberately (Part 25). Full reasoning:
+  DEVELOPMENT_HISTORY.md Part 27 and its addendum.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
 - **`ImportCardImages` resolves its image directory relative to the
