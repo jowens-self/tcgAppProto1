@@ -2299,6 +2299,28 @@ Nothing is surfaced in the UI. Part 25 had just established that `--warn`
 should not be spent until something earns it, and a caution shown on
 `delta species` would be exactly the false alarm that argument was about.
 
+### The result
+
+The full run finished 2026-08-19: **26,166 images, up from 16,841** —
+Pokemon singles coverage **60.6% → 94.1%**. The DB count and the files on
+disk agree exactly (26,166 / 372MB), which is the check worth doing, since
+the two are written by different code paths.
+
+| | before | after |
+|---|---|---|
+| `ok` | 16,841 | **26,166** |
+| `no_match` | 10,912 | 1,580 |
+| `failed` | 54 | 61 |
+
+Of the matches, **19,346 resolved on the product's own name** and **6,820
+needed the qualifier stripped** — the latter being the population whose
+`stripped_qualifier` still awaits classification. The 61 `failed` rows are
+retryable and a later run picks them up.
+
+The class javadoc's old "expect roughly 60% coverage, by measurement"
+prediction is now decisively wrong, which was the point of Part 21: that
+number was a bug reproducing itself, not a ceiling.
+
 ### Rollout, and two things that broke
 
 Validated on group 2289 (Blister Exclusives, 140 rows) before anything

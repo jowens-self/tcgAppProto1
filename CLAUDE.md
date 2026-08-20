@@ -35,7 +35,8 @@ corrects one-day price errors and says so per row (Part 24); variant labels
 appear only when not already in the card's name (Part 25); Movers and Sets
 **open on the largest tracked game, not "All games"** - picked from
 `productCount`, never a hardcoded category id (Part 25/f409cc8); and the
-image matcher was fixed, roughly tripling image coverage (Part 26).
+image matcher was fixed and re-run, taking Pokemon singles image coverage
+from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26).
 
 **Check state before assuming anything** - `./status.sh` reports what's
 running, image-import progress and data freshness in one shot. The backlog
