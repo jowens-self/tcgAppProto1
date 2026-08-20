@@ -181,8 +181,17 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
   unchanged), and a duplicated day gets an extra vote in the 3-day medians
   Movers uses. Detect it with a per-date `COUNT(*)`/`SUM(market_price)`
   signature compared against the previous day. Note `price_snapshots` is
-  append-only, so **whether to delete the phantom row is the owner's call**,
-  not a cleanup to perform.
+  **Resolved 2026-08-20 on the owner's instruction:** the 51,287 rows and both
+  `ingest_runs` rows were deleted, so history now ends at 08-19 - genuinely
+  the newest day observed - and the real 08-20 can land after the refresh
+  instead of being skipped as already done. The delete ran in a transaction
+  behind a guard that aborted unless every column of every row matched 08-19;
+  it reported 0 differing rows before committing.
+  **This is the only deliberate deletion from `price_snapshots` to date.**
+  The append-only rule protects OBSERVATIONS; these were a copy of one, never
+  observed on the date they claimed. That distinction is the whole
+  justification - "it looked wrong" is not one - and a future duplicate should
+  be prevented by `dataAsOf()`, not deleted after the fact.
 - **No browser requests** — tcgcsv.com has a restrictive CORS policy and is
   backend-only by design, which matches how this app calls it.
 
