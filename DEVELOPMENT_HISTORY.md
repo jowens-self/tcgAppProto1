@@ -2525,14 +2525,14 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-A hundred and twenty-seven classifications moved 434 cards out of
-`unknown` and corrected **47**:
+A hundred and twenty-nine classifications moved 453 cards out of `unknown`
+and corrected **47**:
 
 | verdict | before | after |
 |---|---|---|
-| `own_art` | 21,096 | 21,096 |
+| `own_art` | 21,096 | **21,113** |
 | `base_art` | 4,462 | **4,898** |
-| `unknown` | 608 | **174** |
+| `unknown` | 608 | **155** |
 
 `own_art` landing back on its starting number is a coincidence, not a
 no-op: 45 cards left it as false all-clears were corrected, and 45 arrived
@@ -2628,10 +2628,25 @@ That resolved 86 and corrected one more sole claimant, bringing the running
 total to **47 cards the structural test was confident about and wrong
 about**.
 
-What remains is 174 cards across ~90 qualifiers — `prime` (10), `special`
-(9), then a scatter of a few cards each across Deck Exclusives, Nintendo
-Promos and assorted promo sets. No block left is large enough to distort a
-screen.
+`prime` and `special` came last, and both were `identity` — "prime is part
+of the label, an attribute; special is saying it is a nicer version or
+alternate than the base" (owner, 2026-08-19). These were the first
+classifications where the stakes sat on the *already-resolved* rows rather
+than the unknown ones: 21 `prime` and 11 `special` cards were sole
+claimants reading `own_art`, so a `treatment` verdict would have condemned
+32 correct pictures, while `identity` merely confirmed them and resolved 19
+more.
+
+Because the reading of "alternate than the base" could have gone either
+way, both were checked on disk before being written: `Gengar (Prime)`
+resolves to `hgss4-94`, which carries the Prime frame, and `Darkness Energy
+(Special)` resolves to `col1-86`, which is labelled **"Special Energy
+Card"** on the card face. Both are their own cards, not finishes over a
+base printing. All 51 rows now read `own_art`.
+
+What remains is 155 cards across ~85 qualifiers — a genuine scatter of a
+few cards each across Deck Exclusives, Nintendo Promos and assorted promo
+sets. No block left is large enough to distort a screen.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query

@@ -40,7 +40,7 @@ from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
 `card_image_provenance()` decides whose artwork a card actually shows by
 asking which other products claim the same catalog card - 91% of the
 6,820 qualifier-stripped rows resolve structurally; the owner's
-vocabulary calls in `image_qualifier_class` settle the rest, 174 still
+vocabulary calls in `image_qualifier_class` settle the rest, 155 still
 open (Part 27 + addendum).
 Nothing reads it in the UI yet.
 
@@ -573,16 +573,16 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   `prerelease`, `staff`, `cosmos holo`, `winner`, and the 46-strong tournament/placement family). A treatment is `base_art` whatever its claimancy.
   **Adding a classification is an INSERT, not a code change**, and an
   unclassified qualifier falls back to the structural test rather than being
-  guessed at. Current state: 4,898 `base_art`, 21,094 `own_art`, **174
-  `unknown`**. 127 qualifiers classified, each an INSERT with no code change,
+  guessed at. Current state: 4,898 `base_art`, 21,113 `own_art`, **155
+  `unknown`**. 129 qualifiers classified, each an INSERT with no code change,
   and between them they corrected **47 sole claimants** the structural test
-  had confidently cleared. Two family calls account for most of it: the
-  tournament/placement block (44, found by regex then reviewed) and the
-  **World Championship Decks block (77 player names, selected STRUCTURALLY -
-  a qualifier qualifies only if every card carrying it is in that group,
-  because no string rule reliably recognises a person's name)**. Both were
-  seeded as explicit word lists, never runtime patterns. Remaining: `prime`
-  (10), `special` (9), then a few cards each across promo sets.
+  had confidently cleared. Three family calls account for most of it: the
+  tournament/placement block (44, regex-found then reviewed), the **World
+  Championship Decks block (77 player names, selected STRUCTURALLY - every
+  card carrying the qualifier must be in that group, because no string rule
+  reliably recognises a person's name)**, and `prime`/`special` as identity.
+  All seeded as explicit word lists, never runtime patterns. Remaining: a
+  scatter of a few cards each across promo sets.
   **Spelling variants are handled at comparison time, not at extraction.**
   `ImportCardImages` records the stripped word verbatim and should keep
   doing so - TCGplayer genuinely sells both `Semi-Finalist` and `Semi
