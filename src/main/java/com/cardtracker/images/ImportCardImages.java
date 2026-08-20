@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
  *
  * Run it:
  *   java -cp target/cardtracker-0.1.0.jar com.cardtracker.images.ImportCardImages
- *   ... [--limit N] [--group GROUP_ID] [--match-only]
+ *   ... [--limit N] [--group GROUP_ID] [--match-only] [--skip-failed]
  *
  * **Why images are cached locally rather than hotlinked.** The browser must
  * never contact a third party for these - our own API serves them off disk.
@@ -121,6 +121,7 @@ public class ImportCardImages {
         Integer onlyGroup = null;
         boolean matchOnly = false;
         boolean dryRun = false;
+        boolean skipFailed = false;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--limit" -> limit = Integer.parseInt(args[++i]);
@@ -130,6 +131,14 @@ public class ImportCardImages {
                 // no_match row. Exists because the matching rules have been
                 // wrong before and the misses they record are permanent.
                 case "--dry-run" -> dryRun = true;
+                // Leave 'failed' rows alone. They are normally retried, which
+                // is right for a transient blip - but 61 of them are an
+                // upstream gap that has now failed on three separate days
+                // (CLAUDE.md has the evidence), and retrying those costs ~6
+                // requests each against a free community API for no expected
+                // gain. This makes that rule enforceable instead of
+                // remembered.
+                case "--skip-failed" -> skipFailed = true;
                 default -> throw new IllegalArgumentException("unknown arg: " + args[i]);
             }
         }
@@ -145,7 +154,7 @@ public class ImportCardImages {
         PokemonTcgCatalog api = new PokemonTcgCatalog();
 
         try (Connection conn = DriverManager.getConnection(url, user, pass)) {
-            List<Product> todo = productsNeedingImages(conn, onlyGroup, limit, dryRun);
+            List<Product> todo = productsNeedingImages(conn, onlyGroup, limit, dryRun, skipFailed);
             if (todo.isEmpty()) {
                 // Distinguish "there is nothing pending" from "you asked for
                 // none" - the old message claimed the former in both cases.
@@ -158,6 +167,7 @@ public class ImportCardImages {
             System.out.printf("%d product(s) to check%n", todo.size());
 
             Map<String, List<Card>> byKeyStrict = new HashMap<>();
+            Map<String, List<Card>> byKeyNumCode = new HashMap<>();
             Map<String, List<Card>> byKeyLoose = new HashMap<>();
             CatalogCache cache = new CatalogCache(imageDir.resolve(".catalog-cache"));
 
@@ -215,6 +225,11 @@ public class ImportCardImages {
                 if (n == null || d == null) continue;
                 byKeyStrict.computeIfAbsent(n + "|" + d + "|" + c.printedTotal(),
                         k -> new ArrayList<>()).add(c);
+                String cCode = numberCode(c.number());
+                if (cCode != null) {
+                    byKeyNumCode.computeIfAbsent(n + "|" + cCode,
+                            k -> new ArrayList<>()).add(c);
+                }
                 byKeyLoose.computeIfAbsent(n + "|" + d, k -> new ArrayList<>()).add(c);
             }
 
@@ -233,14 +248,16 @@ public class ImportCardImages {
             }
 
             int matched = 0, noMatch = 0, downloaded = 0, failed = 0, skippedUnknown = 0;
-            int baseArtMatches = 0, baseArtStrict = 0, baseArtLoose = 0;
+            int baseArtMatches = 0, baseArtStrict = 0, baseArtNumCode = 0, baseArtLoose = 0;
             List<String> baseArtSample = new ArrayList<>();
+            List<String> baseArtNumCodeSample = new ArrayList<>();
             List<String> baseArtLooseSample = new ArrayList<>();
             for (Product p : todo) {
                 String nFull = normName(p.name);
                 String nBase = normNameBase(p.name);
                 String d = numberDigits(p.cardNumber);
                 String t = numberTotal(p.cardNumber);
+                String code = numberCode(p.cardNumber);
 
                 Card hit = null;
                 String rule = null;
@@ -252,6 +269,10 @@ public class ImportCardImages {
                 if (nFull != null && d != null) {
                     hit = strict(byKeyStrict, nFull, d, t);
                     if (hit != null) rule = "name+number+total";
+                    if (hit == null) {
+                        hit = numCoded(byKeyNumCode, nFull, code);
+                        if (hit != null) rule = "name+numcode";
+                    }
                     if (hit == null) {
                         hit = loose(byKeyLoose, nFull, d);
                         if (hit != null) rule = "name+number";
@@ -268,15 +289,27 @@ public class ImportCardImages {
                     hit = strict(byKeyStrict, nBase, d, t);
                     if (hit != null) rule = "name+number+total/base-art";
                     if (hit == null) {
+                        hit = numCoded(byKeyNumCode, nBase, code);
+                        if (hit != null) rule = "name+numcode/base-art";
+                    }
+                    if (hit == null) {
                         hit = loose(byKeyLoose, nBase, d);
                         if (hit != null) rule = "name+number/base-art";
                     }
                     if (hit != null) {
                         strippedQualifier = strippedQualifier(p.name);
                         baseArtMatches++;
-                        boolean strictHit = rule.startsWith("name+number+total");
-                        if (strictHit) baseArtStrict++; else baseArtLoose++;
-                        List<String> bucket = strictHit ? baseArtSample : baseArtLooseSample;
+                        List<String> bucket;
+                        if (rule.startsWith("name+number+total")) {
+                            baseArtStrict++;
+                            bucket = baseArtSample;
+                        } else if (rule.startsWith("name+numcode")) {
+                            baseArtNumCode++;
+                            bucket = baseArtNumCodeSample;
+                        } else {
+                            baseArtLoose++;
+                            bucket = baseArtLooseSample;
+                        }
                         if (bucket.size() < 12) {
                             bucket.add(String.format("%s  ->  %s (%s #%s)",
                                     p.name, hit.name(), hit.setName(), hit.number()));
@@ -332,10 +365,15 @@ public class ImportCardImages {
                 System.out.printf("  would miss   %d%n", noMatch);
                 System.out.printf("  of matches, base-art (tier 2): %d%n", baseArtMatches);
                 System.out.printf("     via name+number+TOTAL (set size agrees): %d%n", baseArtStrict);
+                System.out.printf("     via name+NUMCODE (number prefix agrees):  %d%n", baseArtNumCode);
                 System.out.printf("     via name+number only:                    %d%n", baseArtLoose);
                 if (!baseArtSample.isEmpty()) {
                     System.out.println("  -- tier 2, total agreed:");
                     for (String line : baseArtSample) System.out.println("    " + line);
+                }
+                if (!baseArtNumCodeSample.isEmpty()) {
+                    System.out.println("  -- tier 2, matched on the number's prefix:");
+                    for (String line : baseArtNumCodeSample) System.out.println("    " + line);
                 }
                 if (!baseArtLooseSample.isEmpty()) {
                     System.out.println("  -- tier 2, total did NOT agree:");
@@ -361,23 +399,35 @@ public class ImportCardImages {
      * Pokemon singles with no usable card_images row yet. 'failed' rows ARE
      * retried; 'ok' and 'no_match' are not - that negative caching is what
      * stops ~11,000 unmatchable cards being re-checked on every run.
+     *
+     * Note what this means for a matching-rule change: an 'ok' row is never
+     * re-examined, so a new rule cannot redirect an image that already
+     * exists. It can only fill a gap. That is a property of this query, not
+     * a promise made elsewhere.
+     *
+     * @param includeNoMatch re-check the permanently-cached misses too
+     *                       (--dry-run, which writes nothing)
+     * @param skipFailed     leave 'failed' rows alone as well (--skip-failed)
      */
     private static List<Product> productsNeedingImages(Connection conn, Integer group, int limit,
-                                                      boolean includeNoMatch) throws Exception {
+                                                      boolean includeNoMatch, boolean skipFailed)
+            throws Exception {
         StringBuilder sql = new StringBuilder("""
                 SELECT p.product_id, p.name, extended_field(p.extended_data, 'Number') AS num
                   FROM products p
                   LEFT JOIN card_images ci ON ci.product_id = p.product_id
                  WHERE p.category_id = ? AND p.is_sealed = FALSE
-                   AND (ci.product_id IS NULL OR ci.status = 'failed'
-                        OR (? AND ci.status = 'no_match'))
+                   AND (ci.product_id IS NULL
+                        OR (ci.status = 'failed'   AND NOT ?)
+                        OR (ci.status = 'no_match' AND ?))
                 """);
         if (group != null) sql.append(" AND p.group_id = ").append(group);
         sql.append(" ORDER BY p.product_id LIMIT ").append(limit);
 
         try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
             ps.setInt(1, POKEMON);
-            ps.setBoolean(2, includeNoMatch);
+            ps.setBoolean(2, skipFailed);
+            ps.setBoolean(3, includeNoMatch);
             List<Product> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -400,6 +450,20 @@ public class ImportCardImages {
      * wrong image is worse than an obvious blank for someone pricing
      * inventory, so an ambiguous key is treated as no match at all.
      */
+    /**
+     * Name + the card number WITH its alphabetic prefix, and only when it is
+     * unambiguous. Sits between {@link #strict} and {@link #loose} because it
+     * is strictly more discriminating than the latter: every card keyed
+     * "arcanine|h2" is also keyed "arcanine|2", so this can only ever narrow a
+     * candidate list the loose key would have found ambiguous - never widen
+     * one. Same refusal on ambiguity, for the same reason.
+     */
+    private static Card numCoded(Map<String, List<Card>> idx, String n, String code) {
+        if (code == null) return null;
+        List<Card> c = idx.get(n + "|" + code);
+        return (c != null && c.size() == 1) ? c.get(0) : null;
+    }
+
     private static Card loose(Map<String, List<Card>> idx, String n, String d) {
         List<Card> c = idx.get(n + "|" + d);
         return (c != null && c.size() == 1) ? c.get(0) : null;
@@ -495,6 +559,12 @@ public class ImportCardImages {
      * cards from the index and stopping those products ever attempting one.
      */
     private static final Pattern ANY_DIGITS = Pattern.compile("([0-9]+)");
+    /**
+     * An alphabetic prefix in front of a card number: the "H" of "H02", the
+     * "SWSH" of "SWSH039". Bounded at 5 letters so a stray word can never be
+     * read as one. See {@link #numberCode}.
+     */
+    private static final Pattern NUM_CODE = Pattern.compile("^\\s*([a-z]{1,5})0*([0-9]+)");
 
     /**
      * Is a trailing bracketed token a printing qualifier, or just a card
@@ -614,6 +684,35 @@ public class ImportCardImages {
     static String numberDigits(String s) {
         if (s == null) return null;
         return firstNumber(s.split("/")[0]);
+    }
+
+    /**
+     * The card number with its alphabetic prefix KEPT: "H02/H32" -> "h2",
+     * "BW64" -> "bw64", "SWSH039" -> "swsh39". Null when there is no prefix.
+     *
+     * {@link #numberDigits} discards that prefix, and for most cards it is
+     * noise. For a holo subset or a promo series it is the only thing
+     * identifying the printing, and discarding it loses the match twice over.
+     * TCGplayer numbers Aquapolis' holo subset "H02/H32" - 32 cards - where
+     * the catalog numbers the same card "H2" inside a parent set of 147, so
+     * the printed totals disagree and {@link #strict} misses. The bare digits
+     * then collide with every other card #2 in every other set, so
+     * {@link #loose} is ambiguous and correctly refuses. The prefix is what
+     * breaks the tie, and it was being thrown away before it could.
+     *
+     * Recovered 89 images across 15 sets when added (2026-08-20): the H
+     * subsets of Aquapolis and Skyridge, the SM/BW/XY/DP Black Star Promos,
+     * and Platinum's "SH" / Call of Legends' "SL" shiny subsets.
+     *
+     * **Null for a bare number on purpose.** Without a prefix this key is
+     * character-for-character {@link #loose}'s, so it would add no
+     * discrimination - only a second tier reporting a different rule name for
+     * a decision already made.
+     */
+    static String numberCode(String s) {
+        if (s == null) return null;
+        Matcher m = NUM_CODE.matcher(s.split("/")[0].toLowerCase(Locale.ROOT));
+        return m.find() ? m.group(1) + m.group(2) : null;
     }
 
     /** "004/102" -> "102"; anything without a denominator -> null. */

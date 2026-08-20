@@ -9,6 +9,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -123,6 +124,82 @@ class ImportCardImagesTest {
         void returnsNullWhenThereAreNoDigits() {
             assertNull(ImportCardImages.numberDigits("ABC"));
             assertNull(ImportCardImages.numberDigits(null));
+        }
+    }
+
+    @Nested
+    @DisplayName("numberCode")
+    class NumberCode {
+
+        /**
+         * The prefix is the whole point: it is what tells Aquapolis' holo
+         * "H2" apart from every other card numbered 2, after the printed
+         * totals (32 vs 147) have already ruled out the strict key.
+         */
+        @Test
+        void keepsTheAlphabeticPrefix() {
+            assertEquals("h2", ImportCardImages.numberCode("H02/H32"));
+            assertEquals("bw64", ImportCardImages.numberCode("BW64"));
+            assertEquals("swsh39", ImportCardImages.numberCode("SWSH039"));
+            assertEquals("sh6", ImportCardImages.numberCode("SH6"));
+            assertEquals("hgss20", ImportCardImages.numberCode("HGSS20"));
+        }
+
+        /**
+         * Null, not the bare digits. Without a prefix this key would be
+         * character-for-character the loose key, so a non-null answer would
+         * add a tier that re-decides what the loose tier already decides -
+         * and would report a different rule name for the same match.
+         */
+        @Test
+        void isNullWhenTheNumberHasNoPrefix() {
+            assertNull(ImportCardImages.numberCode("4"));
+            assertNull(ImportCardImages.numberCode("004/102"));
+            assertNull(ImportCardImages.numberCode("16"));
+            assertNull(ImportCardImages.numberCode(null));
+            assertNull(ImportCardImages.numberCode("ABC"));
+        }
+
+        /** Padding is dropped on this side too, or "H02" misses the catalog's "H2". */
+        @Test
+        void treatsLeadingZerosAsPadding() {
+            assertEquals("h2", ImportCardImages.numberCode("H02"));
+            assertEquals("h2", ImportCardImages.numberCode("H2"));
+            assertEquals("h10", ImportCardImages.numberCode("H10"));
+            assertEquals("h1", ImportCardImages.numberCode("H01"));
+        }
+
+        /** The denominator is the subset size, never the number. */
+        @Test
+        void readsTheNumberBeforeTheSlashNotAfter() {
+            assertEquals("h2", ImportCardImages.numberCode("H02/H32"));
+            assertEquals("tg12", ImportCardImages.numberCode("TG12/TG30"));
+        }
+
+        /**
+         * Bounded at five letters so a word can never be read as a prefix.
+         * The real prefixes are 1-4 ("H", "GG", "SWSH"); the bound is what
+         * stops a malformed number contributing a junk key to the index.
+         */
+        @Test
+        void refusesAPrefixTooLongToBeOne() {
+            assertNull(ImportCardImages.numberCode("promotional1"));
+        }
+
+        /**
+         * Every card this keys is also keyed by numberDigits, which is what
+         * makes the tier a narrowing of the loose one rather than a widening
+         * - it can turn an ambiguous candidate list into a single hit, and can
+         * never introduce a candidate the loose key did not already hold.
+         */
+        @Test
+        void isAlwaysANarrowingOfTheLooseKey() {
+            for (String n : new String[]{"H02/H32", "BW64", "SWSH039", "SH6", "HGSS20"}) {
+                String code = ImportCardImages.numberCode(n);
+                assertNotNull(code, n);
+                assertTrue(code.endsWith(ImportCardImages.numberDigits(n)),
+                        n + " -> " + code + " must end in its own digits");
+            }
         }
     }
 
