@@ -3056,6 +3056,67 @@ whoever last read it. Every guard in this part existed as a clearly-written
 sentence in CLAUDE.md *before* the thing it forbids happened anyway. The
 sentence was not the problem — the absence of anything that could fail was.
 
+### Addendum — the remaining tiers, same day
+
+The rest went in immediately after: **110 Java tests, 9 front-end tests, 3 SQL
+checks.**
+
+`TestDatabase` creates a throwaway database per test class, loads the real
+`schema.sql` and `functions.sql` rather than a copy, and drops it in teardown.
+Two decisions carried the weight. It loads the REAL schema, because a fixture
+schema that drifts tests something that does not exist. And DB-backed tests
+**skip** rather than fail when no container is running, so the pure unit tests
+keep costing nothing — a developer without Docker up still gets a useful
+`mvn test` instead of a wall of red.
+
+The fixtures are hand-sized so every expected value is arithmetic: seven days
+at 100 then three at 300 is +200%, and a mean reports +80%. Snapshotting real
+output would have pinned whatever the functions currently do, bug included,
+which is exactly how a set worth $2,792.05 could have been locked in at
+$25,100.93.
+
+Three entry points were split so tests could call the real decision rather
+than approximate it — `ImageDir.resolve`, `parseLastUpdated`, and
+`ApiServer.createApp`. The last one lets the API be started on an ephemeral
+port against a throwaway database, which is what makes the contract testable
+over real HTTP rather than by reading handlers: no endpoint returns
+`high_price` (checked across seven endpoints, for the field name *and* the
+99,999 value the fixtures park there), a crafted `../` path 404s instead of
+serving a file outside the image root, and provenance reports an absent owner
+as `null` rather than 0 — the `wasNull()` bug, now unable to return quietly.
+
+**The parity harness, and the proof it works.** Tier 3 runs both
+implementations of the mirrored rule over a shared corpus, in-process. Whether
+it would actually catch the Part 30 bug was not assumed: a scratch database
+was built with the PRE-FIX untrimmed definition installed in that database
+alone, and the comparison run against it.
+
+```
+as shipped   plain=0  padded=0   tab/newline=0
+pre-fix      plain=0  padded=15  tab/newline=15    e.g. [ Z ] sql=true java=false
+```
+
+**Plain tokens agree even when the function is broken**, because every caller
+btrims. That single line explains why the drift survived review, why the
+original bug went unnoticed, and why the perturbation cases — not the
+straightforward one — are the tests actually doing the work. A test written
+only against the inputs that occur would have passed happily through it.
+
+The front end finally has a runner. `package.json` had advertised an `ng test`
+script whose runner had been pruned from devDependencies, so the command
+failed and `angular.json` had no test target at all. Vitest replaced it,
+chosen over Angular's builder because what is worth testing there is pure —
+the containment rule from Part 25 and the largest-catalog default — and
+standing up a browser and TestBed to exercise two functions costs more than it
+protects.
+
+**The second pattern worth keeping:** a test suite's own honesty needs
+checking too. Three of the things written today were verified by making them
+fail on purpose — the check runner against a deliberately false assertion, the
+parity harness against the pre-fix function, and five Tier 1 expectations that
+turned out to be wrong about the code rather than the reverse. A green suite
+that has never been seen red is a claim, not evidence.
+
 ---
 
 ## Key design decisions — quick reference

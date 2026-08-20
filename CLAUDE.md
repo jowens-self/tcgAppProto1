@@ -563,9 +563,14 @@ Parts 9 and 10.
 ## Tests (added 2026-08-20 - there were none before)
 
 ```
-mvn test                    # 55 Java tests, no database or network needed
-./sql/checks/run-all.sh     # the SQL invariants; needs the container up
+mvn test                    # 110 Java tests
+cd web && npm test          # 9 front-end tests (vitest)
+./sql/checks/run-all.sh     # the SQL invariants
 ```
+
+Tests needing Postgres **skip** rather than fail when no container is up, so
+`mvn test` stays useful without Docker. Start it with `docker compose up -d`
+to run them.
 
 `mvn package` runs the Java tests too, so a broken build now fails there.
 
@@ -583,9 +588,20 @@ mvn test                    # 55 Java tests, no database or network needed
   It also checks every backticked identifier in THIS FILE still exists; a
   name deliberately cited as history goes in `DELETED_AND_CITED_AS_HISTORY`
   with the quoting sentence in a comment.
-- **A test that reimplements the thing it tests proves nothing.** Two methods
-  (`ImageDir.resolve`, `parseLastUpdated`) take their inputs as parameters
-  specifically so the real decision can be called rather than mirrored.
+- **A test that reimplements the thing it tests proves nothing.** Three
+  entry points (`ImageDir.resolve`, `parseLastUpdated`, `ApiServer.createApp`)
+  take their inputs as parameters specifically so the real decision can be
+  called rather than mirrored or approximated.
+- **`TestDatabase` builds a throwaway database per test class** from the real
+  `schema.sql` and `functions.sql`, and drops it afterwards. Never point a
+  test at the working database: these insert prices, and `price_snapshots` is
+  append-only. Fixtures are hand-sized so expected values are arithmetic, not
+  snapshots - a snapshot pins whatever the code currently does, including a
+  bug.
+- **`VariantWordParityTest` runs BOTH sides of the mirrored rule** and compares
+  in-process. Its padded and tab/newline cases are the load-bearing ones:
+  against the pre-fix function, plain tokens still agreed 100% because every
+  caller btrims, while padded tokens disagreed 15 ways.
 - Two behaviours the tests pin that the docs described loosely:
   `numberDigits` drops leading zeros because they are padding (`004/102`
   matches card 4), and `strippedQualifier` lowercases - "verbatim" means it
