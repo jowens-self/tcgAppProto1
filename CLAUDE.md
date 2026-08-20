@@ -613,7 +613,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   / `Kyurem - 31/116`) - see Part 27 addendum. Verdicts are
   **computed, never stored**: a later import, or one more row in the
   vocabulary table, would silently invalidate a stored value - the same
-  argument that keeps all-time-high computed. Invariants (all ten must read
+  argument that keeps all-time-high computed. Invariants (every column must read
   `t`): `sql/checks/card_image_provenance_invariants.sql`. Nothing is
   surfaced in the UI yet, still deliberately (Part 25). Full reasoning:
   DEVELOPMENT_HISTORY.md Part 27 and its addendum.
