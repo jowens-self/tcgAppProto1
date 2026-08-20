@@ -2578,11 +2578,32 @@ the "a wrong rule writes a permanent lie" hazard the importer's `--dry-run`
 exists for (Part 26). A new qualifier arriving later is deliberately left
 `unknown` until someone looks at it.
 
-It also exposed a small matcher wart worth its own line: the vocabulary
-carries **spelling near-duplicates** — `quarter finalist` alongside
-`quarter-finalist`, `semi finalist` alongside `semi-finalist`. The importer
-does not normalise hyphens when it extracts a qualifier, so both spellings
-need their own row until it does.
+It also exposed spelling near-duplicates — `quarter finalist` alongside
+`quarter-finalist`, `semi finalist` alongside `semi-finalist` — and chasing
+those down landed somewhere other than where it was first aimed.
+
+The obvious fix was to normalise in `ImportCardImages.strippedQualifier()`,
+at the source. Looking at it, that would have been wrong: the extractor is
+faithfully recording what the product name says, and TCGplayer really does
+sell both a `Semi-Finalist` and a `Semi Finalist` printing. Normalising
+there would destroy a true fact about the catalog to save a row in a lookup
+table — the same instinct Part 26 resisted when it stored the stripped word
+instead of a verdict.
+
+So the normalisation went where the comparison happens instead.
+`normalize_qualifier()` lowercases, turns hyphens and underscores into
+spaces and collapses runs of space; `card_image_provenance()` joins the
+vocabulary through it. The raw record keeps both spellings, and the
+vocabulary needs one row per concept — 52 rows down to 50, with **every
+verdict unchanged**, which is the check worth doing since a normalisation
+that moves a verdict is a normalisation doing more than it claims.
+
+It is deliberately conservative: no stemming, no word-dropping, so
+`regional championship` and `regional championships` stay separate rows
+until someone says they shouldn't be. And it introduces a structural
+hazard that gets its own invariant — the vocabulary must store already
+normalised qualifiers, because two rows differing only by a hyphen would
+both match one image and duplicate it in the output.
 
 What remains is 260 cards — `prime` (10), `special` (9), then World
 Championship player names in ones and twos, 100-odd qualifiers with a

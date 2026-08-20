@@ -582,10 +582,19 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   a future qualifier that happens to match is left `unknown` rather than
   auto-classified. Remaining: `prime` (10), `special` (9), then World
   Championship player names in ones and twos.
-  **Known matcher wart:** the importer does not normalise hyphens when
-  extracting a qualifier, so `quarter finalist` and `quarter-finalist` are
-  both real rows. Worth fixing at the source; until then both spellings need
-  classifying. Known imprecision left at 3
+  **Spelling variants are handled at comparison time, not at extraction.**
+  `ImportCardImages` records the stripped word verbatim and should keep
+  doing so - TCGplayer genuinely sells both `Semi-Finalist` and `Semi
+  Finalist` printings, and normalising there would destroy a true fact to
+  tidy a lookup table. Instead `normalize_qualifier()` (functions.sql)
+  lowercases, maps hyphens/underscores to spaces and collapses whitespace,
+  and `card_image_provenance()` joins the vocabulary through it.
+  **`image_qualifier_class` must therefore store already-normalised
+  qualifiers** - two rows differing only by a hyphen would both match one
+  image and duplicate it in the output. That is an invariant in the check
+  file, not a convention. Normalisation is conservative on purpose: no
+  stemming, so `regional championship` and `regional championships` remain
+  separate until someone decides otherwise. Known imprecision left at 3
   rows: an `identity` qualifier sharing with an unqualified claimant reads
   `base_art` though both may be listings of one card (`Kyurem (Team Plasma)`
   / `Kyurem - 31/116`) - see Part 27 addendum. Verdicts are

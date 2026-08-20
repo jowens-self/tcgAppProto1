@@ -76,4 +76,13 @@ SELECT
     -- 'unknown' means nothing settles the group - neither a plain listing
     -- nor a classified claimant.
     ((SELECT COUNT(*) FROM prov WHERE provenance='unknown' AND qualifier_class IS NOT NULL) = 0)
-        AS unknown_rows_are_unclassified;
+        AS unknown_rows_are_unclassified,
+
+    -- The vocabulary is joined on normalize_qualifier(), so every stored
+    -- qualifier must already BE normalised. Two rows differing only by a
+    -- hyphen would both match one image and duplicate it in the output -
+    -- which every_ok_row_classified would then catch, but by then the cause
+    -- is three joins away. This says it directly.
+    ((SELECT COUNT(*) FROM image_qualifier_class
+       WHERE qualifier <> normalize_qualifier(qualifier)) = 0)
+        AS vocabulary_is_stored_normalised;

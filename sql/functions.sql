@@ -1058,6 +1058,31 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 
+-- One spelling for a printing qualifier that TCGplayer writes several ways.
+--
+-- ImportCardImages records stripped_qualifier verbatim, which is right - it
+-- is a fact about the product's name, and "Semi-Finalist" and "Semi
+-- Finalist" really are both out there. But the classification vocabulary in
+-- image_qualifier_class should not need a row per spelling, so the two sides
+-- are normalised at comparison time rather than the raw record being
+-- rewritten. Four such pairs exist today: quarter finalist, semi finalist,
+-- and two set names that reach the qualifier slot with and without a dash.
+--
+-- Deliberately conservative: case, hyphens/underscores and repeated spaces
+-- only. It does NOT stem or drop words, because "regional championship" and
+-- "regional championships" are different rows on purpose until someone says
+-- otherwise.
+--
+-- image_qualifier_class must store qualifiers already normalised, or one
+-- image row could match two classification rows and duplicate itself in the
+-- output. Guarded in sql/checks/card_image_provenance_invariants.sql.
+CREATE OR REPLACE FUNCTION normalize_qualifier(p_raw TEXT)
+RETURNS TEXT AS $$
+    SELECT NULLIF(btrim(regexp_replace(
+        regexp_replace(lower(COALESCE(p_raw, '')), '[-_]', ' ', 'g'),
+        '\s+', ' ', 'g')), '');
+$$ LANGUAGE sql IMMUTABLE;
+
 -- Whose artwork is a card actually showing?
 --
 -- Background: ImportCardImages records stripped_qualifier - the printing
@@ -1135,7 +1160,7 @@ CREATE OR REPLACE FUNCTION card_image_provenance(
                p.category_id, q.class AS qclass
         FROM card_images ci
         JOIN products p ON p.product_id = ci.product_id
-        LEFT JOIN image_qualifier_class q ON q.qualifier = ci.stripped_qualifier
+        LEFT JOIN image_qualifier_class q ON q.qualifier = normalize_qualifier(ci.stripped_qualifier)
         WHERE ci.status = 'ok' AND ci.source_id IS NOT NULL
     ),
     grp AS (
