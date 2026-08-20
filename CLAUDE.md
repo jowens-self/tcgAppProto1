@@ -328,8 +328,9 @@ price-park) plus engineering rules derived from them.
 - **`product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
 - **"Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
-  Decided 2026-08-12. `App`, `BackfillArchive`, and `ProductPullTest` all
-  compute it this way, matching the archive backfill's own day boundary and
+  Decided 2026-08-12. `App` and `BackfillArchive` both compute it this way
+  (`ProductPullTest` did too, until Part 13 deleted it), matching the archive
+  backfill's own day boundary and
   the container's default clock - so `snapshot_date` means the same thing
   across the whole table's history, and `CURRENT_DATE` in raw SQL always
   agrees with it. If a new place ever needs "today," use `ZoneOffset.UTC`
