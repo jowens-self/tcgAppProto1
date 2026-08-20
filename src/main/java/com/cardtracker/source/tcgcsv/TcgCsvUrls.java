@@ -14,6 +14,15 @@ public final class TcgCsvUrls {
     private TcgCsvUrls() {
     }
 
+    /**
+     * When the mirror last refreshed. Not under /tcgplayer - it describes the
+     * whole site, and it is the ONLY thing that says what date the live price
+     * endpoints are currently serving. They carry no date themselves.
+     */
+    public static String lastUpdated() {
+        return "https://tcgcsv.com/last-updated.txt";
+    }
+
     public static String categories() {
         return BASE + "/categories";
     }

@@ -15,6 +15,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -150,6 +154,46 @@ public class TcgCsvPriceSource implements PriceSource {
                     decimal(n, "directLowPrice")));
         }
         return out;
+    }
+
+    /**
+     * Parses last-updated.txt, e.g. "2026-08-19T20:05:19+0000".
+     *
+     * The DATE of that timestamp is the day the current live data belongs to,
+     * and that mapping is verified rather than assumed: on 2026-08-20 the
+     * marker read 2026-08-19T20:05:19+0000, and the live endpoints returned
+     * data identical to archive prices-2026-08-19 - all 51,287 rows.
+     *
+     * Deliberately NOT throttled through the shared Throttle and not counted
+     * against the request budget: it is one tiny request whose entire purpose
+     * is to avoid making thousands of pointless ones.
+     */
+    @Override
+    public LocalDate dataAsOf() throws Exception {
+        String url = TcgCsvUrls.lastUpdated();
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .header("User-Agent", USER_AGENT)
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() != 200) {
+            throw new IllegalStateException("HTTP " + res.statusCode() + " for " + url);
+        }
+        String body = res.body().trim();
+        try {
+            return OffsetDateTime
+                    .parse(body, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ"))
+                    .withOffsetSameInstant(ZoneOffset.UTC)
+                    .toLocalDate();
+        } catch (DateTimeParseException e) {
+            // Refuse rather than guess. Falling back to the local clock here
+            // would reinstate exactly the bug this method exists to remove.
+            throw new IllegalStateException(
+                    "Could not read the mirror's last-updated timestamp from \"" + body
+                    + "\". Refusing to date a pull from the local clock instead - that is"
+                    + " what wrote a duplicate day on 2026-08-20.", e);
+        }
     }
 
     private JsonNode getResults(String url) throws Exception {

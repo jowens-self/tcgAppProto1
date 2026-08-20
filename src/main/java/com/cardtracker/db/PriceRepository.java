@@ -243,6 +243,32 @@ public class PriceRepository {
         }
     }
 
+    /**
+     * Is this date already covered for this category, by EITHER the live pull
+     * or the archive backfill?
+     *
+     * hasSuccessfulRun() matches one exact source string, which was right
+     * while the live pull only ever asked about a date nothing else could
+     * have filled - "today". Now that the date comes from the mirror rather
+     * than the clock, a run started before the daily refresh legitimately
+     * asks about yesterday, and yesterday is usually already in hand from
+     * `tcgcsv-archive-N`. Without this the pull would spend ~436 requests
+     * per category re-fetching rows that ON CONFLICT DO NOTHING then
+     * discards.
+     */
+    public boolean hasDateCovered(int categoryId, LocalDate snapshotDate) throws Exception {
+        String sql = "SELECT 1 FROM ingest_runs WHERE source IN (?, ?) "
+                + "AND snapshot_date = ? AND status = 'ok' LIMIT 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, "tcgcsv-" + categoryId);
+            ps.setString(2, "tcgcsv-archive-" + categoryId);
+            ps.setObject(3, snapshotDate);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
     public long startRun(String source, LocalDate snapshotDate) throws Exception {
         String sql = "INSERT INTO ingest_runs (source, snapshot_date) VALUES (?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {

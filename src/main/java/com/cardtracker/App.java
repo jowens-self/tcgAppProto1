@@ -28,16 +28,34 @@ import java.util.Set;
 public class App {
 
     public static void main(String[] args) throws Exception {
-        // UTC, not host-local - matches the archive backfill's day boundary
-        // and the container's own clock. See CLAUDE.md "local-vs-UTC".
-        LocalDate snapshotDate = LocalDate.now(ZoneOffset.UTC);
-        LocalDate yesterday = snapshotDate.minusDays(1);
-
         String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
         String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
         String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
 
         PriceSource source = new TcgCsvPriceSource(Throttle.politeDefault());
+
+        // Resolved from the mirror, not from this machine's clock. The UTC
+        // rule below is still right and still applies everywhere else - this
+        // is a different problem to the Part 5 timezone bug, and fixing that
+        // one could not have prevented this one.
+        //
+        // The live price endpoints carry no date: they answer "what are the
+        // prices now". tcgcsv refreshes once daily at ~20:00 UTC, so between
+        // midnight and that refresh "now" is still YESTERDAY's data - and
+        // stamping it with today's date writes a day that never happened.
+        // That is exactly what a 02:15 UTC run did on 2026-08-20, storing
+        // 51,287 rows identical to 2026-08-19.
+        //
+        // The archive path never had this problem because its URL names the
+        // date (prices-2026-08-19.ppmd.7z). This gives the live path the same
+        // property: ask the source what day it is serving, then trust the
+        // answer. A premature run now re-writes a day we already hold, which
+        // ON CONFLICT DO NOTHING makes a free no-op - so being early is safe
+        // rather than corrupting.
+        LocalDate snapshotDate = source.dataAsOf();
+        LocalDate yesterday = snapshotDate.minusDays(1);
+        System.out.printf("Mirror's newest data is %s (this machine: %s UTC)%n",
+                snapshotDate, LocalDate.now(ZoneOffset.UTC));
 
         try (Connection conn = DriverManager.getConnection(url, user, pass)) {
             PriceRepository repo = new PriceRepository(conn);
@@ -92,8 +110,10 @@ public class App {
             LocalDate snapshotDate) throws Exception {
         String runSource = "tcgcsv-" + categoryId;
 
-        if (repo.hasSuccessfulRun(runSource, snapshotDate)) {
-            System.out.printf("[%d] Already have a complete pull for %s (UTC) - skipping fetch.%n",
+        // Either path counts: the mirror's date is often one the archive
+        // backfill already filled, and re-fetching it writes nothing.
+        if (repo.hasDateCovered(categoryId, snapshotDate)) {
+            System.out.printf("[%d] Already have %s - skipping fetch.%n",
                     categoryId, snapshotDate);
             return;
         }
