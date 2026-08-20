@@ -2525,13 +2525,13 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-Eight classifications moved 309 cards out of `unknown` and corrected **45**:
+Fifty-two classifications moved 348 cards out of `unknown` and corrected **46**:
 
 | verdict | before | after |
 |---|---|---|
 | `own_art` | 21,096 | 21,096 |
-| `base_art` | 4,462 | **4,771** |
-| `unknown` | 608 | **299** |
+| `base_art` | 4,462 | **4,811** |
+| `unknown` | 608 | **260** |
 
 `own_art` landing back on its starting number is a coincidence, not a
 no-op: 45 cards left it as false all-clears were corrected, and 45 arrived
@@ -2561,19 +2561,32 @@ holo. That is now **45 corrections from six words** - each one a card the
 structural test was confident about and wrong about, and none of them
 findable without knowing what the word meant.
 
-`finalist` and `semi-finalist` followed, both stamps - and classifying them
-surfaced how large the family behind them is. Roughly 50 further qualifiers
-are tournament and placement stamps of the same kind (`1st place` through
-`4th place`, `city/state/regional/national championships`, `world
-championships 2017`..`2024`, `champion`), and the vocabulary carries near
-duplicates that differ only in spelling: `quarter finalist` against
-`quarter-finalist`, `semi finalist` against `semi-finalist`. Most are
-already `base_art` structurally; ~39 cards are not, and would resolve if the
-family were classified as a whole. That is one decision rather than fifty,
-but it is still the owner's, so it is recorded here rather than assumed.
+`finalist` and `semi-finalist` followed, and classifying them surfaced how
+large the family behind them was: 44 further qualifiers are tournament and
+placement stamps of the same kind — `1st place` through `4th place`,
+`city`/`state`/`regional`/`national championships`, `world championships
+2017`..`2024`, `champion`, and year-prefixed forms like `2015 semi-finalist`.
+The owner classified the family in one call: *"As far as I know these are
+all in that category."*
 
-What remains is 299 cards - the tournament family above, `prime` (10),
-`special` (9), then World Championship player names in ones and twos.
+**The family was applied as an explicit list, not as a pattern.** The regex
+`/finalist|champion|^[0-9]+(st|nd|rd|th) place$/` was used to *find* the 44
+candidates, all of them reviewed, and then the qualifiers themselves were
+written into the seed. A pattern evaluated at runtime would silently
+classify whatever future qualifier happened to match it — which is exactly
+the "a wrong rule writes a permanent lie" hazard the importer's `--dry-run`
+exists for (Part 26). A new qualifier arriving later is deliberately left
+`unknown` until someone looks at it.
+
+It also exposed a small matcher wart worth its own line: the vocabulary
+carries **spelling near-duplicates** — `quarter finalist` alongside
+`quarter-finalist`, `semi finalist` alongside `semi-finalist`. The importer
+does not normalise hyphens when it extracts a qualifier, so both spellings
+need their own row until it does.
+
+What remains is 260 cards — `prime` (10), `special` (9), then World
+Championship player names in ones and twos, 100-odd qualifiers with a
+handful of cards each.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query

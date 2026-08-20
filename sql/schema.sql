@@ -83,7 +83,61 @@ INSERT INTO image_qualifier_class (qualifier, class, note, decided_on) VALUES
      'A stamp, like prerelease and staff. Owner, 2026-08-19.',
      DATE '2026-08-19'),
     ('finalist', 'treatment', 'A stamp. Owner, 2026-08-19.', DATE '2026-08-19'),
-    ('semi-finalist', 'treatment', 'A stamp. Owner, 2026-08-19.', DATE '2026-08-19')
+    ('semi-finalist', 'treatment', 'A stamp. Owner, 2026-08-19.', DATE '2026-08-19'),
+-- The tournament/placement family, classified in one call rather than 44.
+-- Owner, 2026-08-19, verbatim: "As far as I know these are all in that
+-- category" - the hedge is theirs and is not flattened here. Selected by
+-- matching /finalist|champion|^[0-9]+(st|nd|rd|th) place$/ against the
+-- unclassified vocabulary and reviewing all 44 hits before inserting, so
+-- this list is explicit rather than a pattern evaluated at runtime; a new
+-- qualifier arriving later is deliberately NOT auto-classified.
+-- Note the near-duplicates: "quarter finalist" and "quarter-finalist" are
+-- both real, as are "semi finalist" and "semi-finalist" - the importer does
+-- not normalise hyphens, so both spellings need their own row until it does.
+    ('1st place', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2005 world championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2014 champion', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2014 finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2014 quarter finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2014 semi-finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2015 champion', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2015 finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2015 quarter finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2015 semi-finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2016 champion', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2016 finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2016 quarter finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2016 semi-finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('2nd place', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('3rd place', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('4th place', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('arena cup championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('asia championship series 23-24', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('champion', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('championship promo', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('championship series', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('city championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('europe championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('europe international championship', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('latin america championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('national championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('north america championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('north america international championship', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('oceania championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('quarter finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('quarter-finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('regional championship', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('regional championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('semi finalist', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('state championship', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('state championship promo', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('state championships', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('world championships 2017', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('world championships 2018', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('world championships 2019', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('world championships 2022', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('world championships 2023', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19'),
+    ('world championships 2024', 'treatment', 'Tournament/placement stamp on a promo. Family call, owner 2026-08-19 - see above.', DATE '2026-08-19')
 ON CONFLICT (qualifier) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS groups (

@@ -40,7 +40,7 @@ from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
 `card_image_provenance()` decides whose artwork a card actually shows by
 asking which other products claim the same catalog card - 91% of the
 6,820 qualifier-stripped rows resolve structurally; the owner's
-vocabulary calls in `image_qualifier_class` settle the rest, 299 still
+vocabulary calls in `image_qualifier_class` settle the rest, 260 still
 open (Part 27 + addendum).
 Nothing reads it in the UI yet.
 
@@ -570,19 +570,22 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   **`image_qualifier_class`**, a table of the owner's domain calls -
   `identity` (catalog holds this card in its own right, e.g. `delta species`
   -> `Aerodactyl δ`, `team plasma`) or `treatment` (a stamp/foil over a base printing, e.g.
-  `prerelease`, `staff`, `cosmos holo`, `winner`, `finalist`, `semi-finalist`). A treatment is `base_art` whatever its claimancy.
+  `prerelease`, `staff`, `cosmos holo`, `winner`, and the 46-strong tournament/placement family). A treatment is `base_art` whatever its claimancy.
   **Adding a classification is an INSERT, not a code change**, and an
   unclassified qualifier falls back to the structural test rather than being
-  guessed at. Current state: 4,771 `base_art`, 21,096 `own_art`, **299
-  `unknown`**. Eight qualifiers classified so far, each one INSERT with no
-  code change, and between them they corrected **45 sole claimants** the
-  structural test had confidently cleared. **Largest open item is the
-  tournament/placement family** - ~50 qualifiers (`1st place`..`4th place`,
-  `city/state/regional/national championships`, `world championships
-  2017`..`2024`, `champion`, `quarter finalist`), all apparently the same
-  kind of stamp, ~39 cards still unresolved. Note the vocabulary holds
-  spelling near-duplicates (`quarter finalist` / `quarter-finalist`). One
-  decision, not fifty - but not one to assume. Known imprecision left at 3
+  guessed at. Current state: 4,811 `base_art`, 21,095 `own_art`, **260
+  `unknown`**. 52 qualifiers classified, each an INSERT with no code change,
+  and between them they corrected **46 sole claimants** the structural test
+  had confidently cleared. The tournament/placement family (44 qualifiers)
+  was applied as an **explicit list, not a runtime pattern** - a regex found
+  the candidates, all were reviewed, and the words themselves were seeded, so
+  a future qualifier that happens to match is left `unknown` rather than
+  auto-classified. Remaining: `prime` (10), `special` (9), then World
+  Championship player names in ones and twos.
+  **Known matcher wart:** the importer does not normalise hyphens when
+  extracting a qualifier, so `quarter finalist` and `quarter-finalist` are
+  both real rows. Worth fixing at the source; until then both spellings need
+  classifying. Known imprecision left at 3
   rows: an `identity` qualifier sharing with an unqualified claimant reads
   `base_art` though both may be listings of one card (`Kyurem (Team Plasma)`
   / `Kyurem - 31/116`) - see Part 27 addendum. Verdicts are
