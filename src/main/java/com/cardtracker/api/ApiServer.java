@@ -1,6 +1,7 @@
 package com.cardtracker.api;
 
 import com.cardtracker.Env;
+import com.cardtracker.ImageDir;
 import com.cardtracker.db.QueryRepository;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -38,9 +39,9 @@ public class ApiServer {
         String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
         String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
         int port = Integer.parseInt(Env.get("CARDTRACKER_API_PORT", String.valueOf(DEFAULT_PORT)));
-        // Same default as ImportCardImages, which writes them.
-        Path imageRoot = Path.of(Env.get("CARDTRACKER_IMAGE_DIR", "images"))
-                .toAbsolutePath().normalize();
+        // Resolved the same way as ImportCardImages, which writes them, so the
+        // writer and the reader cannot end up pointing at different trees.
+        Path imageRoot = ImageDir.resolve();
 
         Javalin app = Javalin.create(config -> {
             // LocalDate must serialize as "2026-08-14", not an array of ints
@@ -211,6 +212,9 @@ public class ApiServer {
 
         app.start(port);
         System.out.printf("CardTracker API on http://localhost:%d  (read-only)%n", port);
+        // Printed because a wrong image root is otherwise indistinguishable
+        // from "we have no image for that card" - both render as a placeholder.
+        System.out.printf("  serving card images from %s%n", imageRoot);
     }
 
     /**

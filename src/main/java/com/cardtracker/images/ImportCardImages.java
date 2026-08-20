@@ -1,6 +1,7 @@
 package com.cardtracker.images;
 
 import com.cardtracker.Env;
+import com.cardtracker.ImageDir;
 import com.cardtracker.source.pokemontcg.PokemonTcgCatalog;
 import com.cardtracker.source.pokemontcg.PokemonTcgCatalog.Card;
 
@@ -133,7 +134,8 @@ public class ImportCardImages {
             }
         }
 
-        Path imageDir = Path.of(Env.get("CARDTRACKER_IMAGE_DIR", "images"));
+        // Fails loudly if launched outside the project root - see ImageDir.
+        Path imageDir = ImageDir.resolve();
         Files.createDirectories(imageDir);
 
         String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
