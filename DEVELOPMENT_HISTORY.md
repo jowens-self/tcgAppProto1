@@ -3178,3 +3178,15 @@ Not started. Schema not yet designed.
   should become a pool (`ApiServer.withRepo` is the only place to
   change), and the CORS rule would need revisiting. Fine as-is for a
   local single-user tool.
+  **Quantified 2026-08-20.** Every request opens its own JDBC connection,
+  including each thumbnail, so the ceiling is Postgres' `max_connections`
+  (100 by default). Measured against the running server: 80 concurrent image
+  requests all 200, 200 concurrent all 200, and at 300 mixed image+search
+  requests **50 returned 500**, the API log carrying exactly 50
+  `FATAL: sorry, too many clients already`. It recovers by itself — health
+  and search were 200 immediately after, with connections back to 6.
+  A realistic single-user page is ~50 concurrent thumbnails and passes with
+  room to spare, which is why this has never been felt. Two things follow:
+  the fix is a pool and therefore a new dependency on a deliberately small
+  dependency list, which is the owner's call; and the number to design
+  against is now known rather than guessed.

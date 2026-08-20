@@ -391,6 +391,13 @@ Rules it establishes, worth keeping:
   `Connection` is not thread-safe and Javalin is multithreaded - sharing
   one corrupts results intermittently instead of failing cleanly. That
   method is the single place to add a pool if this ever leaves localhost.
+  **Measured 2026-08-20, so the ceiling is no longer hypothetical:** 250
+  concurrent requests are served fine; at 300 mixed requests 50 of them 500
+  with `FATAL: sorry, too many clients already` against Postgres'
+  `max_connections = 100`. A realistic page (50 thumbnails at once) passes
+  comfortably and the server recovers on its own, so this is a shipping
+  blocker, not a local one. Adding a pool means adding a dependency - the
+  owner's call, not a silent one.
 - **`high_price` is absent from every response** (owner's rule, made structural), and `PricePoint` has no
   field for it - the "store it, ignore it" rule made structural rather
   than left as something a future chart author must remember. Same for
