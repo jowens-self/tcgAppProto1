@@ -3128,6 +3128,151 @@ that has never been seen red is a claim, not evidence.
 
 ---
 
+## Part 32 — The letters in the card number
+
+94.1% image coverage had been sitting there since Part 26, and the class
+comment's story about the remainder was that it was upstream absence. Part 21
+had already caught that story being wrong once — "World Championship decks /
+jumbo / prize packs / promos are absent entirely" turned out to be two
+normalization defects — so the claim was worth re-auditing rather than
+inheriting.
+
+### Triaging the 1,580 before writing anything
+
+The audit was a throwaway script, not a code change: take every `no_match`
+row, and ask the cached catalog whether a card by that name exists upstream at
+all. Deliberately looser normalization than the matcher's, because the
+question it answers — *does this card exist* — is the one robust to
+normalization detail.
+
+```
+   716  name upstream, number differs
+   640  name absent upstream
+   192  NAME+NUMBER EXIST UPSTREAM
+    32  product has no card number
+```
+
+That third line is the finding. 192 rows where the catalog demonstrably holds
+a card of that name and that number, and the matcher had recorded a permanent
+miss anyway.
+
+**And the largest single family is genuinely absent, which is worth recording
+so nobody re-derives it.** The Trainer Kits — XY, BW, HGSS, SM, DP, eight sets
+and 412 rows — are not on pokemontcg.io. It carries `tk1a`/`tk1b`/`tk2a`/`tk2b`
+(the 2003-era EX kits) and nothing since. The four "Trainer Gallery" sets that
+match a name search are a different thing entirely. Those 412 are the same
+category as the 61 `failed` McDonald's rows: an upstream gap, not a rule
+defect. `Battle Academy 2024` (135) is likewise absent outright.
+
+### The signal that was being thrown away
+
+`numberDigits()` was written to find digits anywhere in a number rather than
+only at its start — that was Part 21's fix, and it was right. But it returns
+only the digits. The letters are discarded.
+
+For most cards that is correct; the prefix is noise. For a holo subset or a
+promo series it is the *only* thing identifying the printing, and discarding
+it loses the match twice over. Aquapolis is the clean example:
+
+- TCGplayer numbers the holo subset `H02/H32` — a 32-card subset.
+- pokemontcg.io numbers the same card `H2` inside the parent set of **147**.
+- So the printed totals disagree, and the strict key (name+number+total) misses.
+- The bare digits are then `2`, which collides with every other card #2 in
+  every other set — so the loose key is ambiguous, and refuses. Correctly:
+  a confidently wrong image is worse than a blank for someone pricing stock.
+
+The prefix is what breaks that tie, and it had been dropped before it could.
+
+### A tier that can only narrow
+
+`numberCode()` keeps the prefix: `H02/H32` → `h2`, `BW64` → `bw64`,
+`SWSH039` → `swsh39`. A third index keyed on it sits **between** strict and
+loose, in both tiers.
+
+The property that makes this safe is worth stating precisely, because it is
+what makes the change reviewable at all: **every card keyed `arcanine|h2` is
+also keyed `arcanine|2`.** The new key is a subset of the loose key, so it can
+turn an ambiguous candidate list into a single hit, and it cannot introduce a
+candidate the loose key did not already hold. It narrows; it never widens.
+
+It returns null for a bare number on purpose. Without a prefix the key would
+be character-for-character the loose key, so the tier would add no
+discrimination — only a second decision point reporting a different rule name
+for a match already made.
+
+### Measured twice, by two implementations
+
+The rule was modelled in Python against all 27,807 Pokemon singles first, to
+size it before committing to Java:
+
+```
+old rule matched: 26,224     new rule matched: 26,313
+GAINED 89        CHANGED target 0        LOST 0
+```
+
+Then implemented, rebuilt, and run through `--dry-run`, which uses the real
+matcher:
+
+```
+before   checked 1,641   would match  61   would miss 1,580
+after    checked 1,641   would match 150   would miss 1,491
+```
+
+**150 − 61 = 89.** Two independent implementations agreeing to the row is what
+makes the number trustworthy rather than plausible; a single measurement here
+would only have proved the model consistent with itself.
+
+The recovered matches are eyeball-checkable, which was the other point of
+doing it this way — `Ariados (H3)` `H03/H32` → Aquapolis `#H3`,
+`Magcargo (H17)` → Skyridge `#H17`, `Vulpix (Shiny)` `SH6` → Platinum `#SH6`,
+`Kyogre (Shiny)` `SL6` → Call of Legends `#SL6`, `Pikachu - SM04` → SM Black
+Star Promos `#SM04`. Fifteen sets in all.
+
+### Why no existing image could be redirected
+
+Worth stating because it is the question a matching-rule change should always
+have to answer, and here the answer is structural rather than measured:
+`productsNeedingImages()` selects rows that are NULL, `failed`, or — only
+under `--dry-run` — `no_match`. **It never returns an `ok` row.** A rule change
+therefore cannot redirect an image that already exists; it can only fill a
+gap. That property now carries a comment on the query itself, since it is easy
+to lose in a refactor and it is the whole safety argument.
+
+### --skip-failed
+
+CLAUDE.md says the 61 remaining `failed` rows are an upstream gap and the
+importer should not keep being re-run for them — ~6 requests each against a
+free community API for no expected gain. But `failed` rows are normally
+retried, which is right for a transient blip, so that rule lived only in prose
+and only worked if someone remembered it.
+
+`--skip-failed` makes it enforceable. With it, the pending re-check is exactly
+the 1,580 `no_match` rows and nothing else.
+
+### The tests, and seeing them red
+
+Five tests on `numberCode()`: the prefix is kept, leading zeros are padding on
+this side too (or `H02` misses the catalog's `H2`), the denominator is never
+read as the number, a bare number gives null rather than digits, and a prefix
+too long to be one is refused. One of them asserts the narrowing property
+directly — every code must end in its own `numberDigits()` — because that is
+the invariant the safety argument rests on, not an incidental behaviour.
+
+Per Part 31's rule, they were seen red before being trusted: reverting
+`numberCode()` to return the digits alone (i.e. regressing it to
+`numberDigits()`) fails three of the five, `expected: <h2> but was: <2>`.
+
+### What is still pending
+
+**The 89 images are matched but not yet downloaded.** `no_match` is a
+permanent negative cache — the importer never re-queries those rows — so
+realising the gain needs those rows cleared and one `--skip-failed` run. That
+clear is a bulk delete on the working database, so it is the owner's to
+authorise; the code and its measurement are committed and independent of it.
+Coverage stands at 26,166 / 94.1% until then, and 26,255 / 94.4% after.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |

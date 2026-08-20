@@ -32,6 +32,16 @@ Sets); locally-cached Pokemon card images at 94.1% coverage; and as of
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **Image matching has a third tier: the card number's alphabetic prefix**
+  (`numberCode()`, between strict and loose). `numberDigits()` discards the
+  letters in `H02`, `BW64`, `SWSH039`; for a holo subset or a promo series
+  those letters are the only thing identifying the printing. The tier can
+  only ever *narrow* a candidate list the loose key already held - never
+  widen one - which is the whole safety argument, and the property a test
+  pins directly. Worth **89 images across 15 sets**, measured twice (Part
+  32). **Those 89 are matched but not yet downloaded**: `no_match` is a
+  permanent negative cache, so the gain needs those rows cleared and one
+  `ImportCardImages --skip-failed` run. Until then coverage is still 94.1%.
 - **The live pull dates itself from the mirror, not from any clock**
   (`PriceSource.dataAsOf()`). See the Data invariants section - this is the
   rule most likely to be "simplified" back into a bug.
@@ -129,7 +139,20 @@ change should be validated before it touches 10,000 rows.
   requests each against a free community API for no expected gain, which is
   the opposite of the etiquette this project owes them. The 61 are worth
   0.2% coverage; leave them unless the upstream gap is known to have been
-  filled.
+  filled. **`--skip-failed` makes this enforceable rather than remembered** -
+  `failed` rows are otherwise always retried, which is right for a real blip
+  and wrong for these.
+- **Some sets are absent from pokemontcg.io outright - check before blaming
+  a matching rule.** Audited 2026-08-20 across all 1,580 `no_match` rows
+  (Part 32): the **Trainer Kits** (XY, BW, HGSS, SM, DP - eight sets, 412
+  rows) are not there at all. It carries `tk1a`/`tk1b`/`tk2a`/`tk2b`, the
+  2003-era EX kits, and nothing since; the four "Trainer Gallery" sets a
+  name search turns up are a different product. `Battle Academy 2024` (135
+  rows) is likewise absent. Together with the 61 `failed`, that is ~608 rows
+  no rule change can reach. The audit also found the opposite, though - 192
+  rows whose name *and* number were sitting in the catalog unmatched - so
+  "upstream doesn't have it" has now been wrong twice (Parts 21 and 32) and
+  is worth re-testing, not inheriting.
 
 ---
 
