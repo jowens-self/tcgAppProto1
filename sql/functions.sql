@@ -699,7 +699,16 @@ CREATE OR REPLACE FUNCTION item_movers(
     url TEXT
 ) AS $$
 DECLARE
-    v_smooth      INTEGER := GREATEST(COALESCE(p_smoothing, 3), 1);
+    -- Clamped to the window, because the two medians must not share days.
+    -- 'recent' spans [end-(smooth-1), end] and 'prior' spans
+    -- [end-days-(smooth-1), end-days], so they stay disjoint only while
+    -- smooth <= days. At the default smoothing of 3 a 1-day window had the
+    -- two windows sharing two of their three days, which damps every real
+    -- move toward zero - the same failure mode as the mean this function
+    -- stopped using in Part 24, arriving by a different route. No effect on
+    -- 7/30/90, where 3 <= days already.
+    v_smooth      INTEGER := LEAST(GREATEST(COALESCE(p_smoothing, 3), 1),
+                                   GREATEST(COALESCE(p_days, 7), 1));
     v_end         DATE;
     v_recent_from DATE;
     v_prior_to    DATE;
