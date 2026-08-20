@@ -107,10 +107,11 @@ public class QueryRepository {
      * image for it (no row, or the match failed) - which is an ordinary
      * outcome, not an error.
      *
-     * Costs ~90ms because a verdict depends on the whole source_id group, so
-     * the function builds every group before filtering to this one. Fine for
-     * a single card being looked at; do not call it in a loop over a result
-     * page without giving the function a cheaper path first.
+     * Costs ~5ms since 2026-08-20, down from ~96ms: the function now narrows
+     * to the asked-for card's source_id before grouping rather than building
+     * all ~21,000 groups and discarding them. A result page's worth of calls
+     * is no longer obviously out of reach, though whether to mark ~19% of
+     * search rows is a separate question - see Part 29.
      */
     public ImageProvenance imageProvenance(int productId) throws Exception {
         String sql = "SELECT product_id, name, source_id, stripped_qualifier, "

@@ -204,10 +204,11 @@ public class ApiServer {
             ctx.json(variants);
         });
 
-        // Whose artwork this card's thumbnail actually shows. Separate from
-        // /items/{id} deliberately: it costs ~90ms where that costs ~1ms, and
-        // only the detail view needs it, so folding it into search would make
-        // every result page pay for something a list never shows.
+        // Whose artwork this card's thumbnail actually shows. Kept separate
+        // from /items/{id} because only the detail view needs it - folding it
+        // in would make every caller pay for something most never render.
+        // (It cost ~96ms until 2026-08-20 and now costs ~5ms, so the argument
+        // is about relevance rather than expense.)
         // 404 means we hold no image for the product, which is ordinary.
         app.get("/api/items/{productId}/image/provenance", ctx -> {
             int id = pathId(ctx.pathParam("productId"));

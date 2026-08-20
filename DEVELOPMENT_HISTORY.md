@@ -2821,6 +2821,15 @@ this, the function needs a cheaper path first — restricting to the relevant
 `source_id` before grouping — and that is an optimisation to carefully
 verified SQL, not a detail to slip into a UI change.
 
+> **Done 2026-08-20** (Part 31 addendum). That restriction now exists: a
+> single-product lookup narrows to one `source_id` before grouping and runs in
+> ~5ms rather than ~96ms, verified byte-identical across all 26,166 rows. It
+> was done on its own, with the invariants and test suite already in place —
+> which was the point of saying it should not ride along inside a UI change.
+> **Whether to mark ~19% of search rows is still an open product question**,
+> and Part 25's lesson is the one to weigh: a marker earns its place by being
+> withheld somewhere.
+
 It sits at the **top** edge of the picture because `.variant-band` already
 owns the bottom, and a card can carry both: `Aaron's Collection - 2009
 (Tsubasa Nakamura)` shows "Base printing's art" above and "2009 World
