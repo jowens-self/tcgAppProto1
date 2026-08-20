@@ -194,7 +194,7 @@ public class App {
      * DEVELOPMENT_HISTORY.md) so it's excluded everywhere, not just filtered
      * at query time. Pokemon-specific - see the call site.
      */
-    private static boolean isCodeCard(String name) {
+    static boolean isCodeCard(String name) {
         return name != null && name.regionMatches(true, 0, "Code Card", 0, "Code Card".length());
     }
 }
