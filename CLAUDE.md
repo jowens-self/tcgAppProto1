@@ -109,6 +109,18 @@ change should be validated before it touches 10,000 rows.
   (`SELECT status, COUNT(*) FROM card_images GROUP BY status`) before
   killing anything; failures are recorded as `failed`, which a later run
   retries.
+- **The 61 remaining `failed` image rows are an upstream gap, not a
+  retryable blip - do not keep re-running the importer for them.** Checked
+  2026-08-20: a full retry pass re-checked 22 of the 61 and every one failed
+  again, having already failed the day before. A transient burst would not
+  reproduce across days, and would not *cluster by set* - these do: 51 of 61
+  are McDonald's promo collections (`mcd14` 13, `mcd15` 14, `mcd17` 12,
+  `mcd18` 12), plus 7 `hsp` and 1 `ecard2`. pokemontcg.io lists the cards
+  (a `source_id` matched) but does not serve the images. Retrying costs ~6
+  requests each against a free community API for no expected gain, which is
+  the opposite of the etiquette this project owes them. The 61 are worth
+  0.2% coverage; leave them unless the upstream gap is known to have been
+  filled.
 
 ---
 
