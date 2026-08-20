@@ -44,12 +44,24 @@ public final class ImageDir {
      *         because every alternative here fails silently.
      */
     public static Path resolve() {
-        String configured = System.getenv("CARDTRACKER_IMAGE_DIR");
+        return resolve(Path.of("").toAbsolutePath().normalize(),
+                       System.getenv("CARDTRACKER_IMAGE_DIR"));
+    }
+
+    /**
+     * The decision itself, with the working directory and the configured path
+     * passed in rather than read from the process.
+     *
+     * Package-private purely so it can be tested: {@code user.dir} cannot be
+     * changed once a JVM is running, so a test that could not supply its own
+     * cwd would have to reimplement this rule to check it - and a test that
+     * reimplements the thing it is testing proves nothing.
+     */
+    static Path resolve(Path cwd, String configured) {
         if (configured != null && !configured.isBlank()) {
             return Path.of(configured).toAbsolutePath().normalize();
         }
 
-        Path cwd = Path.of("").toAbsolutePath().normalize();
         for (String marker : ROOT_MARKERS) {
             if (!Files.exists(cwd.resolve(marker))) {
                 throw new IllegalStateException(

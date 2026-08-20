@@ -180,17 +180,27 @@ public class TcgCsvPriceSource implements PriceSource {
         if (res.statusCode() != 200) {
             throw new IllegalStateException("HTTP " + res.statusCode() + " for " + url);
         }
-        String body = res.body().trim();
+        return parseLastUpdated(res.body());
+    }
+
+    /**
+     * Split out from {@link #dataAsOf()} so the parsing can be tested without
+     * a request - this project owes tcgcsv no traffic from a test suite.
+     *
+     * Package-private for that reason only.
+     */
+    static LocalDate parseLastUpdated(String body) {
+        String trimmed = body == null ? "" : body.trim();
         try {
             return OffsetDateTime
-                    .parse(body, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ"))
+                    .parse(trimmed, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ"))
                     .withOffsetSameInstant(ZoneOffset.UTC)
                     .toLocalDate();
         } catch (DateTimeParseException e) {
             // Refuse rather than guess. Falling back to the local clock here
             // would reinstate exactly the bug this method exists to remove.
             throw new IllegalStateException(
-                    "Could not read the mirror's last-updated timestamp from \"" + body
+                    "Could not read the mirror's last-updated timestamp from \"" + trimmed
                     + "\". Refusing to date a pull from the local clock instead - that is"
                     + " what wrote a duplicate day on 2026-08-20.", e);
         }
