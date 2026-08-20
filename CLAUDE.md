@@ -436,7 +436,12 @@ Rules it establishes, worth keeping:
   (`... [Professor Magnolia] - 223`); and `is_variant_word()` is mirrored
   in Java as `ImportCardImages.isVariantWord()` so the rule deciding a
   row's label and the rule deciding its image cannot drift - change both
-  or neither. Parts 22, 25, 26.
+  or neither, then run
+  `sql/checks/is_variant_word_matches_its_java_port.sql`. **Both trim their
+  own argument** (Part 30): relying on callers to btrim first left 81 of
+  2,547 real tokens disagreeing once padded, and note bare `btrim(x)` strips
+  spaces only where Java's `trim()` also takes tabs and newlines - the
+  character set in that function is deliberate, not decoration. Parts 22, 25, 26.
 - **Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03

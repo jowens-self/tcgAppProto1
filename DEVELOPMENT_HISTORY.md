@@ -46,9 +46,10 @@ origin through that date, then continuing forward from there).
 27. [Part 27 — The test Part 26 said did not exist](#part-27--the-test-part-26-said-did-not-exist)
 28. [Part 28 — Corrections that stopped at the docs](#part-28--corrections-that-stopped-at-the-docs)
 29. [Part 29 — Spending the reserved warning](#part-29--spending-the-reserved-warning)
-30. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-31. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-32. [What's still open](#whats-still-open)
+30. [Part 30 — The mirror nothing was holding up](#part-30--the-mirror-nothing-was-holding-up)
+31. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+32. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+33. [What's still open](#whats-still-open)
 
 ---
 
@@ -2860,6 +2861,94 @@ told the reader nothing; this band appears on 4,898 of 26,166 and is silent on
 the 155 undetermined ones, so its presence carries information. The
 discipline that made it useful was refusing to show it where the answer is
 merely unknown.
+
+---
+
+## Part 30 — The mirror nothing was holding up
+
+CLAUDE.md has said since Part 26 that `is_variant_word()` and
+`ImportCardImages.isVariantWord()` are a "change both or neither" pair,
+because one decides a row's label and the other decides its image, and a
+disagreement means the caption and the picture were chosen by different
+rules. Nothing had ever checked that they agree. This project has no test
+framework at all, so the claim rested entirely on whoever last edited one
+remembering the other existed.
+
+Reading them side by side, the regexes are character-for-character identical
+(`[A-Za-z]`, `^[A-Za-z]{0,4}[0-9]+[A-Za-z]?$`) and Java's `matches()` is a
+full match, matching the SQL anchors. One line differed: **Java trims its
+argument, SQL did not.**
+
+### Checking rather than reasoning about it
+
+The tempting move is to reason from that difference to a verdict. Instead
+both were run over the real corpus — every trailing `[...]` and `(...)`
+token in `products`, 2,547 distinct — with the Java method reached by
+reflection, since it is package-private.
+
+**Zero disagreements.** The mirror was intact, because `variant_label()`
+btrims before both of its calls. Then the same 2,547 tokens padded with one
+space either side: **81 disagreements**, every one of them SQL calling
+something a variant that Java correctly refuses. And they are not arbitrary
+— they are precisely the two shapes the rules exist to exclude:
+
+```
+DISAGREE  token=[ Z ]       sql=true  java=false
+DISAGREE  token=[ XY73 ]    sql=true  java=false
+```
+
+`Z` is the `Unown [A]`..`[Z]` bug, the one the length floor was added for.
+`XY73` is the `Latios EX (XY72)` bug, the one the card-code test was added
+for. Both come back in full the first time a caller forgets to btrim.
+
+So the fix went inside the function, where the Java port keeps it: a
+qualifier test that only works when called politely is one bad call away
+from being wrong, and the whole point of a mirrored rule is that neither
+copy depends on its surroundings.
+
+### The check found the bug in the fix
+
+The obvious patch was bare `btrim(p_token)`. The new check file disagreed:
+`verdict_ignores_tabs_and_newlines` came back `f`.
+
+**Postgres `btrim(x)` strips spaces only.** Java's `String.trim()` removes
+everything at or below `U+0020`, tabs and newlines included. So the one
+argument form closed the space gap and left `E'\tZ\n'` reading `true` in
+SQL and `false` in Java — a smaller version of the same bug, and one that
+would have been committed with a passing-looking commit message, because the
+2,547-token corpus contains no tabs.
+
+The fix takes an explicit set, `btrim(x, E' \t\n\r\f\v')`. Java also
+strips control characters below `U+0020` that are not in that set; those do
+not occur in this catalog, and the check pins the cases that do.
+
+That is the part worth keeping about check files: this one earned its place
+inside an hour by failing against the change that created it.
+
+### What it cost to be sure
+
+`is_variant_word()` feeds `variant_label()`, which is on screen. The change
+is provably invisible: `variant_label()` was captured for all 38,587
+products before the edit and compared after — **byte-identical**, twice
+(once per revision of the fix). Parity was re-confirmed against Java on the
+plain corpus, the padded corpus, and eleven tab/newline cases by hand. All
+three check files pass.
+
+One false alarm is worth recording, because it looked far worse than the
+real bug. Running the tab/newline corpus through the comparison harness
+reported **2,163 disagreements out of 5,094** — from 2,547 tokens. The count
+being double the input was the tell: the harness read tab-separated lines,
+and tokens containing a literal newline split into two. The harness was
+broken, not the code, which the eleven hand-checked cases then confirmed.
+A number that cannot be explained is not a result yet, and "checked" being
+twice "input" is the kind of arithmetic that says so before any debugging.
+
+**The pattern worth keeping:** "these two must stay in sync" is a comment,
+not a mechanism. Both copies here were correct, so a reviewer comparing them
+would have signed it off — the defect was not in either implementation but
+in the *contract between them*, which said nothing about who trims. Latent
+divergence needs a corpus and an executable comparison to find; reading is
+not enough, and neither is agreement on the inputs that happen to occur.
 
 ---
 
