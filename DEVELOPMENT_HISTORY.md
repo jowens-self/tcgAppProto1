@@ -45,9 +45,10 @@ origin through that date, then continuing forward from there).
 26. [Part 26 — Fixing the matcher, and refusing to guess the verdict](#part-26--fixing-the-matcher-and-refusing-to-guess-the-verdict)
 27. [Part 27 — The test Part 26 said did not exist](#part-27--the-test-part-26-said-did-not-exist)
 28. [Part 28 — Corrections that stopped at the docs](#part-28--corrections-that-stopped-at-the-docs)
-29. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-30. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-31. [What's still open](#whats-still-open)
+29. [Part 29 — Spending the reserved warning](#part-29--spending-the-reserved-warning)
+30. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+31. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+32. [What's still open](#whats-still-open)
 
 ---
 
@@ -2775,6 +2776,90 @@ because nothing re-reads them on purpose. Part 27 established that "no
 mechanical test exists" is a statement about what someone thought to try;
 this part is the same shape one level up. `git show --stat` on the commit
 that made a correction is a cheap way to ask whether it reached far enough.
+
+---
+
+## Part 29 — Spending the reserved warning
+
+`card_image_provenance()` had been correct and unread since Part 27: eleven
+invariants passing, 21,113 `own_art` / 4,898 `base_art` / 155 `unknown`, and
+not one caller outside SQL. This part connected it.
+
+### The reservation it was built to satisfy
+
+Part 25 removed an amber corner wedge from the search rows. The wedge marked
+every product carrying a variant label — 12,200 of them — on the theory that a
+labelled printing might be showing another card's picture. It was pulled
+because at the time **nothing could tell which ones actually were**, so it
+warned uniformly about a condition it could not detect. What survived was a
+note in `search.css` reserving `--warn` for "a picture that is genuinely
+another printing's art - which nothing currently qualifies for."
+
+That sentence was a promise with a precondition, and Part 27 met it. 4,898
+rows now qualify by name.
+
+### Only one of the three verdicts is a warning
+
+`base_art` gets the band. The other two deliberately get nothing:
+
+* `own_art` is the picture being right. There is nothing to say.
+* `unknown` is an **open question, not a suspicion.** Marking it would
+  recreate the exact Part 25 error one category over — decorating rows
+  because something is undetermined rather than because something is known.
+  The 155 stay silent until the vocabulary settles them.
+
+### Where it went, and where it deliberately did not
+
+The band renders in the detail view only, on the artwork itself. Not in the
+result rows, and the reason is measured rather than aesthetic: the function
+costs ~90ms per product because a verdict depends on its whole `source_id`
+group, so it builds every group before filtering to one. A 50-row page would
+spend 4.5 seconds to mark roughly a fifth of itself. If the grid ever wants
+this, the function needs a cheaper path first — restricting to the relevant
+`source_id` before grouping — and that is an optimisation to carefully
+verified SQL, not a detail to slip into a UI change.
+
+It sits at the **top** edge of the picture because `.variant-band` already
+owns the bottom, and a card can carry both: `Aaron's Collection - 2009
+(Tsubasa Nakamura)` shows "Base printing's art" above and "2009 World
+Championship" below, which is the whole story in two lines.
+
+The owner printing's name was in the band for one revision and came straight
+back out. At the detail image's width it rendered as `Base printing's art —
+Aar...`, so the band spent its last third on an ellipsis. The caution is the
+message and the name is the detail, so the name moved to the tooltip.
+
+No SQL changed. The function already accepted a `p_product_id`, so the whole
+feature is a repository method, an endpoint, and a band.
+
+### Checking it against the case it was built for
+
+The demonstration is better than a passing assertion. Searching
+`Aaron's Collection` returns the plain Rising Rivals printing and two World
+Championship reprints. Select the 2009 reprint and the band appears; select
+the plain printing and it does not — **and the two render the identical
+picture.** The screen is showing you the borrowing at the same time it tells
+you about it.
+
+A `wasNull()` bug was caught before it ever ran. `owner_product_id` is null
+for every `own_art` row, and the null test had been written inline inside the
+record constructor, several `get` calls after the one it was meant to
+describe — so it would have reported on `provenance` instead and turned every
+absent owner into product 0. JDBC's `wasNull()` refers to the most recent get
+on that `ResultSet`; a constructor argument list is a sequence of gets, not a
+snapshot. The live `own_art` response returning `"ownerProductId": null`
+is the check that it is right.
+
+The One Piece path was verified too, since it exercises the opposite branch:
+no image exists at all, so the provenance call 404s, the band never renders,
+and the console shows the same ordinary 404 the thumbnail already produces.
+
+**The pattern worth keeping:** a marker earns its place by being *withheld*
+somewhere. The wedge in Part 25 appeared on every labelled card and therefore
+told the reader nothing; this band appears on 4,898 of 26,166 and is silent on
+the 155 undetermined ones, so its presence carries information. The
+discipline that made it useful was refusing to show it where the answer is
+merely unknown.
 
 ---
 

@@ -41,8 +41,8 @@ from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
 asking which other products claim the same catalog card - 91% of the
 6,820 qualifier-stripped rows resolve structurally; the owner's
 vocabulary calls in `image_qualifier_class` settle the rest, 155 still
-open (Part 27 + addendum).
-Nothing reads it in the UI yet.
+open (Part 27 + addendum). **That now reaches the UI** - the search detail
+view bands borrowed artwork, and only borrowed artwork (Part 29).
 
 **Check state before assuming anything** - `./status.sh` reports what's
 running, image-import progress and data freshness in one shot. The backlog
@@ -424,10 +424,10 @@ Rules it establishes, worth keeping:
   What survives is the ~21% that reformats rather than repeats:
   `Night Stretcher - 2025 (Riley McKay)` -> `2025 World Championship`.
   **Styling is deliberately quiet** - an ordinary chip beside card number
-  and rarity, because it is identity, not a warning. **`--warn` is
-  reserved, not retired:** it belongs to a genuinely borrowed image, and
-  nothing can earn it until the `stripped_qualifier` vocabulary in the
-  Backlog is classified.
+  and rarity, because it is identity, not a warning. **`--warn` has been spent, and not
+  on this chip:** it belongs to a genuinely borrowed image, and since Part 29
+  it marks exactly that - `.art-warn-band` on the detail artwork, driven by
+  `card_image_provenance()`. This chip stays quiet.
   Three internals are load-bearing, all bugs first: a trailing bracket
   faces the same validity test as a parenthetical (`is_variant_word()`,
   shared by both - otherwise all 26 `Unown [A]`..`[Z]` get a one-letter
@@ -619,8 +619,9 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   **computed, never stored**: a later import, or one more row in the
   vocabulary table, would silently invalidate a stored value - the same
   argument that keeps all-time-high computed. Invariants (every column must read
-  `t`): `sql/checks/card_image_provenance_invariants.sql`. Nothing is
-  surfaced in the UI yet, still deliberately (Part 25). Full reasoning:
+  `t`): `sql/checks/card_image_provenance_invariants.sql`. `base_art` is
+  surfaced in the UI as of Part 29; `unknown` deliberately is not, because an
+  undetermined verdict is an open question rather than a caution. Full reasoning:
   DEVELOPMENT_HISTORY.md Part 27 and its addendum.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
