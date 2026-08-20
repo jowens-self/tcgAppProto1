@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import {
   Game,
   GameSet,
+  ImageProvenance,
   ItemSearchResult,
   ItemVariant,
   Mover,
@@ -103,6 +104,17 @@ export class CardTrackerApi {
    */
   imageUrl(productId: number): string {
     return `${this.base}/items/${productId}/image`;
+  }
+
+  /**
+   * Whose artwork this card's thumbnail shows. Its own call rather than part
+   * of item(): it costs ~90ms server-side and only the detail view needs it.
+   * 404s when we hold no image, which is ordinary - callers swallow it.
+   */
+  imageProvenance(productId: number): Observable<ImageProvenance> {
+    return this.http.get<ImageProvenance>(
+      `${this.base}/items/${productId}/image/provenance`,
+    );
   }
 
   item(productId: number): Observable<ItemSearchResult> {

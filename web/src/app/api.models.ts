@@ -180,3 +180,29 @@ export interface SetOverview {
   startDate: string;
   endDate: string;
 }
+
+/**
+ * Whose artwork a card's thumbnail actually shows, from
+ * GET /api/items/{id}/image/provenance. A 404 means we hold no image at all,
+ * which the caller treats as "nothing to say," not as an error.
+ *
+ * One catalog card is one picture, so a printing with a stamp or a foil
+ * treatment has no photo of its own and matches the base printing's instead.
+ * Only `base_art` is worth showing the user: it is the single case where the
+ * picture on screen is provably not this card. `unknown` is deliberately
+ * silent - an unclassified qualifier is an open question, not a warning.
+ */
+export interface ImageProvenance {
+  productId: number;
+  name: string;
+  sourceId: string;
+  /** The word dropped to find a picture - what this printing has that the photo lacks. */
+  strippedQualifier: string | null;
+  /** 'treatment', 'identity', or null when not yet classified. */
+  qualifierClass: string | null;
+  claimants: number;
+  provenance: 'own_art' | 'base_art' | 'unknown';
+  /** The printing the picture belongs to. Null unless borrowed. */
+  ownerProductId: number | null;
+  ownerName: string | null;
+}

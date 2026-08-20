@@ -163,6 +163,19 @@
             (load)="imageLoaded(selected()!.productId)"
             (error)="imageFailed(selected()!.productId)"
           />
+          <!-- The caution Part 25 reserved --warn for and could not yet
+               spend: this picture is provably another printing's, not this
+               card's. Only base_art earns it - own_art is correct and
+               'unknown' is an open question, and neither is a warning.
+               Sits at the top so it never collides with the variant band.
+               The owner printing's name lives in the tooltip, not the band:
+               at this thumbnail's width it truncated to "Aar..." and the
+               caution is the message, the name is the detail. -->
+          @if (provenance()?.provenance === 'base_art') {
+            <span class="art-warn-band" [title]="provenanceTooltip()">
+              Base printing's art
+            </span>
+          }
           @if (variantLabelAddsInfo(selected()!.name, selected()!.variantLabel)) {
             <figcaption class="variant-band" [title]="selected()!.variantLabel!">
               {{ selected()!.variantLabel }}

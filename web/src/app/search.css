@@ -194,7 +194,10 @@
    which made it the loudest thing in the row while usually just repeating
    the card's own name, and implied doubt about artwork that is correct.
    --warn is reserved for a real caution - a picture that is genuinely
-   another printing's art - which nothing currently qualifies for. Part 25. */
+   another printing's art. That reservation is now spent, but NOT here: it
+   went to .art-warn-band on the detail artwork, where card_image_provenance()
+   can prove the picture is borrowed. This chip still says nothing about
+   artwork. Parts 25, 27. */
 .tag.variant {
   border-color: var(--line);
   color: var(--muted);
@@ -250,6 +253,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Top edge, opposite .variant-band, so a card can carry both without them
+   stacking. Filled rather than outlined - unlike the quiet .tag.variant chip,
+   this one is a genuine caution and is meant to be read before the picture
+   is trusted. Fixed colours for the same reason as .variant-band: it floats
+   on artwork, not on a themed surface. */
+.art-warn-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  padding: 0.28rem 0.35rem;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(1.5px);
+  color: var(--warn);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .detail-img,
   .thumb {

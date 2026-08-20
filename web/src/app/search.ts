@@ -3,7 +3,13 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
-import { Game, ItemSearchResult, ItemVariant, PricePoint } from './api.models';
+import {
+  Game,
+  ImageProvenance,
+  ItemSearchResult,
+  ItemVariant,
+  PricePoint,
+} from './api.models';
 import { PriceChart } from './price-chart';
 import { variantLabelAddsInfo } from './variant-label';
 
@@ -46,6 +52,13 @@ export class Search {
   protected readonly activeVariant = signal<string | null>(null);
   protected readonly history = signal<PricePoint[]>([]);
   protected readonly loadingDetail = signal(false);
+
+  /**
+   * Provenance of the selected card's picture, or null when we hold no image
+   * or have not heard back yet. Only 'base_art' renders anything - see the
+   * band in search.html.
+   */
+  protected readonly provenance = signal<ImageProvenance | null>(null);
 
   /**
    * product_ids whose thumbnail 404'd. Roughly 40% of Pokemon singles have
@@ -165,7 +178,19 @@ export class Search {
     this.variants.set([]);
     this.history.set([]);
     this.activeVariant.set(null);
+    this.provenance.set(null);
     this.loadingDetail.set(true);
+
+    // Fire-and-forget alongside variants: a missing verdict must never hold
+    // up the prices, which are what the screen is actually for. A 404 is the
+    // ordinary "we have no image" case and stays silent.
+    this.api.imageProvenance(item.productId).subscribe({
+      next: (p) => {
+        // The user may have clicked another card while this was in flight.
+        if (this.selected()?.productId === p.productId) this.provenance.set(p);
+      },
+      error: () => this.provenance.set(null),
+    });
 
     this.api.variants(item.productId).subscribe({
       next: (v) => {
@@ -184,6 +209,23 @@ export class Search {
         this.error.set('Could not load variants for this item.');
       },
     });
+  }
+
+  /**
+   * Spells out what the band means. Built here rather than in the template
+   * because it is three conditional clauses, and a title attribute assembled
+   * inline is the kind of thing that quietly loses a space.
+   */
+  protected provenanceTooltip(): string {
+    const p = this.provenance();
+    if (!p || p.provenance !== 'base_art') return '';
+    const printing = p.strippedQualifier ? ` (${p.strippedQualifier})` : '';
+    const shown = p.ownerName ? `"${p.ownerName}"` : 'another printing';
+    return (
+      `Our image source has no photo of this printing${printing}, ` +
+      `so ${shown} is shown instead. The prices are this card's; ` +
+      `the picture may not be.`
+    );
   }
 
   protected showVariant(productId: number, subType: string): void {
