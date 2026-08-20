@@ -21,28 +21,32 @@ wrong today; all are wrong for a shipped app.
 
 ---
 
-## Where the project actually is (updated 2026-08-19)
+## Where the project actually is (updated 2026-08-20)
 
 Built and working: daily price ingest for Pokemon (3) and One Piece (68)
 with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
 in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
 front end in `web/` with three screens (Card/Product Search, Movers,
-Sets); and locally-cached Pokemon card images.
+Sets); locally-cached Pokemon card images at 94.1% coverage; and as of
+2026-08-20 an actual test suite (see "Tests" below).
 
-Behaviour changed 2026-08-18/19, worth knowing before reading the code:
-smoothing is a **median**, never a mean (Part 24 addendum); the Sets screen
-corrects one-day price errors and says so per row (Part 24); variant labels
-appear only when not already in the card's name (Part 25); Movers and Sets
-**open on the largest tracked game, not "All games"** - picked from
-`productCount`, never a hardcoded category id (Part 25/f409cc8); and the
-image matcher was fixed and re-run, taking Pokemon singles image coverage
-from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
-`card_image_provenance()` decides whose artwork a card actually shows by
-asking which other products claim the same catalog card - 91% of the
-6,820 qualifier-stripped rows resolve structurally; the owner's
-vocabulary calls in `image_qualifier_class` settle the rest, 155 still
-open (Part 27 + addendum). **That now reaches the UI** - the search detail
-view bands borrowed artwork, and only borrowed artwork (Part 29).
+Behaviour worth knowing before reading the code, newest first:
+
+- **The live pull dates itself from the mirror, not from any clock**
+  (`PriceSource.dataAsOf()`). See the Data invariants section - this is the
+  rule most likely to be "simplified" back into a bug.
+- **Movers and Sets offer 1 / 7 / 14 / 30 / 90 / 180 days / 1 year**, and
+  `item_movers()` clamps its smoothing to the window so short windows never
+  compare overlapping medians (Part 31).
+- **Borrowed artwork is banded in the search detail view**, and only
+  borrowed artwork - `card_image_provenance()` reads 21,113 `own_art`,
+  4,898 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
+  (Part 29).
+- Smoothing is a **median**, never a mean (Part 24); the Sets screen
+  corrects one-day price errors and says so per row (Part 24); variant
+  labels appear only when not already in the card's name (Part 25); Movers
+  and Sets open on the largest tracked game, picked from `productCount` and
+  never a hardcoded id (Part 25).
 
 **Check state before assuming anything** - `./status.sh` reports what's
 running, image-import progress and data freshness in one shot. The backlog
@@ -182,9 +186,10 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
   Movers uses. Detect it with a per-date `COUNT(*)`/`SUM(market_price)`
   signature compared against the previous day. Note `price_snapshots` is
   **Resolved 2026-08-20 on the owner's instruction:** the 51,287 rows and both
-  `ingest_runs` rows were deleted, so history now ends at 08-19 - genuinely
-  the newest day observed - and the real 08-20 can land after the refresh
-  instead of being skipped as already done. The delete ran in a transaction
+  `ingest_runs` rows were deleted, so history ended at 08-19 - genuinely the
+  newest day observed. **The real 2026-08-20 landed at 21:25 UTC the same day**,
+  after the mirror's 20:05 refresh: 51,308 rows, 29.5% of prices actually
+  different from 08-19 (versus 0% for the phantom day), 610 requests. The delete ran in a transaction
   behind a guard that aborted unless every column of every row matched 08-19;
   it reported 0 differing rows before committing.
   **This is the only deliberate deletion from `price_snapshots` to date.**
@@ -563,52 +568,35 @@ Parts 9 and 10.
 ## Tests (added 2026-08-20 - there were none before)
 
 ```
-mvn test                    # 110 Java tests
+mvn test                    # 110 Java tests (also run by `mvn package`)
 cd web && npm test          # 9 front-end tests (vitest)
-./sql/checks/run-all.sh     # the SQL invariants
+./sql/checks/run-all.sh     # the SQL invariants; needs the container up
 ```
 
-Tests needing Postgres **skip** rather than fail when no container is up, so
-`mvn test` stays useful without Docker. Start it with `docker compose up -d`
-to run them.
+Tests needing Postgres **skip** rather than fail when no container is running,
+so `mvn test` stays useful without Docker.
 
-`mvn package` runs the Java tests too, so a broken build now fails there.
+Four rules shape the suite. The rest - what each tier covers, and what is
+deliberately left to human judgment - is DEVELOPMENT_HISTORY.md Part 31.
 
 - **No test may contact tcgcsv.com or pokemontcg.io.** Both are free, no-SLA
   services with a ban threshold, and a suite runs far more often than a daily
   pull. `parseLastUpdated()` is split out of `dataAsOf()` precisely so the
   parsing is covered without a request; keep it that way.
-- **No test may touch the working database.** The Java tests need no DB at
-  all. When Tier 2 (SQL behaviour against fixtures) arrives it gets a
-  disposable database, as Part 10's scratch container did.
-- **`SourceGuardsTest` enforces CLAUDE.md's hard rules mechanically** -
+- **No test may touch the working database.** `TestDatabase` builds a
+  throwaway one per class from the real `schema.sql`/`functions.sql` and drops
+  it. These insert prices, and `price_snapshots` is append-only.
+- **A test that reimplements the thing it tests proves nothing.** Three entry
+  points (`ImageDir.resolve`, `parseLastUpdated`, `ApiServer.createApp`) take
+  their inputs as parameters so the real decision can be called rather than
+  mirrored. Fixtures are hand-sized for the same reason: a snapshot pins
+  whatever the code does today, bug included.
+- **`SourceGuardsTest` enforces this file's hard rules mechanically** -
   permitted hosts, no third-party `<img>`, append-only, no bare
-  `LocalDate.now()`, the pull dating itself from `dataAsOf()`. If you are
-  about to add an outbound host, that test fails first, which is the point.
-  It also checks every backticked identifier in THIS FILE still exists; a
-  name deliberately cited as history goes in `DELETED_AND_CITED_AS_HISTORY`
-  with the quoting sentence in a comment.
-- **A test that reimplements the thing it tests proves nothing.** Three
-  entry points (`ImageDir.resolve`, `parseLastUpdated`, `ApiServer.createApp`)
-  take their inputs as parameters specifically so the real decision can be
-  called rather than mirrored or approximated.
-- **`TestDatabase` builds a throwaway database per test class** from the real
-  `schema.sql` and `functions.sql`, and drops it afterwards. Never point a
-  test at the working database: these insert prices, and `price_snapshots` is
-  append-only. Fixtures are hand-sized so expected values are arithmetic, not
-  snapshots - a snapshot pins whatever the code currently does, including a
-  bug.
-- **`VariantWordParityTest` runs BOTH sides of the mirrored rule** and compares
-  in-process. Its padded and tab/newline cases are the load-bearing ones:
-  against the pre-fix function, plain tokens still agreed 100% because every
-  caller btrims, while padded tokens disagreed 15 ways.
-- Two behaviours the tests pin that the docs described loosely:
-  `numberDigits` drops leading zeros because they are padding (`004/102`
-  matches card 4), and `strippedQualifier` lowercases - "verbatim" means it
-  never folds `semi-finalist` into `semi finalist`, not that case survives.
-
-The full tiered plan, including what is deliberately left to human judgment,
-is in DEVELOPMENT_HISTORY.md Part 31.
+  `LocalDate.now()`, the pull dating itself from `dataAsOf()`, and that every
+  backticked identifier in THIS FILE still exists. Add an outbound host and it
+  fails first, which is the point. A name deliberately cited as history goes
+  in `DELETED_AND_CITED_AS_HISTORY` with the quoting sentence in a comment.
 
 ## Commit message style (decided 2026-08-14)
 
