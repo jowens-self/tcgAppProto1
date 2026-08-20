@@ -1,5 +1,6 @@
 package com.cardtracker.db;
 
+import com.cardtracker.model.ImageProvenance;
 import com.cardtracker.model.ItemSearchResult;
 import com.cardtracker.model.ItemVariant;
 import com.cardtracker.model.Mover;
@@ -98,6 +99,43 @@ public class QueryRepository {
                 }
             }
             return out;
+        }
+    }
+
+    /**
+     * Whose artwork one product's thumbnail shows, or null when we hold no
+     * image for it (no row, or the match failed) - which is an ordinary
+     * outcome, not an error.
+     *
+     * Costs ~90ms because a verdict depends on the whole source_id group, so
+     * the function builds every group before filtering to this one. Fine for
+     * a single card being looked at; do not call it in a loop over a result
+     * page without giving the function a cheaper path first.
+     */
+    public ImageProvenance imageProvenance(int productId) throws Exception {
+        String sql = "SELECT product_id, name, source_id, stripped_qualifier, "
+                + "qualifier_class, claimants, provenance, owner_product_id, owner_name "
+                + "FROM card_image_provenance(NULL, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                // wasNull() reports on the most recent get, so the null test
+                // has to happen here and not inline below - by then several
+                // more columns have been read.
+                int ownerId = rs.getInt("owner_product_id");
+                Integer ownerProductId = rs.wasNull() ? null : ownerId;
+                return new ImageProvenance(
+                        rs.getInt("product_id"),
+                        rs.getString("name"),
+                        rs.getString("source_id"),
+                        rs.getString("stripped_qualifier"),
+                        rs.getString("qualifier_class"),
+                        rs.getInt("claimants"),
+                        rs.getString("provenance"),
+                        ownerProductId,
+                        rs.getString("owner_name"));
+            }
         }
     }
 

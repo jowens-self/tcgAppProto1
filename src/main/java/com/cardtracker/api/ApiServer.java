@@ -185,6 +185,20 @@ public class ApiServer {
             ctx.json(variants);
         });
 
+        // Whose artwork this card's thumbnail actually shows. Separate from
+        // /items/{id} deliberately: it costs ~90ms where that costs ~1ms, and
+        // only the detail view needs it, so folding it into search would make
+        // every result page pay for something a list never shows.
+        // 404 means we hold no image for the product, which is ordinary.
+        app.get("/api/items/{productId}/image/provenance", ctx -> {
+            int id = pathId(ctx.pathParam("productId"));
+            var prov = withRepo(url, user, pass, repo -> repo.imageProvenance(id));
+            if (prov == null) {
+                throw new NotFoundResponse("No image provenance for product " + id);
+            }
+            ctx.json(prov);
+        });
+
         // ?subType=Holofoil&from=2024-02-08&to=2026-08-14
         // subType is required and deliberately has no default: picking one
         // for the caller would mean guessing which market they meant, and
