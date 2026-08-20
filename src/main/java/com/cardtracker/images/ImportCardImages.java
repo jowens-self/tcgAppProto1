@@ -44,8 +44,9 @@ import java.util.regex.Pattern;
  * CLAUDE.md), and it applies to a permitted host too: fetch once, serve
  * forever, no per-view traffic to anyone.
  *
- * **Coverage runs ~60% - but that number is NOT a ceiling, it is a bug.**
- * Measured: 16,841 of 27,807 Pokemon singles matched (60.6%). An earlier
+ * **Coverage is 94.1%, and the ~60% it sat at before was a bug, not a
+ * ceiling.** Measured then: 16,841 of 27,807 Pokemon singles matched
+ * (60.6%); after the two fixes below, 26,166. An earlier
  * version of this comment blamed the gap on the upstream catalog, claiming
  * "World Championship decks / jumbo / prize packs / promos are absent
  * entirely." **That claim is false** - audited 2026-08-18 against the
@@ -73,13 +74,28 @@ import java.util.regex.Pattern;
  * qualifier that had to be dropped is stored in
  * {@code card_images.stripped_qualifier}.
  *
- * That column is a FACT about the match, not a verdict on the artwork.
- * Whether a stripped qualifier means the picture is wrong has no mechanical
- * answer - "Cracked Ice Holo" is a foil treatment over existing art, while
- * "Delta Species" is card identity pokemontcg.io spells as "Aerodactyl δ" -
- * so the word is stored and the classification left to be made once, in SQL,
- * retroactively. Note this is decided at match time and never by comparing
- * set names: the two catalogs disagree on those.
+ * That column is a FACT about the match, not a verdict on the artwork -
+ * "Cracked Ice Holo" is a foil treatment over existing art, while "Delta
+ * Species" is card identity pokemontcg.io spells as "Aerodactyl δ". Storing
+ * the word rather than a verdict is what let the verdict be computed later
+ * without re-running an 80-minute import. Note the qualifier is decided at
+ * match time and never by comparing set names: the two catalogs disagree on
+ * those.
+ *
+ * **This part of Part 26 was superseded - do not re-derive it.** The comment
+ * here used to conclude that whether a stripped qualifier means the picture
+ * is wrong "has no mechanical answer." Part 27 found one: a pokemontcg.io
+ * card is one picture, so asking which OTHER products claim the same
+ * {@code source_id} settles most of it structurally, and the owner's
+ * treatment/identity calls in {@code image_qualifier_class} settle the rest.
+ * {@code card_image_provenance()} in sql/functions.sql combines the two. The
+ * verdict is computed there, never stored here.
+ *
+ * **Record the stripped word VERBATIM - do not normalise it in this class.**
+ * TCGplayer genuinely sells both "Semi-Finalist" and "Semi Finalist"
+ * printings, so folding them here would destroy a true fact about the catalog
+ * to tidy a lookup table. Spelling variants are reconciled at comparison
+ * time by {@code normalize_qualifier()} instead. Part 27.
  *
  * Use {@code --dry-run} to measure rules without writing or downloading
  * anything. It exists because the misses this records are permanent, and
