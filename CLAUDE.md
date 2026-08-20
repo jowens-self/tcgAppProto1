@@ -560,6 +560,40 @@ days before pulling today. Both verified end-to-end against an isolated
 scratch database, not just by code review - see DEVELOPMENT_HISTORY.md
 Parts 9 and 10.
 
+## Tests (added 2026-08-20 - there were none before)
+
+```
+mvn test                    # 55 Java tests, no database or network needed
+./sql/checks/run-all.sh     # the SQL invariants; needs the container up
+```
+
+`mvn package` runs the Java tests too, so a broken build now fails there.
+
+- **No test may contact tcgcsv.com or pokemontcg.io.** Both are free, no-SLA
+  services with a ban threshold, and a suite runs far more often than a daily
+  pull. `parseLastUpdated()` is split out of `dataAsOf()` precisely so the
+  parsing is covered without a request; keep it that way.
+- **No test may touch the working database.** The Java tests need no DB at
+  all. When Tier 2 (SQL behaviour against fixtures) arrives it gets a
+  disposable database, as Part 10's scratch container did.
+- **`SourceGuardsTest` enforces CLAUDE.md's hard rules mechanically** -
+  permitted hosts, no third-party `<img>`, append-only, no bare
+  `LocalDate.now()`, the pull dating itself from `dataAsOf()`. If you are
+  about to add an outbound host, that test fails first, which is the point.
+  It also checks every backticked identifier in THIS FILE still exists; a
+  name deliberately cited as history goes in `DELETED_AND_CITED_AS_HISTORY`
+  with the quoting sentence in a comment.
+- **A test that reimplements the thing it tests proves nothing.** Two methods
+  (`ImageDir.resolve`, `parseLastUpdated`) take their inputs as parameters
+  specifically so the real decision can be called rather than mirrored.
+- Two behaviours the tests pin that the docs described loosely:
+  `numberDigits` drops leading zeros because they are padding (`004/102`
+  matches card 4), and `strippedQualifier` lowercases - "verbatim" means it
+  never folds `semi-finalist` into `semi finalist`, not that case survives.
+
+The full tiered plan, including what is deliberately left to human judgment,
+is in DEVELOPMENT_HISTORY.md Part 31.
+
 ## Commit message style (decided 2026-08-14)
 
 Owner asked for tighter commit bodies that don't re-narrate what

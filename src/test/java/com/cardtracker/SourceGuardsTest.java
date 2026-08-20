@@ -282,8 +282,12 @@ class SourceGuardsTest {
 
         StringBuilder corpus = new StringBuilder();
         for (Path p : filesUnder("src/main/java", ".java")) corpus.append(read(p));
+        // Test sources count: CLAUDE.md legitimately points at the guards and
+        // their allowlists, and those are as real as anything in src/main.
+        for (Path p : filesUnder("src/test/java", ".java")) corpus.append(read(p));
         for (Path p : filesUnder("sql", ".sql")) corpus.append(read(p));
         for (Path p : filesUnder("web/src", ".ts", ".html", ".css")) corpus.append(read(p));
+        for (Path p : filesUnder("sql/checks", ".sh")) corpus.append(read(p));
         String all = corpus.toString();
 
         Set<String> missing = new HashSet<>();

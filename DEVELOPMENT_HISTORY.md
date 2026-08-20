@@ -47,9 +47,10 @@ origin through that date, then continuing forward from there).
 28. [Part 28 — Corrections that stopped at the docs](#part-28--corrections-that-stopped-at-the-docs)
 29. [Part 29 — Spending the reserved warning](#part-29--spending-the-reserved-warning)
 30. [Part 30 — The mirror nothing was holding up](#part-30--the-mirror-nothing-was-holding-up)
-31. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-32. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-33. [What's still open](#whats-still-open)
+31. [Part 31 — Tests, at last](#part-31--tests-at-last)
+32. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+33. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+34. [What's still open](#whats-still-open)
 
 ---
 
@@ -2949,6 +2950,111 @@ would have signed it off — the defect was not in either implementation but
 in the *contract between them*, which said nothing about who trims. Latent
 divergence needs a corpus and an executable comparison to find; reading is
 not enough, and neither is agreement on the inputs that happen to occur.
+
+---
+
+## Part 31 — Tests, at last
+
+Until 2026-08-20 this project had no test framework. Not a thin one — none:
+no JUnit dependency, no Surefire plugin, no `src/test` tree, zero `.spec.ts`
+files, and a `package.json` still advertising an `ng test` script whose runner
+had been pruned from devDependencies. `ProductPullTest` was the last test that
+existed and Part 13 deleted it, correctly, for skipping the very invariant it
+should have been guarding.
+
+What stood in for tests was prose. CLAUDE.md is unusually good prose — but it
+is advisory, and this session had just demonstrated three times over what that
+costs: Part 27's retraction reached two Markdown files and not the javadoc it
+was about; `is_variant_word` and its Java port had drifted in their *contract*
+while both copies stayed individually correct; and CLAUDE.md cited a class
+Part 13 had deleted, inside a hard invariant, for days.
+
+### Making the checks that already existed able to fail
+
+The three files in `sql/checks/` were correct the entire time. They only ever
+ran when someone remembered them, which is not a property a guarantee should
+rest on. `run-all.sh` runs all of them and exits non-zero on any false
+assertion.
+
+The only interesting property of a runner is whether it can go **red**, so
+that was checked directly rather than assumed: a deliberately failing check
+exits 1 and prints the offending row; a check whose SQL is broken exits 1
+rather than reporting a pass on empty output; and a check returning no rows is
+a failure, because it asserted nothing. Matching `f` as a whole field rather
+than a substring is what keeps a set legitimately named `Fossil` from tripping
+it.
+
+### The tests corrected the person writing them
+
+Tier 1 covers the pure string rules, where this project's defects have
+genuinely concentrated. Every case is a real printing — `Unown [A]`..`[Z]`,
+`Latios EX (XY72)`, `Aerodactyl (1)`, `Rillaboom V - SWSH014` — because each
+rule was added when a specific card broke something, and a test that drifts to
+synthetic inputs stops defending the thing it was written for.
+
+Five of the first 33 failed, and **all five were the test being wrong**:
+
+* `numberDigits("004")` returns `4`, not `004`. Leading zeros are padding, so
+  the printed `004/102` matches catalog card 4 — and they are dropped by
+  string rather than `parseInt` because a pathological run of digits would
+  overflow an int and the numeric value is never wanted.
+* `strippedQualifier` lowercases. CLAUDE.md says it records the word
+  "verbatim", which turns out to mean *it never folds spelling variants* —
+  `semi-finalist` and `semi finalist` stay distinct — not that it preserves
+  case.
+
+Both behaviours are correct, deliberate, and documented in the code itself.
+The tests now pin them, and the second one is worth noting for a different
+reason: "verbatim" was doing more work in the doc than the code actually
+promised, and only writing an assertion surfaced the gap.
+
+### Two refactors, for a reason worth stating
+
+`ImageDir.resolve()` and the `last-updated.txt` parsing were both split so the
+decision could be called directly: `resolve(cwd, configured)` and
+`parseLastUpdated(body)`.
+
+This was not tidying. `user.dir` cannot be changed once a JVM is running, so a
+test that could not supply its own working directory would have had to
+reimplement the marker rule and assert against its own copy — and **a test
+that reimplements the thing it is testing proves nothing**. The first draft of
+`ImageDirTest` did exactly that before it was thrown away. The parsing split
+has a second motive: tcgcsv is a free, no-SLA mirror with a documented ban
+threshold, and a test suite runs far more often than a daily pull, so no test
+here touches the network at all.
+
+The assertion that matters in each is the refusal. `ImageDir` must refuse
+**before** `createDirectories`, because the decoy tree left behind is what
+made the original bug invisible; `parseLastUpdated` must refuse rather than
+fall back to a clock, because that fallback is what wrote the phantom day.
+
+### Turning prose rules into failing builds
+
+The guard tier asserts facts about the codebase rather than its behaviour, and
+it is both the cheapest to write and the closest thing here to enforcement of
+the rules that actually matter: no outbound host beyond the three permitted
+ones, no `<img>` resolving anywhere but our own API, `price_snapshots` never
+the target of an UPDATE or `DO UPDATE`, no bare `LocalDate.now()`, the live
+pull's date coming from `dataAsOf()` and not a clock, no two `<option>`
+sharing an `[ngValue]`, and every identifier CLAUDE.md cites in backticks
+existing somewhere in the source.
+
+That last guard **failed on its first run**, naming `ProductPullTest` — the
+same stale reference fixed by hand hours earlier, now cited deliberately as
+history ("`ProductPullTest` did too, until Part 13 deleted it"). The fix was
+an explicit list of names-cited-as-history with the quoting sentence in a
+comment, not a pattern sniffing for words like "deleted" nearby. Same call as
+the tournament qualifier family in Part 27, same reason: a pattern would
+quietly excuse a genuinely stale reference that happened to sit in the wrong
+sentence.
+
+Fifty-five tests, all green, and the whole suite runs in under two seconds
+because nothing in it needs a database or a network.
+
+**The pattern worth keeping:** a rule that lives only in prose is enforced by
+whoever last read it. Every guard in this part existed as a clearly-written
+sentence in CLAUDE.md *before* the thing it forbids happened anyway. The
+sentence was not the problem — the absence of anything that could fail was.
 
 ---
 
