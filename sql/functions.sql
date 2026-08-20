@@ -273,10 +273,26 @@ DROP FUNCTION IF EXISTS item_search_core(TEXT, TEXT, INTEGER, BOOLEAN, INTEGER, 
 --   * must be 3+ characters    - rejects "Unown [A]" .. "[Z]"
 CREATE OR REPLACE FUNCTION is_variant_word(p_token TEXT)
 RETURNS BOOLEAN AS $$
-    SELECT p_token IS NOT NULL
-       AND p_token ~ '[A-Za-z]'
-       AND p_token !~ '^[A-Za-z]{0,4}[0-9]+[A-Za-z]?$'
-       AND length(p_token) >= 3;
+    -- Trims here, not just in the callers. Its Java port
+    -- (ImportCardImages.isVariantWord) trims internally, so without this the
+    -- two agree only for as long as every caller remembers to btrim first -
+    -- and both of the bugs these rules exist to stop come straight back when
+    -- one doesn't: ' Z ' clears the length floor (all 26 "Unown [A]".."[Z]")
+    -- and ' XY73 ' misses the card-code test ("Latios EX (XY72)"). Measured
+    -- 2026-08-20: 81 of 2,547 real tokens flip verdict when padded.
+    --
+    -- The character set is explicit because bare btrim(x) strips SPACES ONLY,
+    -- while Java's String.trim() also removes tabs and newlines - so the
+    -- obvious one-argument btrim() left the two still disagreeing on E'\tZ\n'.
+    -- Java additionally strips every control char below U+0020; those do not
+    -- occur in this catalog, and the check file pins the whitespace cases.
+    --
+    -- No effect on current callers, which already btrim - verified by
+    -- comparing variant_label() across all 38,587 products, unchanged.
+    SELECT btrim(p_token, E' \t\n\r\f\v') IS NOT NULL
+       AND btrim(p_token, E' \t\n\r\f\v') ~ '[A-Za-z]'
+       AND btrim(p_token, E' \t\n\r\f\v') !~ '^[A-Za-z]{0,4}[0-9]+[A-Za-z]?$'
+       AND length(btrim(p_token, E' \t\n\r\f\v')) >= 3;
 $$ LANGUAGE sql IMMUTABLE;
 
 -- Human-readable variant qualifier from a product name, or NULL when the
