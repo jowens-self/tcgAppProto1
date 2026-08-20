@@ -36,7 +36,12 @@ appear only when not already in the card's name (Part 25); Movers and Sets
 **open on the largest tracked game, not "All games"** - picked from
 `productCount`, never a hardcoded category id (Part 25/f409cc8); and the
 image matcher was fixed and re-run, taking Pokemon singles image coverage
-from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26).
+from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
+`card_image_provenance()` decides whose artwork a card actually shows by
+asking which other products claim the same catalog card - 91% of the
+6,820 qualifier-stripped rows resolve without a domain call, and it
+showed `stripped_qualifier` alone overstates the problem ~3.5x (Part 27).
+Nothing reads it in the UI yet.
 
 **Check state before assuming anything** - `./status.sh` reports what's
 running, image-import progress and data freshness in one shot. The backlog
@@ -549,21 +554,27 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
-- **Classify the `stripped_qualifier` vocabulary - needs an decision.** The matcher was fixed 2026-08-19 (Part 26) and now records
-  which printing qualifier had to be stripped before a card matched, in
-  `card_images.stripped_qualifier`. It deliberately does NOT record whether
-  that means the picture is wrong, because no mechanical test exists:
-  `cracked ice holo`, `cosmos holo`, `poke ball pattern` and `prerelease`
-  are foil/stamp treatments over base art (picture IS the base printing),
-  while `delta species` and `team plasma` are card identity pokemontcg.io
-  spells differently (`Aerodactyl δ` - picture is correct). "Did the
-  printed total agree?" was tried and fails: a foil reprint keeps the
-  original's numbering, so `Gliscor - 4/90 (Cracked Ice Holo)` agrees on
-  4-of-90 and is still base art.
-  Classifying the vocabulary is a one-time SQL exercise applying
-  retroactively - no re-import. Until then nothing about base art is shown
-  in the UI, deliberately (Part 25: don't spend `--warn` until something
-  earns it). Full reasoning: DEVELOPMENT_HISTORY.md Part 26.
+- **Classify the `unknown` image groups - needs an owner decision, now
+  238 groups rather than 754 words.** Most of this item is done. Part 26
+  recorded `card_images.stripped_qualifier` (the printing qualifier dropped
+  before a card matched) but stored no verdict, having concluded no
+  mechanical test could say whether the picture was therefore wrong. Part 27
+  found one it had not tried: **one pokemontcg.io card is one picture, so
+  ask who else claims the same `source_id`.** `card_image_provenance()`
+  returns `own_art` / `base_art` / `unknown` and resolves 91% of the 6,820
+  flagged rows - 1,750 were false alarms (the flag overstated the problem
+  ~3.5x) and 4,462 are decided base art naming the product they borrow from.
+  What remains is 608 cards in 238 groups where every claimant is qualified
+  and no plain listing exists to anchor them - e.g. `ex15-28`, claimed only
+  by `Dragonair (Delta Species)` and its `(Prerelease)` reprint. Deciding
+  those needs to know `delta species` is card identity while `prerelease` is
+  a stamp over base art: Pokemon printing knowledge, not a data question.
+  Verdicts are **computed, never stored** - a later import matching a missing
+  plain printing would silently invalidate a stored value, the same argument
+  that keeps all-time-high computed. Invariants:
+  `sql/checks/card_image_provenance_invariants.sql` (all eight must read
+  `t`). Nothing is surfaced in the UI yet, still deliberately (Part 25).
+  Full reasoning: DEVELOPMENT_HISTORY.md Part 27.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
 - **`ImportCardImages` resolves its image directory relative to the

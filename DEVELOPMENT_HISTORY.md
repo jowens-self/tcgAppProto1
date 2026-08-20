@@ -43,9 +43,10 @@ origin through that date, then continuing forward from there).
 24. [Part 24 — Prices that swing and come straight back](#part-24--prices-that-swing-and-come-straight-back)
 25. [Part 25 — The label that shouted the card's own name](#part-25--the-label-that-shouted-the-cards-own-name)
 26. [Part 26 — Fixing the matcher, and refusing to guess the verdict](#part-26--fixing-the-matcher-and-refusing-to-guess-the-verdict)
-27. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-28. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-29. [What's still open](#whats-still-open)
+27. [Part 27 — The test Part 26 said did not exist](#part-27--the-test-part-26-said-did-not-exist)
+28. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+29. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+30. [What's still open](#whats-still-open)
 
 ---
 
@@ -2353,6 +2354,139 @@ question but *changing what gets stored* so the question could be answered
 later, cheaply, by the person who can answer it. A boolean would have forced
 a guess into 6,827 rows; a string left the decision open at no cost.
 
+**Superseded in part by Part 27.** Storing the fact was the right call and
+still is. The conclusion attached to it — that no mechanical test could
+decide the verdict — was drawn from one candidate test ("did the printed
+total agree?") and did not hold. Asking which *other* products claim the
+same catalog card resolves 91% of these rows. Read Part 27 before acting on
+anything below about the vocabulary needing classification.
+
+---
+
+## Part 27 — The test Part 26 said did not exist
+
+Part 26 ended by refusing to guess. It recorded `stripped_qualifier` — the
+printing qualifier dropped before a product matched — as a *fact* rather
+than a verdict, because it could not mechanically tell these apart:
+
+| product | catalog match | is the picture wrong? |
+|---|---|---|
+| `Blastoise - 13/95 (Cracked Ice Holo)` | plain `Blastoise` | **yes** — foil over base art |
+| `Aerodactyl (Delta Species)` | `Aerodactyl δ` | **no** — same card, spelled differently |
+
+That refusal was right, and the reasoning behind it was sound. The
+conclusion drawn from it was too strong.
+
+### What Part 26 actually tested
+
+It tested **"did the printed set total agree?"** and rejected it, correctly:
+`Gliscor - 4/90 (Cracked Ice Holo)` carries number `004/090`, the catalog's
+Gliscor is #4 of 90, the totals agree, and the artwork is still the base
+printing. A foil reprint keeps the original's numbering, so the printed
+total can never distinguish a reprint from the thing it reprints.
+
+From that failure Part 26 generalized to "there is no mechanical answer."
+But the total is a property of the *product's name*. It was never the only
+observable available.
+
+### The observable it missed
+
+**One pokemontcg.io card is one picture.** When several of our products
+resolve to the same `source_id`, they are all displaying that one picture,
+whatever their names promise. So the question is not "what does this
+qualifier mean" but **"who else claims this card?"** — and unlike the
+vocabulary question, that one is answerable from data we already have.
+
+Checked on disk before any code was written, because a claim this
+convenient deserved to be falsified first:
+
+```
+images/3/83895.jpg   Blastoise (Unleashed 13/95)            4cc2be6f23a5...
+images/3/145612.jpg  Blastoise - 13/95 (Cracked Ice Holo)   4cc2be6f23a5...
+images/3/211517.jpg  Blastoise - 13/95 (Prerelease)         4cc2be6f23a5...
+```
+
+Three products, three files, one picture — byte-identical. Against that,
+`Acerola` (`sm3-112`) and `Acerola (Full Art)` (`sm3-142`) hash differently
+and, opened up, are visibly different cards: standard bordered art against
+full-bleed. The Full Art flag was a false alarm, and 535 of its 536 rows
+are the same story.
+
+### Three verdicts, and why the third is not a failure
+
+`card_image_provenance()` classifies by group rather than by row:
+
+- **`own_art`** — sole claimant of its catalog card, or the unqualified
+  claimant of a shared one.
+- **`base_art`** — qualified, and an unqualified product claims the same
+  card. That product is named as `owner_product_id`.
+- **`unknown`** — shared, but *every* claimant is qualified.
+
+| verdict | cards | of which flagged |
+|---|---|---|
+| `own_art` | 21,096 | 1,750 |
+| `base_art` | 4,462 | 4,462 |
+| `unknown` | 608 | 608 |
+
+**91% of the 6,820 flagged rows resolve without a domain call.** The 1,750
+own-art rows mean `stripped_qualifier` was overstating the problem by about
+3.5x — it flags every card that *needed* a qualifier stripped, which is not
+the same population as the cards *showing someone else's art*.
+
+The 608 are the honest residue, and they are the case Part 26 was actually
+right about. `ex15-28` is claimed by `Dragonair (Delta Species)` and
+`Dragonair (Delta Species) - 28/101 (Prerelease)`, and by nothing else — no
+plain listing exists to anchor them. Deciding which owns the art requires
+knowing that *delta species* is card identity while *prerelease* is a stamp
+over base art. That is knowledge about Pokemon printings, not about our
+data, and it stays the owner's call — over 238 image groups now, rather
+than a 754-word vocabulary.
+
+### A correction made mid-investigation
+
+An earlier version of this test compared *names*: a row borrowed if a
+shorter product name was a prefix of its own. It scored well and it was
+wrong. `Basic Darkness Energy (Cracked Ice Holo)` shares `sve-15` with
+`Basic Darkness Energy - 015`, which is not a prefix of it — the base
+carries a card number exactly where the borrower carries a qualifier. And
+`Blastoise - 13/95 (Cracked Ice Holo)` was scored *own art* on the reasoning
+that no plain `Blastoise - 13/95` existed; the plain listing does exist, as
+`Blastoise` in Unleashed, and only a query narrowed to the wrong `source_id`
+prefix hid it. Checking the actual files is what caught both.
+
+The rule that survived does not look at names at all.
+
+### Why it computes instead of storing
+
+No verdict column was added. The classification depends on which *other*
+products currently hold images, so a later import that finally matches a
+missing plain printing silently invalidates a stored value — the same
+staleness argument that keeps all-time-high computed on demand rather than
+maintained incrementally (CLAUDE.md, Data invariants). Recomputing is always
+correct; the input it reads is already stored.
+
+Eight invariants guard the definition in
+`sql/checks/card_image_provenance_invariants.sql`: every image classified
+exactly once, `base_art` always naming an owner that is not itself, an
+unqualified row never `base_art`, `unknown` groups never containing a plain
+listing, sole claimants always `own_art`. All pass.
+
+### Nothing shown in the UI yet
+
+Deliberately, and consistent with Part 25: `--warn` is not spent until
+something earns it. `base_art` is now a defensible thing to surface — it is
+measured rather than guessed, and it names the card whose picture is being
+shown — but whether a borrowed picture is even worth flagging to someone
+pricing inventory is a product question, not a data one. The function exists;
+what reads it is the next decision.
+
+**The pattern worth keeping:** "no mechanical test exists" is a claim about
+the observables someone thought to try, not about the problem. Part 26
+tested one property of the product name, found it insufficient, and
+generalized. The question it was really asking — *is this picture this
+card's own?* — was answerable all along by looking at the picture, which
+nothing in that part ever did.
+
 ---
 
 ## Key design decisions — quick reference
@@ -2398,6 +2532,7 @@ a guess into 6,827 rows; a string left the decision open at no cost.
 | Unmatched cards | Recorded as `no_match`, but ONLY when the catalog download was complete | Otherwise a transient upstream 500 permanently marks a card imageless, since misses are never re-checked; see Part 20 |
 | Ambiguous image matches | Rejected — no image rather than a guess | A confidently wrong card image is worse than a blank when pricing inventory; see Part 20 |
 | SQL window bounds | Resolved to plpgsql DATE variables, never computed in a CTE | Bounds from a sub-select can't be folded to constants — planner spilled ~6GB to temp files, 550ms vs 365ms; see Part 19 |
+| Image provenance (whose art is shown) | Decided by which other products claim the same pokemontcg.io card, computed on demand; never a stored verdict | One catalog card is one picture, so sharing is provable rather than inferred - and a later import matching a missing plain printing would silently invalidate a stored value; see Part 27 |
 
 ---
 
