@@ -44,9 +44,10 @@ origin through that date, then continuing forward from there).
 25. [Part 25 — The label that shouted the card's own name](#part-25--the-label-that-shouted-the-cards-own-name)
 26. [Part 26 — Fixing the matcher, and refusing to guess the verdict](#part-26--fixing-the-matcher-and-refusing-to-guess-the-verdict)
 27. [Part 27 — The test Part 26 said did not exist](#part-27--the-test-part-26-said-did-not-exist)
-28. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-29. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-30. [What's still open](#whats-still-open)
+28. [Part 28 — Corrections that stopped at the docs](#part-28--corrections-that-stopped-at-the-docs)
+29. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+30. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+31. [What's still open](#whats-still-open)
 
 ---
 
@@ -2661,6 +2662,119 @@ tested one property of the product name, found it insufficient, and
 generalized. The question it was really asking — *is this picture this
 card's own?* — was answerable all along by looking at the picture, which
 nothing in that part ever did.
+
+---
+
+## Part 28 — Corrections that stopped at the docs
+
+A cleanup pass, opened with no particular target: read the state, run the
+checks, fix what is actually wrong. The checks were green — all eleven
+provenance invariants `t`, tree clean, data current to 2026-08-20. What was
+wrong was not in the data.
+
+### A retraction that never reached the file it was about
+
+Part 27's whole subject was overturning Part 26's conclusion that whether a
+stripped qualifier means the picture is wrong "has no mechanical answer."
+Commit `ec994e2` did that carefully: it corrected CLAUDE.md, added the new
+reasoning to this document, and deliberately left Part 26's own narrative
+intact with a forward pointer, because a history that edits itself is not a
+history.
+
+It changed no source files. `git show --stat` says so plainly: two files,
+both Markdown.
+
+So the claim survived, in `ImportCardImages`' class javadoc:
+
+> Whether a stripped qualifier means the picture is wrong has no mechanical
+> answer [...] so the word is stored and the classification left to be made
+> once, in SQL, retroactively.
+
+That is the file someone opens *first* when they next touch qualifier
+handling — it is where `strippedQualifier()` lives. The retraction reached
+the two documents a reader consults deliberately, and missed the one they
+arrive at by following the code. A future session would have read a
+confident statement that no test exists, in the very class whose output the
+test consumes, and had no reason to doubt it.
+
+The failure mode is the one CLAUDE.md's "Before you cite a rule here"
+section already describes — a claim hardening through repetition until it
+gets quoted back as settled — with a twist worth naming: **it had already
+been retracted, and the retraction simply did not reach far enough.** The
+fix was not new reasoning. It was carrying `ec994e2`'s conclusion the last
+few feet, plus a forward pointer to `card_image_provenance()` so the next
+reader lands on the answer rather than the impasse.
+
+Two smaller things went in with it. The javadoc led with **"Coverage runs
+~60% — but that number is NOT a ceiling, it is a bug"** in bold present
+tense, and only twenty lines later noted that both defects were fixed and
+coverage is 94.1%. And CLAUDE.md's rule for *recording* the stripped word
+verbatim — never normalising it in Java, because TCGplayer really does sell
+both `Semi-Finalist` and `Semi Finalist` — was documented only in CLAUDE.md,
+not in the class that would have to be edited to break it. A rule is better
+placed where the tempting edit happens.
+
+### A count that drifted inside its own session
+
+CLAUDE.md said the provenance invariants were ten and that "all ten must
+read `t`." The check returns eleven; `vocabulary_is_stored_normalised`
+arrived with the normalisation work in `98622da`, the same session that
+wrote the sentence.
+
+The interesting part is the choice of fix. Correcting ten to eleven restores
+the truth and rebuilds the same trap for whoever adds a twelfth. A few
+hundred lines up, the sibling check is described as "every column must read
+`t`" — shape rather than count, and it has never gone stale because there is
+nothing in it to go stale. That phrasing was adopted here.
+
+### The working directory that failed in both directions
+
+The last item was a real defect, and the only one in this pass that was not
+about words.
+
+Both `ImportCardImages` and `ApiServer` resolved
+`Env.get("CARDTRACKER_IMAGE_DIR", "images")` — a **relative** path, meaning
+a different directory for every place a process is launched from. The
+backlog had carried it for days ("Either resolve relative to the jar, or
+refuse to start when the target directory isn't the expected one") after it
+cost a day once already.
+
+What makes it worth more than its size is that neither end reports anything.
+The importer called `Files.createDirectories()` on whatever the working
+directory implied, so a wrong launch *manufactured* a plausible empty tree
+and downloaded into it — long, busy, apparently healthy. The API, launched
+wrong, resolved to a directory that does not exist and returned 404 per
+image, which the front end renders as the placeholder it already shows for
+the 1,580 genuine `no_match` rows. A misconfiguration and a known upstream
+gap look identical on screen.
+
+`ImageDir.resolve()` is now the single resolver for both. Of the backlog's
+two options, resolving against the jar was rejected: the jar lives in
+`target/`, which `mvn package` is free to wipe, so that trades a silent
+split for a silent deletion. It refuses instead, detecting the project root
+by `pom.xml` **and** `sql/schema.sql` — `pom.xml` alone is satisfied by any
+Maven checkout on the machine — and the error names the working directory it
+found and the two ways out.
+
+An explicit `CARDTRACKER_IMAGE_DIR` is honoured with no check at all. A path
+someone set is a decision; only the default can be an accident.
+
+Verified against `target/classes` rather than by reading it, on all three
+paths: from the project root it resolves to `<root>/images`; from an
+unrelated directory it throws with the cwd and the fix named, and
+**creates nothing** — the refusal happens before `createDirectories()`, which
+is the specific behaviour that used to leave a decoy tree behind; and with an
+absolute override set it resolves to that path from that same wrong
+directory. The API also now prints its image root at startup, because a
+wrong root and an absent image are otherwise the same placeholder.
+
+**The pattern worth keeping:** a correction is not finished when the
+document is right. It is finished when every place that repeats the old
+claim has been found — and source comments are where claims go to survive,
+because nothing re-reads them on purpose. Part 27 established that "no
+mechanical test exists" is a statement about what someone thought to try;
+this part is the same shape one level up. `git show --stat` on the commit
+that made a correction is a cheap way to ask whether it reached far enough.
 
 ---
 

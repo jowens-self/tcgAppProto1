@@ -87,9 +87,14 @@ change should be validated before it touches 10,000 rows.
   name(old,arg,types);` above its CREATE - `item_movers()` and
   `game_set_overview()` both carry one. Inspect with
   `SELECT oid::regprocedure FROM pg_proc WHERE proname='...';`
-- **Run tools from the project root.** `ImportCardImages` resolves its
-  image directory against the working directory; launched elsewhere it
-  writes images the API cannot find, silently.
+- **Run tools from the project root.** The image directory default is
+  relative, so a launch from elsewhere used to split the writer from the
+  reader silently - the importer downloading into a fresh empty tree while
+  the API served 404s from the real one. Both now resolve through
+  `ImageDir.resolve()`, which **refuses to start** outside the project root
+  (detected by `pom.xml` + `sql/schema.sql`) and names the fix in the error.
+  An explicit `CARDTRACKER_IMAGE_DIR` is honoured unchecked, so an absolute
+  path still works from anywhere.
 - **`.gitignore` patterns without a leading slash match at any depth.** A
   bare `images/` silently excluded the Java package
   `src/main/java/com/cardtracker/images/`, and the importer sat
@@ -619,12 +624,6 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   DEVELOPMENT_HISTORY.md Part 27 and its addendum.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
-- **`ImportCardImages` resolves its image directory relative to the
-  process's working directory.** Launch it from anywhere but the project
-  root and images land where the API can't serve them, silently. This has
-  already happened once. Either resolve relative to the jar, or refuse to
-  start when the target directory isn't the expected one. (The catalog
-  re-download and `--limit 0` message issues were fixed 2026-08-17.)
 - **Community art showcase (owner's idea, 2026-08-16)** - themed voting
   prompts ("best beach vibes", "favourite darker-theme art") over card
   art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md
