@@ -75,6 +75,12 @@ INSERT INTO image_qualifier_class (qualifier, class, note, decided_on) VALUES
      DATE '2026-08-19'),
     ('team plasma', 'identity',
      'Card identity, not a stamp - the catalog lists these as their own cards. Owner, 2026-08-19.',
+     DATE '2026-08-19'),
+    ('cosmos holo', 'treatment',
+     'A type of foil on the card, so the catalog art is the non-cosmos printing. Owner, 2026-08-19.',
+     DATE '2026-08-19'),
+    ('winner', 'treatment',
+     'A stamp, like prerelease and staff. Owner, 2026-08-19.',
      DATE '2026-08-19')
 ON CONFLICT (qualifier) DO NOTHING;
 

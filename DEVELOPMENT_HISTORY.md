@@ -2525,13 +2525,18 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-Four classifications moved 272 cards out of `unknown` and corrected 18:
+Six classifications moved 294 cards out of `unknown` and corrected **45**:
 
 | verdict | before | after |
 |---|---|---|
-| `own_art` | 21,096 | **21,123** |
-| `base_art` | 4,462 | **4,707** |
-| `unknown` | 608 | **336** |
+| `own_art` | 21,096 | 21,096 |
+| `base_art` | 4,462 | **4,756** |
+| `unknown` | 608 | **314** |
+
+`own_art` landing back on its starting number is a coincidence, not a
+no-op: 45 cards left it as false all-clears were corrected, and 45 arrived
+from `unknown` once `delta species` and `team plasma` were confirmed as
+identity.
 
 `staff` was the third, added the moment the owner confirmed it "is just like
 PreRelease" - one INSERT, 121 cards, no code touched and no re-import. That
@@ -2549,8 +2554,15 @@ of one physical card, so neither is really borrowing. Tightening the rule
 for that case is not worth the complexity at this size; revisit if a future
 classification makes the population meaningful.
 
-What remains is 336 cards - `cosmos holo` (12), `prime` and `winner` (10
-each), then a long tail of World Championship player names.
+`cosmos holo` (a foil type) and `winner` (a stamp) followed, both
+treatments, and both repeated the prerelease lesson at a larger scale: 27
+more sole claimants had been given false all-clears, 25 of them cosmos
+holo. That is now **45 corrections from six words** - each one a card the
+structural test was confident about and wrong about, and none of them
+findable without knowing what the word meant.
+
+What remains is 314 cards - `prime` (10), `special` (9), then a long tail
+of World Championship player names in ones and twos.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query
