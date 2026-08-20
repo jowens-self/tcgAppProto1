@@ -2525,18 +2525,21 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-Two classifications moved 123 cards out of `unknown` and corrected 18:
+Three classifications moved 244 cards out of `unknown` and corrected 18:
 
 | verdict | before | after |
 |---|---|---|
 | `own_art` | 21,096 | 21,095 |
-| `base_art` | 4,462 | **4,586** |
-| `unknown` | 608 | **485** |
+| `base_art` | 4,462 | **4,707** |
+| `unknown` | 608 | **364** |
 
-What remains is 485 cards, the largest bucket being `staff` (121 cards
-across 120 groups), then `team plasma` (28) and the World Championship
-player names. Each is one INSERT away from resolving, whenever the owner
-has an opinion about it.
+`staff` was the third, added the moment the owner confirmed it "is just like
+PreRelease" - one INSERT, 121 cards, no code touched and no re-import. That
+is the design working: the mechanism was built once, and the expensive part
+(knowing what the words mean) stays where it belongs.
+
+What remains is 364 cards - `team plasma` (28), `cosmos holo` (12), `prime`
+and `winner` (10 each), then a long tail of World Championship player names.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query

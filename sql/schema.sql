@@ -69,6 +69,9 @@ INSERT INTO image_qualifier_class (qualifier, class, note, decided_on) VALUES
      DATE '2026-08-19'),
     ('prerelease', 'treatment',
      'Prerelease cards almost always carry a stamp; the catalog art is the unstamped printing. Owner, 2026-08-19. Note "almost always" - not universal.',
+     DATE '2026-08-19'),
+    ('staff', 'treatment',
+     'Behaves just like prerelease - a stamp over a base printing, so the catalog art is missing it. Owner, 2026-08-19.',
      DATE '2026-08-19')
 ON CONFLICT (qualifier) DO NOTHING;
 
