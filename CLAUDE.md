@@ -661,57 +661,52 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
-- **Classify the remaining `unknown` image qualifiers - owner's call, one
-  INSERT each.** Part 26 recorded `card_images.stripped_qualifier` but stored
-  no verdict, concluding no mechanical test could say whether the picture was
-  therefore wrong. Part 27 found one it had not tried - **one pokemontcg.io
-  card is one picture, so ask who else claims the same `source_id`** - and
-  then found that test's blind spot: **sole-claimancy proves no other product
-  took the picture, never that the picture matches the physical card.**
-  `Bronzong - SWSH091 (Prerelease)` was a sole claimant showing an unstamped
-  promo, confidently mislabelled `own_art` until the owner pointed out that
-  prerelease cards almost always carry a stamp.
-  So two signals decide it, and the second cannot be derived:
-  `card_image_provenance()` combines the structural test with
-  **`image_qualifier_class`**, a table of the owner's domain calls -
-  `identity` (catalog holds this card in its own right, e.g. `delta species`
-  -> `Aerodactyl δ`, `team plasma`) or `treatment` (a stamp/foil over a base printing, e.g.
-  `prerelease`, `staff`, `cosmos holo`, `winner`, and the 46-strong tournament/placement family). A treatment is `base_art` whatever its claimancy.
-  **Adding a classification is an INSERT, not a code change**, and an
-  unclassified qualifier falls back to the structural test rather than being
-  guessed at. Current state: 4,898 `base_art`, 21,113 `own_art`, **155
-  `unknown`**. 129 qualifiers classified, each an INSERT with no code change,
-  and between them they corrected **47 sole claimants** the structural test
-  had confidently cleared. Three family calls account for most of it: the
-  tournament/placement block (44, regex-found then reviewed), the **World
-  Championship Decks block (77 player names, selected STRUCTURALLY - every
-  card carrying the qualifier must be in that group, because no string rule
-  reliably recognises a person's name)**, and `prime`/`special` as identity.
-  All seeded as explicit word lists, never runtime patterns. Remaining: a
-  scatter of a few cards each across promo sets.
-  **Spelling variants are handled at comparison time, not at extraction.**
-  `ImportCardImages` records the stripped word verbatim and should keep
-  doing so - TCGplayer genuinely sells both `Semi-Finalist` and `Semi
-  Finalist` printings, and normalising there would destroy a true fact to
-  tidy a lookup table. Instead `normalize_qualifier()` (functions.sql)
-  lowercases, maps hyphens/underscores to spaces and collapses whitespace,
-  and `card_image_provenance()` joins the vocabulary through it.
-  **`image_qualifier_class` must therefore store already-normalised
-  qualifiers** - two rows differing only by a hyphen would both match one
-  image and duplicate it in the output. That is an invariant in the check
-  file, not a convention. Normalisation is conservative on purpose: no
-  stemming, so `regional championship` and `regional championships` remain
-  separate until someone decides otherwise. Known imprecision left at 3
-  rows: an `identity` qualifier sharing with an unqualified claimant reads
-  `base_art` though both may be listings of one card (`Kyurem (Team Plasma)`
-  / `Kyurem - 31/116`) - see Part 27 addendum. Verdicts are
-  **computed, never stored**: a later import, or one more row in the
-  vocabulary table, would silently invalidate a stored value - the same
-  argument that keeps all-time-high computed. Invariants (every column must read
-  `t`): `sql/checks/card_image_provenance_invariants.sql`. `base_art` is
-  surfaced in the UI as of Part 29; `unknown` deliberately is not, because an
-  undetermined verdict is an open question rather than a caution. Full reasoning:
+- **Classify the remaining 155 `unknown` image qualifiers - owner's call, one
+  INSERT each, no code change.** `card_image_provenance()` decides whose
+  artwork a card shows from two signals: a structural test (who else claims
+  the same `source_id`) and `image_qualifier_class`, a table of the owner's
+  domain calls - `identity` (the catalog holds this card in its own right,
+  e.g. `delta species`) or `treatment` (a stamp or foil over a base printing,
+  e.g. `prerelease`, `cosmos holo`). A `treatment` is `base_art` whatever its
+  claimancy. **The second signal cannot be derived** - that is the whole point
+  of Part 27, and sole-claimancy alone confidently mislabelled cards until the
+  owner corrected it.
+  State: **4,898 `base_art`, 21,113 `own_art`, 155 `unknown`**; 129 qualifiers
+  classified (4 `identity`, 125 `treatment`, of which 44 are the
+  tournament/placement family). What is left is a scatter of a few cards each
+  across promo sets. Three rules hold when adding one:
+    * **Explicit word lists, never runtime patterns.** A regex may FIND
+      candidates; it must not classify them, or a future qualifier is silently
+      swept in.
+    * **Store already-normalised qualifiers** (`normalize_qualifier()`
+      lowercases, maps hyphens/underscores to spaces, collapses whitespace).
+      Two rows differing only by a hyphen would both match one image and
+      duplicate it. That is an invariant in the check file, not a convention.
+    * **An unclassified qualifier falls back to the structural test** rather
+      than being guessed at, which is why leaving 155 open is safe.
+  Verdicts are computed, never stored - one more vocabulary row would silently
+  invalidate a stored value. Invariants: every column of
+  `sql/checks/card_image_provenance_invariants.sql` must read `t`.
+  Full reasoning, the known 3-row imprecision, and how each family was chosen:
   DEVELOPMENT_HISTORY.md Part 27 and its addendum.
+- **Should the provenance band appear in the search grid?** Open since Part 29,
+  and no longer blocked on speed - `card_image_provenance()` went from ~96ms to
+  ~5ms per product on 2026-08-20, so a result page is affordable now. What
+  remains is a product judgment, and Part 25 is the precedent worth weighing:
+  a marker earns its place by being **withheld** somewhere. This would band
+  roughly a fifth of every page, where the detail view bands one card you
+  chose to look at.
+- **Connection pool, when this leaves localhost - not before.** Every request
+  opens its own JDBC connection (`ApiServer.withRepo`, the single place to
+  change). Measured 2026-08-20 against the running server: 200 concurrent
+  requests all succeed; at 300 mixed, **50 fail** with
+  `FATAL: sorry, too many clients already` against `max_connections = 100`,
+  and it recovers unattended. A realistic page is ~50 concurrent thumbnails,
+  well inside the limit - which is why this has never been felt locally.
+  Deliberately **not** done yet: the fix is a new dependency (HikariCP) on a
+  short list, and the moment it matters is the same moment the localhost-only
+  CORS rule needs revisiting. Do both together, against a real hosting
+  decision, rather than adding a dependency for load that does not exist.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
 - **Community art showcase (owner's idea, 2026-08-16)** - themed voting
@@ -722,7 +717,8 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   a multi-user version is in scope, not a violation. The one genuinely
   open question is card-art redistribution - showing Pokemon art publicly
   is not the same act as showing it in a local tool.
-- **Oscillating `market_price` on thin markets - needs an decision.** Found building the set overview (Part 23). Some cards'
+- **Oscillating `market_price` on thin markets - needs a domain decision.**
+  Found building the set overview (Part 23). Some cards'
   `market_price` flips between two far-apart values for weeks at a time -
   Base Set (Shadowless) Charizard 1st Ed Holofoil sits at ~$250 or at
   exactly $10,000, while low/mid/high stay parked at $100,000. It is not a
