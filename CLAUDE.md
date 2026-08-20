@@ -165,9 +165,20 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
   request behavior changes.
 - **Data refreshes once daily, around 20:00 UTC.** There's a
   `last-updated.txt` you can check before pulling; if the timestamp hasn't
-  advanced since your last successful run, skip the sync. Not currently
-  implemented — a future improvement, not required for ban-safety (normal
-  usage is a few hundred requests/day, far under the cap).
+  advanced since your last successful run, skip the sync. Still not
+  implemented, and **it is a correctness problem, not just politeness** -
+  this was filed as "a future improvement, not required for ban-safety" until
+  2026-08-20, when a pull that ran before the daily refresh wrote **51,287
+  rows under `snapshot_date` 2026-08-20 that are 100% identical to
+  2026-08-19** - every product, every sub-type, same price. A phantom day.
+  Verified across the whole history: exactly ONE such pair exists, so this is
+  a one-off from an early pull, not a systemic corruption. Effects: a 1-day
+  window reports every card at 0.00% (honestly - the stored data really is
+  unchanged), and a duplicated day gets an extra vote in the 3-day medians
+  Movers uses. Detect it with a per-date `COUNT(*)`/`SUM(market_price)`
+  signature compared against the previous day. Note `price_snapshots` is
+  append-only, so **whether to delete the phantom row is the owner's call**,
+  not a cleanup to perform.
 - **No browser requests** — tcgcsv.com has a restrictive CORS policy and is
   backend-only by design, which matches how this app calls it.
 
