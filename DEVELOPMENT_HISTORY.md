@@ -2525,13 +2525,14 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-Fifty-two classifications moved 348 cards out of `unknown` and corrected **46**:
+A hundred and twenty-seven classifications moved 434 cards out of
+`unknown` and corrected **47**:
 
 | verdict | before | after |
 |---|---|---|
 | `own_art` | 21,096 | 21,096 |
-| `base_art` | 4,462 | **4,811** |
-| `unknown` | 608 | **260** |
+| `base_art` | 4,462 | **4,898** |
+| `unknown` | 608 | **174** |
 
 `own_art` landing back on its starting number is a coincidence, not a
 no-op: 45 cards left it as false all-clears were corrected, and 45 arrived
@@ -2605,9 +2606,32 @@ hazard that gets its own invariant — the vocabulary must store already
 normalised qualifiers, because two rows differing only by a hyphen would
 both match one image and duplicate it in the output.
 
-What remains is 260 cards — `prime` (10), `special` (9), then World
-Championship player names in ones and twos, 100-odd qualifiers with a
-handful of cards each.
+The last coherent block was World Championship Decks — 86 unresolved cards
+across 77 player names. The evidence was suggestive but not conclusive:
+`Articuno - 2015 (Jacob Van Wagner)` resolves to the plain XY6 Roaring
+Skies Articuno, no championship stamp, no name on the card. Suggestive is
+not the same as known, and the entries in `image_qualifier_class` are
+recorded as the owner's calls in their own words, so writing an inference
+in under their name would have been a different act from them making it.
+They checked and answered: *"a distinctive special edition of that card,
+essentially the same type of thing as a pre release card."*
+
+**Selected structurally, not by pattern.** A qualifier joined the family
+only if *every* card carrying it sits in the World Championship Decks
+group. No string rule reliably recognises a person's name, and matching on
+the shape of a string is not the same as knowing what the card is — the
+same distinction that made "did the printed total agree?" fail in Part 26.
+The set membership is a fact about the product; a name-shaped regex would
+have been a guess wearing a rule's clothing.
+
+That resolved 86 and corrected one more sole claimant, bringing the running
+total to **47 cards the structural test was confident about and wrong
+about**.
+
+What remains is 174 cards across ~90 qualifiers — `prime` (10), `special`
+(9), then a scatter of a few cards each across Deck Exclusives, Nintendo
+Promos and assorted promo sets. No block left is large enough to distort a
+screen.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query
