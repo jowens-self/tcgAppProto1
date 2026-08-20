@@ -40,7 +40,7 @@ from 60.6% to **94.1%** (16,841 -> 26,166 images; Part 26). Newest:
 `card_image_provenance()` decides whose artwork a card actually shows by
 asking which other products claim the same catalog card - 91% of the
 6,820 qualifier-stripped rows resolve structurally; the owner's
-vocabulary calls in `image_qualifier_class` settle the rest, 364 still
+vocabulary calls in `image_qualifier_class` settle the rest, 336 still
 open (Part 27 + addendum).
 Nothing reads it in the UI yet.
 
@@ -569,15 +569,17 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   `card_image_provenance()` combines the structural test with
   **`image_qualifier_class`**, a table of the owner's domain calls -
   `identity` (catalog holds this card in its own right, e.g. `delta species`
-  -> `Aerodactyl δ`) or `treatment` (a stamp/foil over a base printing, e.g.
+  -> `Aerodactyl δ`, `team plasma`) or `treatment` (a stamp/foil over a base printing, e.g.
   `prerelease` and `staff`). A treatment is `base_art` whatever its claimancy.
   **Adding a classification is an INSERT, not a code change**, and an
   unclassified qualifier falls back to the structural test rather than being
-  guessed at. Current state: 4,707 `base_art`, 21,095 `own_art`, **364
-  `unknown`** - remaining buckets `team plasma` (28), `cosmos holo` (12),
-  `prime` and `winner` (10 each), then World Championship player names.
-  Three qualifiers are classified so far; `staff` took one INSERT and moved
-  121 cards with no code change, which is the mechanism behaving as intended. Verdicts are
+  guessed at. Current state: 4,707 `base_art`, 21,123 `own_art`, **336
+  `unknown`** - remaining buckets `cosmos holo` (12), `prime` and `winner`
+  (10 each), then World Championship player names. Four qualifiers classified
+  so far, each one INSERT with no code change. Known imprecision left at 3
+  rows: an `identity` qualifier sharing with an unqualified claimant reads
+  `base_art` though both may be listings of one card (`Kyurem (Team Plasma)`
+  / `Kyurem - 31/116`) - see Part 27 addendum. Verdicts are
   **computed, never stored**: a later import, or one more row in the
   vocabulary table, would silently invalidate a stored value - the same
   argument that keeps all-time-high computed. Invariants (all ten must read

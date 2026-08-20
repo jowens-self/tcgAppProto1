@@ -2525,21 +2525,32 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-Three classifications moved 244 cards out of `unknown` and corrected 18:
+Four classifications moved 272 cards out of `unknown` and corrected 18:
 
 | verdict | before | after |
 |---|---|---|
-| `own_art` | 21,096 | 21,095 |
+| `own_art` | 21,096 | **21,123** |
 | `base_art` | 4,462 | **4,707** |
-| `unknown` | 608 | **364** |
+| `unknown` | 608 | **336** |
 
 `staff` was the third, added the moment the owner confirmed it "is just like
 PreRelease" - one INSERT, 121 cards, no code touched and no re-import. That
 is the design working: the mechanism was built once, and the expensive part
 (knowing what the words mean) stays where it belongs.
 
-What remains is 364 cards - `team plasma` (28), `cosmos holo` (12), `prime`
-and `winner` (10 each), then a long tail of World Championship player names.
+`team plasma` was the fourth - card identity, not a stamp (owner,
+2026-08-19), which sent its 28 `unknown` rows to `own_art` and confirmed the
+70 sole claimants that were already there.
+
+One known imprecision, left alone deliberately at 3 rows: an `identity`
+qualifier sharing with an unqualified claimant is still called `base_art`,
+but `Kyurem (Team Plasma)` and `Kyurem - 31/116` are two TCGplayer listings
+of one physical card, so neither is really borrowing. Tightening the rule
+for that case is not worth the complexity at this size; revisit if a future
+classification makes the population meaningful.
+
+What remains is 336 cards - `cosmos holo` (12), `prime` and `winner` (10
+each), then a long tail of World Championship player names.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query
