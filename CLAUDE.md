@@ -165,9 +165,13 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
   request behavior changes.
 - **Data refreshes once daily, around 20:00 UTC.** There's a
   `last-updated.txt` you can check before pulling; if the timestamp hasn't
-  advanced since your last successful run, skip the sync. Still not
-  implemented, and **it is a correctness problem, not just politeness** -
-  this was filed as "a future improvement, not required for ban-safety" until
+  advanced since your last successful run, skip the sync. **Implemented
+  2026-08-20** as `PriceSource.dataAsOf()` - and it turned out to be better
+  than a skip: the timestamp says which DAY the live endpoints are serving,
+  so the pull is dated from it rather than being abandoned. A premature run
+  now re-writes a day already held, which `ON CONFLICT DO NOTHING` makes a
+  free no-op. It is **a correctness fix, not just politeness** - this was
+  filed as "a future improvement, not required for ban-safety" until
   2026-08-20, when a pull that ran before the daily refresh wrote **51,287
   rows under `snapshot_date` 2026-08-20 that are 100% identical to
   2026-08-19** - every product, every sub-type, same price. A phantom day.
@@ -338,9 +342,23 @@ price-park) plus engineering rules derived from them.
   percentages on sets whose gains and losses cancel. Part 23.
 - **`product_id` rides on every row through every transform.** Outbound links
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
-- **"Today" is always `LocalDate.now(ZoneOffset.UTC)`, never host-local.**
-  Decided 2026-08-12. `App` and `BackfillArchive` both compute it this way
-  (`ProductPullTest` did too, until Part 13 deleted it), matching the archive
+- **The live pull's `snapshot_date` comes from the MIRROR, not any clock**
+  (`PriceSource.dataAsOf()`, reading tcgcsv's `last-updated.txt`). The live
+  price endpoints carry no date - they answer "what are the prices now" - and
+  tcgcsv refreshes at ~20:00 UTC, so before that refresh "now" is still
+  yesterday's data. Dating it from our own clock is what wrote the phantom
+  day on 2026-08-20. **Do not "simplify" this back to `LocalDate.now()` of
+  any zone**: the clock answers when we asked, which is a different fact from
+  what we got. The archive path never needed it because its URL names the
+  date. A parse failure refuses the run rather than falling back - and that
+  is safe because missing a day costs nothing (gap catch-up backfills it).
+  The skip test is `hasDateCovered()`, which accepts either ingest source,
+  since the mirror's date is usually one the archive already filled.
+- **Where a clock IS wanted, it is always `LocalDate.now(ZoneOffset.UTC)`,
+  never host-local.** Decided 2026-08-12. `BackfillArchive` computes its end
+  date this way and `App` its log line (`ProductPullTest` did too, until Part
+  13 deleted it); `App`'s `snapshot_date` no longer comes from a clock at all
+  - see the rule directly above. Matching the archive
   backfill's own day boundary and
   the container's default clock - so `snapshot_date` means the same thing
   across the whole table's history, and `CURRENT_DATE` in raw SQL always
