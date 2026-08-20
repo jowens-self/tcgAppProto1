@@ -43,6 +43,25 @@ public class ApiServer {
         // writer and the reader cannot end up pointing at different trees.
         Path imageRoot = ImageDir.resolve();
 
+        Javalin app = createApp(url, user, pass, imageRoot);
+
+        app.start(port);
+        System.out.printf("CardTracker API on http://localhost:%d  (read-only)%n", port);
+        // Printed because a wrong image root is otherwise indistinguishable
+        // from "we have no image for that card" - both render as a placeholder.
+        System.out.printf("  serving card images from %s%n", imageRoot);
+    }
+
+    /**
+     * Builds the app without starting it, so a test can bind an ephemeral port
+     * and point it at a throwaway database.
+     *
+     * The routing is thin, but the response CONTRACT is not - no endpoint may
+     * ever return high_price, a bad image path must not escape the image root,
+     * and an absent value must arrive as null rather than 0. Those are worth
+     * exercising over real HTTP rather than by reading the handlers.
+     */
+    public static Javalin createApp(String url, String user, String pass, Path imageRoot) {
         Javalin app = Javalin.create(config -> {
             // LocalDate must serialize as "2026-08-14", not an array of ints
             // or an epoch number - the client charts on these directly.
@@ -224,11 +243,7 @@ public class ApiServer {
             ctx.json(points);
         });
 
-        app.start(port);
-        System.out.printf("CardTracker API on http://localhost:%d  (read-only)%n", port);
-        // Printed because a wrong image root is otherwise indistinguishable
-        // from "we have no image for that card" - both render as a placeholder.
-        System.out.printf("  serving card images from %s%n", imageRoot);
+        return app;
     }
 
     /**

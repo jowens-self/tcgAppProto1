@@ -36,11 +36,26 @@ public final class TestDatabase implements AutoCloseable {
             System.getenv().getOrDefault("CARDTRACKER_DB_PASS", "localdev");
 
     private final String dbName;
+    private final String url;
     private final Connection conn;
 
-    private TestDatabase(String dbName, Connection conn) {
+    private TestDatabase(String dbName, String url, Connection conn) {
         this.dbName = dbName;
+        this.url = url;
         this.conn = conn;
+    }
+
+    /** JDBC URL of the throwaway database, for code that opens its own connections. */
+    public String url() {
+        return url;
+    }
+
+    public String user() {
+        return USER;
+    }
+
+    public String pass() {
+        return PASS;
     }
 
     /** True when a Postgres we can create databases on is reachable. */
@@ -68,7 +83,7 @@ public final class TestDatabase implements AutoCloseable {
             st.execute(Files.readString(root.resolve("sql/schema.sql")));
             st.execute(Files.readString(root.resolve("sql/functions.sql")));
         }
-        return new TestDatabase(name, c);
+        return new TestDatabase(name, url, c);
     }
 
     public Connection conn() {
