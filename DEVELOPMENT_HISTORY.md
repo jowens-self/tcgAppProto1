@@ -2525,13 +2525,13 @@ change, and an unclassified qualifier falls back to the structural test
 rather than being guessed at. The owner's hedge is preserved verbatim in the
 `note` column — "almost always" is not flattened into "always."
 
-Six classifications moved 294 cards out of `unknown` and corrected **45**:
+Eight classifications moved 309 cards out of `unknown` and corrected **45**:
 
 | verdict | before | after |
 |---|---|---|
 | `own_art` | 21,096 | 21,096 |
-| `base_art` | 4,462 | **4,756** |
-| `unknown` | 608 | **314** |
+| `base_art` | 4,462 | **4,771** |
+| `unknown` | 608 | **299** |
 
 `own_art` landing back on its starting number is a coincidence, not a
 no-op: 45 cards left it as false all-clears were corrected, and 45 arrived
@@ -2561,8 +2561,19 @@ holo. That is now **45 corrections from six words** - each one a card the
 structural test was confident about and wrong about, and none of them
 findable without knowing what the word meant.
 
-What remains is 314 cards - `prime` (10), `special` (9), then a long tail
-of World Championship player names in ones and twos.
+`finalist` and `semi-finalist` followed, both stamps - and classifying them
+surfaced how large the family behind them is. Roughly 50 further qualifiers
+are tournament and placement stamps of the same kind (`1st place` through
+`4th place`, `city/state/regional/national championships`, `world
+championships 2017`..`2024`, `champion`), and the vocabulary carries near
+duplicates that differ only in spelling: `quarter finalist` against
+`quarter-finalist`, `semi finalist` against `semi-finalist`. Most are
+already `base_art` structurally; ~39 cards are not, and would resolve if the
+family were classified as a whole. That is one decision rather than fifty,
+but it is still the owner's, so it is recorded here rather than assumed.
+
+What remains is 299 cards - the tournament family above, `prime` (10),
+`special` (9), then World Championship player names in ones and twos.
 
 **The second pattern worth keeping:** a test validated against 26,166 rows
 and eight passing invariants was still wrong about a category no query

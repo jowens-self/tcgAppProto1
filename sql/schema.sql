@@ -81,7 +81,9 @@ INSERT INTO image_qualifier_class (qualifier, class, note, decided_on) VALUES
      DATE '2026-08-19'),
     ('winner', 'treatment',
      'A stamp, like prerelease and staff. Owner, 2026-08-19.',
-     DATE '2026-08-19')
+     DATE '2026-08-19'),
+    ('finalist', 'treatment', 'A stamp. Owner, 2026-08-19.', DATE '2026-08-19'),
+    ('semi-finalist', 'treatment', 'A stamp. Owner, 2026-08-19.', DATE '2026-08-19')
 ON CONFLICT (qualifier) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS groups (
