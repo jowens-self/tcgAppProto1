@@ -27,7 +27,7 @@ Built and working: daily price ingest for Pokemon (3) and One Piece (68)
 with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
 in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
 front end in `web/` with three screens (Card/Product Search, Movers,
-Sets); locally-cached Pokemon card images at 94.1% coverage; and as of
+Sets); locally-cached Pokemon card images at 94.42% coverage; and as of
 2026-08-20 an actual test suite (see "Tests" below).
 
 Behaviour worth knowing before reading the code, newest first:
@@ -38,10 +38,10 @@ Behaviour worth knowing before reading the code, newest first:
   those letters are the only thing identifying the printing. The tier can
   only ever *narrow* a candidate list the loose key already held - never
   widen one - which is the whole safety argument, and the property a test
-  pins directly. Worth **89 images across 15 sets**, measured twice (Part
-  32). **Those 89 are matched but not yet downloaded**: `no_match` is a
-  permanent negative cache, so the gain needs those rows cleared and one
-  `ImportCardImages --skip-failed` run. Until then coverage is still 94.1%.
+  pins directly. Worth **89 images across 15 sets**, measured twice, then
+  downloaded 2026-08-20: **coverage 94.1% -> 94.42%**, 26,166 -> 26,255 `ok`,
+  0 failed, and the 61 known-dead rows left alone by `--skip-failed`
+  (Part 32).
 - **The live pull dates itself from the mirror, not from any clock**
   (`PriceSource.dataAsOf()`). See the Data invariants section - this is the
   rule most likely to be "simplified" back into a bug.
@@ -49,9 +49,12 @@ Behaviour worth knowing before reading the code, newest first:
   `item_movers()` clamps its smoothing to the window so short windows never
   compare overlapping medians (Part 31).
 - **Borrowed artwork is banded in the search detail view**, and only
-  borrowed artwork - `card_image_provenance()` reads 21,113 `own_art`,
-  4,898 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
-  (Part 29).
+  borrowed artwork - `card_image_provenance()` reads 21,181 `own_art`,
+  4,919 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
+  (Part 29). Those counts moved +68/+21 with Part 32's 89 new images while
+  `unknown` did **not** move, which is the fallback working: six of the new
+  qualifiers are unclassified, and every one resolved on the structural
+  test rather than becoming a shrug.
 - Smoothing is a **median**, never a mean (Part 24); the Sets screen
   corrects one-day price errors and says so per row (Part 24); variant
   labels appear only when not already in the card's name (Part 25); Movers
@@ -694,7 +697,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   claimancy. **The second signal cannot be derived** - that is the whole point
   of Part 27, and sole-claimancy alone confidently mislabelled cards until the
   owner corrected it.
-  State: **4,898 `base_art`, 21,113 `own_art`, 155 `unknown`**; 129 qualifiers
+  State: **4,919 `base_art`, 21,181 `own_art`, 155 `unknown`**; 129 qualifiers
   classified (4 `identity`, 125 `treatment`, of which 44 are the
   tournament/placement family). What is left is a scatter of a few cards each
   across promo sets. Three rules hold when adding one:
@@ -712,6 +715,16 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   `sql/checks/card_image_provenance_invariants.sql` must read `t`.
   Full reasoning, the known 3-row imprecision, and how each family was chosen:
   DEVELOPMENT_HISTORY.md Part 27 and its addendum.
+  **Six new qualifiers arrived with Part 32's images, all unclassified** and
+  all currently resolving on the structural test: `general mills promo` (3),
+  `general mills` (2), `shiny` (2), `target non holo` (1), `full art` (1),
+  `build a bear workshop exclusive` (1). Nothing is broken while they sit
+  there. `shiny` is the one actually worth a decision and it is not
+  guessable from here: it covers Platinum's `SH` and Call of Legends' `SL`
+  subsets, where the shiny really is different artwork (the recovered
+  `Vulpix (Shiny)` is gold, not orange) - which argues `identity` - but the
+  word is also used elsewhere for foil treatments, which argues `treatment`.
+  That is exactly the split Part 27 says cannot be derived.
 - **Should the provenance band appear in the search grid?** Open since Part 29,
   and no longer blocked on speed - `card_image_provenance()` went from ~96ms to
   ~5ms per product on 2026-08-20, so a result page is affordable now. What

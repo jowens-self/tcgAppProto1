@@ -3262,14 +3262,62 @@ Per Part 31's rule, they were seen red before being trusted: reverting
 `numberCode()` to return the digits alone (i.e. regressing it to
 `numberDigits()`) fails three of the five, `expected: <h2> but was: <2>`.
 
-### What is still pending
+### The run, and what it confirmed
 
-**The 89 images are matched but not yet downloaded.** `no_match` is a
-permanent negative cache — the importer never re-queries those rows — so
-realising the gain needs those rows cleared and one `--skip-failed` run. That
-clear is a bulk delete on the working database, so it is the owner's to
-authorise; the code and its measurement are committed and independent of it.
-Coverage stands at 26,166 / 94.1% until then, and 26,255 / 94.4% after.
+The owner authorised the clear the same day. `no_match` is a permanent
+negative cache, so realising the gain meant deleting those 1,580 rows and
+letting one `--skip-failed` run rebuild them:
+
+```
+DELETE 1580
+Done. matched=89 (downloaded=89, failed=0), no_match=1491
+```
+
+Which lands exactly where both measurements said it would:
+
+| | before | after |
+|---|---|---|
+| `ok` | 26,166 | **26,255** |
+| `no_match` | 1,580 | 1,491 |
+| `failed` | 61 | 61 |
+| coverage | 94.1% | **94.42%** |
+
+`failed` unmoved is `--skip-failed` doing its job — the 61 upstream-dead rows
+were not touched, and not one request was spent on them. Files on disk came
+to 26,255, matching the `ok` count exactly, which is the check worth doing
+after any import: a mismatch there means the writer and the reader disagree
+about where the image tree is, which has happened before (Part 28). By rule,
+64 matched at tier 1 and 25 at tier 2 as base art.
+
+**Spot-checked as pictures, not as row counts**, because the whole premise is
+that a confidently wrong image is worse than a blank. `Vulpix (Shiny)` →
+`pl1-SH6` is gold rather than the usual orange, so it really is the shiny
+printing; `Ariados (H3)` → `ecard2-H3` carries the e-Card frame and its
+dotted code strip, which only Aquapolis-era cards have. Both served over the
+API as real JPEGs.
+
+### The verdict counts moved, and the shrug count did not
+
+```
+own_art  21,113 -> 21,181   (+68)
+base_art  4,898 ->  4,919   (+21)
+unknown     155 ->    155   ( 0)
+```
+
++68 and +21 account for all 89. The third line is the interesting one. Six of
+the qualifiers these matches introduced — `general mills promo`, `general
+mills`, `shiny`, `target non holo`, `full art`, `build a bear workshop
+exclusive` — are not in `image_qualifier_class` at all, and *none* of them
+produced an `unknown`. That is Part 27's fallback working as designed rather
+than as hoped: an unclassified qualifier defers to the structural test
+instead of becoming a shrug, which is precisely why leaving the vocabulary
+incomplete is safe rather than merely tolerable.
+
+`shiny` is the one worth the owner's attention, and it is genuinely
+undecidable from here: it covers Platinum's `SH` and Call of Legends' `SL`
+subsets where the shiny is different artwork — arguing `identity` — while the
+same word elsewhere names a foil treatment, arguing `treatment`. Exactly the
+split Part 27 says cannot be derived. It is in the backlog, not guessed at.
 
 ---
 
