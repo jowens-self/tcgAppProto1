@@ -3847,6 +3847,16 @@ Not started. Schema not yet designed.
   (`com.cardtracker.daily.plist` in the project root) and can be
   reinstated in two commands once there's an actual front-end that needs
   "always up to date without a manual step."
+  **This got sharper on 2026-08-21.** The front end has existed since Part
+  18, so the stated precondition is met — and the day was found a day
+  stale, because the pull only runs when someone remembers. That is
+  ordinarily harmless: the pull catches up gaps from the archive. But
+  Part 35 is the reason it is not *indefinitely* harmless — **the mirror
+  keeps roughly a fortnight of archives**, so a manual step that goes
+  unremembered for longer than that loses those days permanently, and no
+  later run can recover them. The window is two weeks wide, and nothing
+  currently watches it. Installing the LaunchAgent modifies the owner's
+  machine, so it is theirs to authorise, not something to do quietly.
 - **Docker Desktop autostart** — the owner intended to enable this
   themselves in Docker Desktop's own settings; worth confirming it's
   actually on, since it matters more if scheduling is ever reinstated.
