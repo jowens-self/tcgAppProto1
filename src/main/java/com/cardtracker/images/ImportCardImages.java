@@ -813,7 +813,7 @@ public class ImportCardImages {
      * {@link #loose} is ambiguous and correctly refuses. The prefix is what
      * breaks the tie, and it was being thrown away before it could.
      *
-     * Recovered 89 images across 15 sets when added (2026-08-20): the H
+     * Recovered 89 images across 15 sets when added (2026-08-21): the H
      * subsets of Aquapolis and Skyridge, the SM/BW/XY/DP Black Star Promos,
      * and Platinum's "SH" / Call of Legends' "SL" shiny subsets.
      *

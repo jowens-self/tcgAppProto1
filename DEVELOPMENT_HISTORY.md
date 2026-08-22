@@ -48,9 +48,13 @@ origin through that date, then continuing forward from there).
 29. [Part 29 — Spending the reserved warning](#part-29--spending-the-reserved-warning)
 30. [Part 30 — The mirror nothing was holding up](#part-30--the-mirror-nothing-was-holding-up)
 31. [Part 31 — Tests, at last](#part-31--tests-at-last)
-32. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-33. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-34. [What's still open](#whats-still-open)
+32. [Part 32 — The letters in the card number](#part-32--the-letters-in-the-card-number)
+33. [Part 33 — The accent that cost 228 images](#part-33--the-accent-that-cost-228-images)
+34. [Part 34 — The numbers with no digits](#part-34--the-numbers-with-no-digits)
+35. [Part 35 — The damage gap catch-up cannot see](#part-35--the-damage-gap-catch-up-cannot-see)
+36. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+37. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+38. [What's still open](#whats-still-open)
 
 ---
 
@@ -3551,20 +3555,55 @@ documented invariant for eleven rows.
 
 ---
 
-## Part 35 — Checking the thing that cannot be rebuilt
+## Part 35 — The damage gap catch-up cannot see
 
-Everything else in this project can be rebuilt from tcgcsv on demand. The
-price history cannot: the mirror keeps roughly a fortnight of archives, not
-two and a half years. A day that was never ingested, or ingested halfway, is
-simply gone.
+Nothing had ever checked the price history. The claim "archive backfill to
+2024-02-08 and zero gaps" had been sitting in CLAUDE.md since it was true,
+which is not the same as knowing it still is.
 
-Nothing checked for that. The claim "archive backfill to 2024-02-08 and zero
-gaps" had been sitting in CLAUDE.md since it was true, which is not the same
-as knowing it still is.
+### Correcting the reason this was written
+
+The first version of this Part opened by claiming the history could not be
+rebuilt — that tcgcsv keeps "roughly a fortnight" of archives. **That figure
+was invented, and it is wrong.** The owner caught it immediately by pointing
+at their own experience: the app backfilled to 2024-02-08 when it was built.
+
+Checked live rather than argued about — `HEAD` on three archive dates:
+
+```
+prices-2024-02-08.ppmd.7z   HTTP 200
+prices-2025-01-01.ppmd.7z   HTTP 200
+prices-2026-03-15.ppmd.7z   HTTP 200
+```
+
+Archives persist to at least 2024-02-08, which is exactly what CLAUDE.md
+already said two sections above the one being edited: *"Missing a day costs
+nothing... tcgcsv's archives persist back to 2024-02-08 and `App` runs gap
+catch-up unconditionally on every run."*
+
+This is worth recording rather than quietly fixing, because it is the second
+time in this project's history that a confident-sounding number was written
+into the docs without being checked, and because the invented figure was then
+used to argue for a change the docs had already declined.
+
+### The real reason, which is narrower and holds
+
+A **missing day self-heals.** `App` runs gap catch-up unconditionally, the
+archive is still there, and the next run fills it. Skipping a week costs
+seven days of delay and nothing else.
+
+A **short day does not.** A partial ingest leaves the date *present*, so gap
+catch-up will never look at it again — there is no gap to find. It stays
+wrong until a person notices, and nothing was watching.
+
+That asymmetry is the whole justification for this check: it detects the
+damage the application's own recovery cannot see. Everything else it asserts
+is cheap to carry alongside.
 
 ### The audit
 
-Clean, and worth having the numbers:
+Clean, and worth having the numbers. Taken before that day's pull had run,
+so 2026-08-20 is the newest snapshot here, not the date of the audit:
 
 ```
 category   first        last         days present / expected   rows
@@ -3847,16 +3886,20 @@ Not started. Schema not yet designed.
   (`com.cardtracker.daily.plist` in the project root) and can be
   reinstated in two commands once there's an actual front-end that needs
   "always up to date without a manual step."
-  **This got sharper on 2026-08-21.** The front end has existed since Part
-  18, so the stated precondition is met — and the day was found a day
-  stale, because the pull only runs when someone remembers. That is
-  ordinarily harmless: the pull catches up gaps from the archive. But
-  Part 35 is the reason it is not *indefinitely* harmless — **the mirror
-  keeps roughly a fortnight of archives**, so a manual step that goes
-  unremembered for longer than that loses those days permanently, and no
-  later run can recover them. The window is two weeks wide, and nothing
-  currently watches it. Installing the LaunchAgent modifies the owner's
-  machine, so it is theirs to authorise, not something to do quietly.
+  **The wording above is superseded — read CLAUDE.md's version instead.**
+  "Once there's an actual front-end" was the 2026-08-13 phrasing; the
+  decision was revised the same day and CLAUDE.md carries the current
+  form: **the trigger is hosting, not a front end.** A local front end
+  changes nothing, because whoever opens it can trigger the pull himself.
+  Unattended freshness only starts to matter when someone *other than the
+  owner* loads the app.
+  Flagged 2026-08-21 after Claude read this stale sentence, concluded the
+  precondition had been met since Part 18, and recommended installing the
+  LaunchAgent — a recommendation CLAUDE.md had already considered and
+  declined, for reasons that still hold. The same session also invented a
+  "two week archive retention window" to justify urgency; archives in fact
+  persist to 2024-02-08, which is the whole reason missing a day costs
+  nothing. See Part 35's correction.
 - **Docker Desktop autostart** — the owner intended to enable this
   themselves in Docker Desktop's own settings; worth confirming it's
   actually on, since it matters more if scheduling is ever reinstated.

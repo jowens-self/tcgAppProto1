@@ -1,10 +1,15 @@
 -- Is the price history still whole?
 --
--- The history IS the asset. Everything else in this project can be rebuilt
--- from tcgcsv on demand; a day that was never ingested, or ingested halfway,
--- is gone - the mirror keeps ~a fortnight of archives, not two years. That
--- makes silent damage here the most expensive failure the project has, and
--- until 2026-08-20 nothing checked for it.
+-- A MISSING day self-heals: `App` runs gap catch-up unconditionally, tcgcsv's
+-- archives persist to 2024-02-08 (verified by request 2026-08-21, not
+-- assumed), and the next run fills it. Skipping a week costs seven days of
+-- delay and nothing else.
+--
+-- A SHORT day does not. A partial ingest leaves the date PRESENT, so gap
+-- catch-up will never look at it again - there is no gap to find. It stays
+-- wrong until a person notices, and until 2026-08-21 nobody was watching.
+-- That asymmetry is what this file is for; the rest is cheap to carry
+-- alongside.
 --
 --   docker compose exec -T db psql -U cardtracker -d cardtracker \
 --     -f - < sql/checks/price_history_integrity.sql
@@ -69,7 +74,7 @@ local AS (
   -- A partial ingest leaves NO gap - the date is present, just short - so it
   -- can only be caught by size. Centred 31-day mean rather than a global one
   -- so ordinary catalog growth is not mistaken for damage. Observed spread on
-  -- 2026-08-20 was 96.2%-104.2% of local, so the 85% floor has ~11 points of
+  -- 2026-08-21 was 96.2%-104.2% of local, so the 85% floor has ~11 points of
   -- headroom below anything real while still catching a run that died midway.
   SELECT category_id, snapshot_date, n,
          AVG(n) OVER (PARTITION BY category_id ORDER BY snapshot_date

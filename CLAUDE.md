@@ -33,7 +33,7 @@ Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
 Behaviour worth knowing before reading the code, newest first:
 
 - **Image coverage is 95.72% and the remainder is no longer defect-shaped.**
-  Three rounds on 2026-08-20 took it from 94.1%, +452 images, `CHANGED 0`
+  Three rounds on 2026-08-21 took it from 94.1%, +452 images, `CHANGED 0`
   and `LOST 0` at every step (Parts 32-34). What is left: 275 rows whose
   name is absent upstream, 753 whose number is (mostly Trainer Kits and
   Battle Academy 2024), 100 the matcher is deliberately refusing to guess
@@ -66,7 +66,7 @@ Behaviour worth knowing before reading the code, newest first:
   only ever *narrow* a candidate list the loose key already held - never
   widen one - which is the whole safety argument, and the property a test
   pins directly. Worth **89 images across 15 sets**, measured twice, then
-  downloaded 2026-08-20: **coverage 94.1% -> 94.42%**, 26,166 -> 26,255 `ok`,
+  downloaded 2026-08-21: **coverage 94.1% -> 94.42%**, 26,166 -> 26,255 `ok`,
   0 failed, and the 61 known-dead rows left alone by `--skip-failed`
   (Part 32).
 - **The live pull dates itself from the mirror, not from any clock**
@@ -173,7 +173,7 @@ change should be validated before it touches 10,000 rows.
   `failed` rows are otherwise always retried, which is right for a real blip
   and wrong for these.
 - **Some sets are absent from pokemontcg.io outright - check before blaming
-  a matching rule.** Audited 2026-08-20 across all 1,580 `no_match` rows
+  a matching rule.** Audited 2026-08-21 across all 1,580 `no_match` rows
   (Part 32): the **Trainer Kits** (XY, BW, HGSS, SM, DP - eight sets, 412
   rows) are not there at all. It carries `tk1a`/`tk1b`/`tk2a`/`tk2b`, the
   2003-era EX kits, and nothing since; the four "Trainer Gallery" sets a
