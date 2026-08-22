@@ -3551,6 +3551,108 @@ documented invariant for eleven rows.
 
 ---
 
+## Part 35 — Checking the thing that cannot be rebuilt
+
+Everything else in this project can be rebuilt from tcgcsv on demand. The
+price history cannot: the mirror keeps roughly a fortnight of archives, not
+two and a half years. A day that was never ingested, or ingested halfway, is
+simply gone.
+
+Nothing checked for that. The claim "archive backfill to 2024-02-08 and zero
+gaps" had been sitting in CLAUDE.md since it was true, which is not the same
+as knowing it still is.
+
+### The audit
+
+Clean, and worth having the numbers:
+
+```
+category   first        last         days present / expected   rows
+Pokemon    2024-02-08   2026-08-20   925 / 925                 37,290,596
+One Piece  2024-02-08   2026-08-20   925 / 925                  4,047,152
+```
+
+No negative prices, no future-dated snapshots, no code cards back in
+`products`, no excluded product carrying price history, and every one of the
+925 days traceable to an `ingest_runs` row that completed.
+
+**Partial ingests leave no gap** — the date is present, just short — so they
+needed a different test: each day's row count against a centred 31-day mean.
+The spread turned out to be 96.2%–104.2% of local, which is tight enough that
+an 85% floor has eleven points of headroom below anything that has ever
+legitimately occurred while still catching a run that died midway.
+
+### Two findings that were not bugs
+
+**12,245,214 "duplicate" `(product_id, snapshot_date)` pairs.** The naive
+uniqueness check flagged those, and every one is legitimate: TCGplayer prices
+each printing separately and the primary key is
+`(product_id, sub_type_name, snapshot_date)`. The schema already makes a true
+duplicate impossible. Recorded in the check file as a thing deliberately not
+asserted, because the wrong version of that check is an obvious thing to
+write twice.
+
+**53,278 snapshots with no `products` row** — 134 products, 0.13% of rows.
+Also correct: `BackfillArchive` only ever sees a bare `product_id` from an
+archive, never a name, so a product that has left tcgcsv's catalog keeps its
+history without ever gaining a catalog entry. They are invisible to every
+query, since all of them join `products`, so no number anywhere is wrong.
+What *is* asserted is that no orphan is still **receiving** snapshots — 0
+this week — because that would mean the daily pull had begun writing prices
+for products it cannot name, which is a different thing entirely.
+
+### The check's first draft was itself the bug
+
+The first version asserted **"newest snapshot is no more than 1 day old"**,
+and it failed against a perfectly healthy database.
+
+`CURRENT_DATE` inside the Postgres container is UTC. The machine writing the
+data is UTC-5. For five hours every evening the two disagree about what day
+it is, and the check was reading `2026-08-22` while the host read
+`2026-08-21`.
+
+That is precisely the defect CLAUDE.md names as *the rule most likely to be
+"simplified" back into a bug* — `PriceSource.dataAsOf()` exists so the pull
+dates itself from the mirror rather than from a clock, and `SourceGuardsTest`
+fails the build on a bare `LocalDate.now()`. The guard covers Java. A `.sql`
+file walked straight past it.
+
+The assertion was removed rather than widened, for a reason worth stating: a
+suite that cries wolf every evening teaches people to stop reading it, which
+costs more than the assertion was ever worth. **Freshness is an operational
+question, not an integrity one** — it depends on whether a pull was expected,
+and this project has no schedule to expect one against (the LaunchAgent is
+still uninstalled). `./status.sh` reports the newest snapshot date and lets a
+person judge. This file asks only what the data can answer about itself.
+
+What replaced it is the honest form of the same worry: **every day of price
+data must trace to an ingest run that completed.** That asks whether what is
+present was fully written, with no clock involved.
+
+### Seen red, twice
+
+Per Part 31, neither assertion was trusted until it had failed:
+
+- raising the partial-ingest floor from 85% to 100% flags **900 days**, which
+  is about half of them and exactly what a mean should produce — proof the
+  detector is reading real per-day counts and not a constant;
+- hiding a single date from the input makes the gap assertion report `f` with
+  a detail of 2, one missing day across two categories.
+
+### A recovered failure, still on the record
+
+`ingest_runs` holds 1,858 `ok` rows and exactly one `failed`: 2026-08-12,
+`DateTimeParseException` on the mirror's `2026-08-12T20:00:06.1155676Z` —
+seven fractional digits. That day also has an `ok` run beside it, from the
+re-ingest.
+
+Which is why the check asserts *coverage* rather than the absence of
+failures. A historical failure that was recovered from is the table doing its
+job; asserting `ingest_runs` has never failed would fail forever on a wound
+that has already healed.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |

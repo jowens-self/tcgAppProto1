@@ -632,9 +632,9 @@ Parts 9 and 10.
 ## Tests (added 2026-08-20 - there were none before)
 
 ```
-mvn test                    # 110 Java tests (also run by `mvn package`)
+mvn test                    # 126 Java tests (also run by `mvn package`)
 cd web && npm test          # 9 front-end tests (vitest)
-./sql/checks/run-all.sh     # the SQL invariants; needs the container up
+./sql/checks/run-all.sh     # 4 SQL invariants, ~18s; needs the container up
 ```
 
 Tests needing Postgres **skip** rather than fail when no container is running,
