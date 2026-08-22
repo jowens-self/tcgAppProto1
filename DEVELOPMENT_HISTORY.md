@@ -3798,6 +3798,74 @@ resting on a month's peak would have been the more confident of the two lies,
 which is Part 25's rule about markers earning their place, applied to a
 marker that already existed.
 
+### The same question, asked of the server
+
+Fixing the anchor in the browser raised the obvious follow-up: does the SQL
+have the same bug? Grepping the function layer for `CURRENT_DATE` answered
+it in one line.
+
+`item_movers()` and `game_set_overview()` are clean — both take
+`p_as_of DATE DEFAULT NULL` and fall back to
+`(SELECT MAX(snapshot_date) FROM price_snapshots)`. They have anchored on the
+data since they were written, which is why the Sets and Movers screens have
+never shown this symptom, and which is a decent argument that the front-end
+anchor above was the consistent choice rather than a novel one.
+
+`set_value()` was not. It defaulted `p_as_of_date` to `CURRENT_DATE`:
+
+```
+CURRENT_DATE                     2026-08-22
+newest snapshot                  2026-08-21
+
+set_value(2848)                  0 variants, NULL
+set_value(2848, '2026-08-21')  369 variants, $8,430.52
+```
+
+The same class of defect, one layer down, and worse in one specific way: it
+is **silent**. Not an error, not a zero — NULL, which reads as "this set has
+no data." And it fires on the path CLAUDE.md names as *how this project
+checks its own numbers*: `SELECT * FROM set_value(23353);` is a documented
+README example, and it had been returning nothing for most of every day.
+
+The reason it went unnoticed for so long is worth writing down. Every
+*automated* caller passes an explicit date — `game_set_overview()` computes
+its own, `set_overview_matches_primitives.sql` passes `ov.end_date`,
+`PriceMathSqlTest` passes `Fixtures.TODAY`. So the whole test suite and the
+whole application exercised the parameter and never the default. The only
+caller that used the default was a person typing into psql, and a person
+seeing NULL assumes they typed the wrong group id.
+
+**Now defaults to `MAX(snapshot_date)`, and the anchor is the global max
+rather than the group's own.** One as-of date across every set is what makes
+their totals comparable to each other; a per-group anchor would quietly price
+Pokemon on one day against One Piece on another, and would break the
+column-by-column agreement with `game_set_overview()` that the check file
+asserts.
+
+The scalar sub-select needed a second look, because CLAUDE.md carries a rule
+that reads like a prohibition on exactly this: *"window bounds go in scalar
+DATE variables, never a CTE sub-select"*, measured at ~5x and 6GB spilled.
+That rule is about a bound the planner cannot fold, used in a `BETWEEN` over
+a large aggregate. This one is uncorrelated and compared with `=`, so it
+becomes an InitPlan parameter and the index still applies — checked rather
+than assumed:
+
+```
+Index Scan using idx_snapshots_date on price_snapshots ps
+  Index Cond: (snapshot_date = $1)
+Execution Time: 6.160 ms          (constant form: 12.551 ms)
+```
+
+Two tests, and per Part 31 the first was seen red before being trusted —
+against the old definition it fails with `expected: not <null>`, which is
+precisely the symptom a person would hit. It also cannot rot into a
+false pass: `Fixtures.TODAY` is a fixed `2026-08-19` that recedes further
+into the past with every real day, so a `CURRENT_DATE` default can never
+accidentally agree with it. The second test pins that an explicitly named
+date is still obeyed exactly, empty answer included — it passed against the
+old definition too, which is correct: it guards behaviour that was already
+right rather than detecting the bug.
+
 ### What was deliberately not done
 
 **The default stayed "All".** Movers and Sets default to 30 days and there is

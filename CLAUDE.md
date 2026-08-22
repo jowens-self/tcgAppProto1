@@ -448,6 +448,18 @@ price-park) plus engineering rules derived from them.
   is safe because missing a day costs nothing (gap catch-up backfills it).
   The skip test is `hasDateCovered()`, which accepts either ingest source,
   since the mirror's date is usually one the archive already filled.
+- **"Current" means the newest day the database HOLDS, never
+  `CURRENT_DATE`.** Any function or screen with an as-of default anchors on
+  `MAX(snapshot_date)`. `item_movers()` and `game_set_overview()` always did;
+  `set_value()` did not until 2026-08-22, and its no-argument call - the one
+  README documents and a person types in psql - returned NULL for most of
+  every day. Pulls are on demand, so the newest snapshot is routinely
+  yesterday with nothing wrong, and the container reads UTC where the host
+  reads UTC-5. It is silent when it goes wrong: NULL reads as "this set has
+  no data," not as "you asked about a day we have not pulled." Note what hid
+  it - every automated caller passes an explicit date, so the suite and the
+  app exercised the parameter and never the default. The front end obeys the
+  same rule via `windowStart()`. Part 36.
 - **Where a clock IS wanted, it is always `LocalDate.now(ZoneOffset.UTC)`,
   never host-local.** Decided 2026-08-12. `BackfillArchive` computes its end
   date this way and `App` its log line (`ProductPullTest` did too, until Part
