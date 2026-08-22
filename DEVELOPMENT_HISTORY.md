@@ -3321,6 +3321,147 @@ split Part 27 says cannot be derived. It is in the backlog, not guessed at.
 
 ---
 
+## Part 33 — The accent that cost 228 images
+
+Part 32 left 1,491 misses and a triage that said 732 of them were "name
+upstream, that number is not". That phrasing turned out to be hiding the
+finding rather than describing it.
+
+### A diagnostic worth keeping: match rate per set
+
+The useful question was not "why did this row miss" but **"what does this
+row's set look like overall"**:
+
+| set | ok | miss | ok% |
+|---|---|---|---|
+| Battle Academy 2024 | 3 | 135 | 2.2% |
+| XY Trainer Kit: Latias & Latios | 2 | 58 | 3.3% |
+| Trading Card Game Classic | 8 | 93 | 7.9% |
+| **World Championship Decks** | **1,615** | **102** | **94.1%** |
+| **Prize Pack Series Cards** | **830** | **19** | **97.8%** |
+| **Miscellaneous Cards & Products** | **593** | **22** | **96.4%** |
+
+Two completely different failures wearing the same status. A set at 2% is
+absent upstream and no rule will ever reach it. **A set at 94% with a
+hundred-row residue is a rule defect**, because whatever works for 1,615
+cards is clearly working. Sorting by that ratio put the defect sets on one
+screen.
+
+### What the residue actually was
+
+The World Championship residue read like a list of the same few cards:
+`Pokemon Reversal`, `Pokemon Communication`, `Pokemon Catcher`, `Pokemon
+Center Lady`, `Pokegear 3.0`. EX Unseen Forces contributed `Poke Ball`.
+
+pokemontcg.io spells those **`Pokémon Reversal`, `Poké Ball`, `Pokégear
+3.0`** — with the accent. And `finish()` replaces anything outside
+`[a-z0-9 ]` with a space, so the catalog side normalises to `pok mon
+reversal` and `pok  ball`, which TCGplayer's ASCII spelling can never meet.
+157 catalog cards carry `é`.
+
+Widening the search found the same defect three more times: `♀`/`♂` (32
+cards — TCGplayer sells `Nidoran ♀` as **"Nidoran F"**), `★` (29 — `Mew ★`
+is **"Mew Star"**), `◇` (27 — `Diancie ◇` is **"Diancie Prism Star"**). 430
+catalog cards in total had a name character that guaranteed a miss.
+
+The mappings are TCGplayer's own spellings, read off the product table
+rather than invented, and they are a fixed list for the same reason the
+qualifier vocabulary is: a pattern may FIND candidates but must not classify
+them.
+
+### The four characters deliberately left alone
+
+`δ`, `α`, `β`, `γ` are **not** folded, and this is the constraint the change
+had to be designed around rather than a detail.
+
+Delta species is card *identity* the owner has already ruled on. `Aerodactyl
+δ` is TCGplayer's `Aerodactyl (Delta Species)`; it matches at tier 2, records
+`delta species` as its `stripped_qualifier`, and that word is an `identity`
+row in `image_qualifier_class` (Part 27). Folding `δ` to a word would resolve
+those cards at tier 1 instead — no qualifier recorded, no vocabulary lookup —
+and would silently rewrite verdicts the owner settled by hand.
+
+NFD leaves the Greek letters alone by itself, since they carry no combining
+mark. That makes it a property to *pin with a test* rather than code to
+write, which is the more durable version of the same guarantee.
+
+`Charizard Star (Delta Species)` → `Charizard ★ δ` (Dragon Frontiers #100) is
+the case that exercises both rules at once: `★` folded to "star", `δ` left
+alone and stripped, `delta species` recorded as the qualifier. Checked as a
+picture — it is the Gold Star Charizard, #100/101.
+
+### Why the catalog is keyed under both spellings
+
+Folding alone measured **+332 and −1**. The one loss was worth more than the
+332 wins, because of what it revealed: **TCGplayer is not consistent with
+itself.** It sells one card as `Nidoran F` and another as `Nidoran (F)`, and
+the catalog writes `Nidoran ♀` for both. A bracketed single letter is not a
+printing qualifier, so `Nidoran (F)` normalises to a bare `nidoran` — which
+the *unfolded* key matched. Folding traded that card away to win the other.
+
+So catalog cards are indexed under **both** their folded and unfolded names, a
+strict superset of the old index. Measured over all 27,807 products:
+
+```
+GAINED 331    CHANGED 0    LOST 0
+```
+
+A `Set` of keys, not a list, so a card whose two spellings agree is indexed
+once — otherwise every ordinary card would collide with itself and the
+`size() == 1` ambiguity checks in `loose()` and `numCoded()` would stop
+meaning what they say.
+
+### An option measured and rejected
+
+Before any of the above, the obvious idea was a **set-name tiebreak**: when
+the loose key is ambiguous, prefer the candidate whose set name matches the
+product's. It would not have violated Part 21 as strictly as it first
+appears — that rule forbids concluding *borrowed artwork* from a set-name
+mismatch, not using an exact match as positive evidence.
+
+It was worth **11 rows**. Not enough to touch a documented invariant for, so
+it was dropped. Recorded here so the next person does not re-derive it: the
+ambiguous residue is 88 rows where *no* candidate shares the set name, and
+only 11 where exactly one does.
+
+### The run
+
+```
+DELETE 1491
+Done. matched=331 (downloaded=331, failed=0), no_match=1160
+```
+
+| | before | after |
+|---|---|---|
+| `ok` | 26,255 | **26,586** |
+| `no_match` | 1,491 | 1,160 |
+| `failed` | 61 | 61 |
+| coverage | 94.42% | **95.61%** |
+
+326 of the 331 landed on a strict `name+number+total` key — the highest
+confidence the matcher has. Files on disk came to 26,586, matching `ok`
+exactly. Provenance moved `own_art` +239 and `base_art` +92, and `unknown`
+stayed at **155** for the second time running: the structural fallback keeps
+absorbing qualifiers the vocabulary has never seen. Only **6** genuinely new
+unclassified qualifiers arrived with 331 images, so the owner's backlog
+barely moved.
+
+### The pattern worth keeping
+
+This is the third time "upstream doesn't have it" has been wrong — Part 21,
+Part 32, and now Part 33 — and each time the defect was in normalization, not
+in the upstream catalog. The reason it keeps hiding is that a normalization
+bug looks exactly like absence from the outside: the row simply is not found.
+
+What distinguishes them is **the shape of the residue**. Absence is
+set-shaped, and takes whole sets down to single-digit match rates. A
+normalization defect is *character*-shaped, and scatters a few rows across
+many otherwise-healthy sets while leaving one telltale cluster in whichever
+set happens to be full of the affected cards. Sort by match rate per set and
+the two separate immediately.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |

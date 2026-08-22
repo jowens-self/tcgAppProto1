@@ -27,11 +27,23 @@ Built and working: daily price ingest for Pokemon (3) and One Piece (68)
 with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
 in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
 front end in `web/` with three screens (Card/Product Search, Movers,
-Sets); locally-cached Pokemon card images at 94.42% coverage; and as of
+Sets); locally-cached Pokemon card images at 95.61% coverage; and as of
 2026-08-20 an actual test suite (see "Tests" below).
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **The two catalogs spell the same card differently, and `fold()` is what
+  reconciles them.** pokemontcg.io prints `Pokémon Catcher`, `Poké Ball`,
+  `Nidoran ♀`, `Mew ★`, `Diancie ◇`; TCGplayer writes those as `Pokemon
+  Catcher`, `Poke Ball`, `Nidoran F`, `Mew Star`, `Diancie Prism Star`. Since
+  `finish()` replaces anything outside `[a-z0-9 ]` with a space, the catalog
+  side used to normalise to `pok mon catcher` and could never meet its
+  product. 430 catalog cards were affected; fixing it was **+331 images**
+  (Part 33). **`δ`, `α`, `β` and `γ` are deliberately NOT folded** - they are
+  card identity the owner already classified via `stripped_qualifier`, and
+  folding them would rewrite Part 27's verdicts. A test pins that.
+  Catalog cards are keyed under **both** spellings, because TCGplayer sells
+  one card as `Nidoran F` and another as `Nidoran (F)`.
 - **Image matching has a third tier: the card number's alphabetic prefix**
   (`numberCode()`, between strict and loose). `numberDigits()` discards the
   letters in `H02`, `BW64`, `SWSH039`; for a holo subset or a promo series
@@ -49,12 +61,12 @@ Behaviour worth knowing before reading the code, newest first:
   `item_movers()` clamps its smoothing to the window so short windows never
   compare overlapping medians (Part 31).
 - **Borrowed artwork is banded in the search detail view**, and only
-  borrowed artwork - `card_image_provenance()` reads 21,181 `own_art`,
-  4,919 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
-  (Part 29). Those counts moved +68/+21 with Part 32's 89 new images while
-  `unknown` did **not** move, which is the fallback working: six of the new
-  qualifiers are unclassified, and every one resolved on the structural
-  test rather than becoming a shrug.
+  borrowed artwork - `card_image_provenance()` reads 21,420 `own_art`,
+  5,011 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
+  (Part 29). `unknown` has now held at 155 across two import rounds that
+  added 420 images between them, which is the fallback working rather than
+  luck: a qualifier the vocabulary has never seen defers to the structural
+  test instead of becoming a shrug.
 - Smoothing is a **median**, never a mean (Part 24); the Sets screen
   corrects one-day price errors and says so per row (Part 24); variant
   labels appear only when not already in the card's name (Part 25); Movers
@@ -152,10 +164,21 @@ change should be validated before it touches 10,000 rows.
   2003-era EX kits, and nothing since; the four "Trainer Gallery" sets a
   name search turns up are a different product. `Battle Academy 2024` (135
   rows) is likewise absent. Together with the 61 `failed`, that is ~608 rows
-  no rule change can reach. The audit also found the opposite, though - 192
-  rows whose name *and* number were sitting in the catalog unmatched - so
-  "upstream doesn't have it" has now been wrong twice (Parts 21 and 32) and
-  is worth re-testing, not inheriting.
+  no rule change can reach.
+- **Sort misses by match rate PER SET before diagnosing any of them** - it
+  is the one query that separates the two causes, and it is cheap:
+  `COUNT(*) FILTER (WHERE status='ok')` against
+  `COUNT(*) FILTER (WHERE status='no_match')` grouped by `group_id`. A set
+  at 2% (Battle Academy 2024) is absent upstream and no rule will reach it.
+  **A set at 94% with a hundred-row residue is a rule defect**, because
+  whatever works for its other 1,615 cards is plainly working - that ratio
+  is what exposed Part 33's accent bug inside World Championship Decks.
+  "Upstream doesn't have it" has now been wrong three times (Parts 21, 32,
+  33) and every time the real cause was normalization. It hides well
+  because absence and a normalization defect look identical from a single
+  row - the difference is that absence is **set**-shaped while a
+  normalization defect is **character**-shaped, scattering across many
+  otherwise-healthy sets.
 
 ---
 
@@ -697,7 +720,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   claimancy. **The second signal cannot be derived** - that is the whole point
   of Part 27, and sole-claimancy alone confidently mislabelled cards until the
   owner corrected it.
-  State: **4,919 `base_art`, 21,181 `own_art`, 155 `unknown`**; 129 qualifiers
+  State: **5,011 `base_art`, 21,420 `own_art`, 155 `unknown`**; 129 qualifiers
   classified (4 `identity`, 125 `treatment`, of which 44 are the
   tournament/placement family). What is left is a scatter of a few cards each
   across promo sets. Three rules hold when adding one:
