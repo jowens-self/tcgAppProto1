@@ -204,6 +204,99 @@ class ImportCardImagesTest {
     }
 
     @Nested
+    @DisplayName("fold / nameKeys")
+    class Folding {
+
+        /**
+         * The defect this exists for: finish() replaces anything outside
+         * [a-z0-9 ] with a space, so the catalog's "Pokémon Catcher" became
+         * "pok mon catcher" and could never meet TCGplayer's ASCII spelling.
+         * 157 catalog cards carry the accent.
+         */
+        @Test
+        void foldsAccentsSoTheTwoCatalogsCanMeet() {
+            assertEquals("poke ball",
+                    ImportCardImages.normName(ImportCardImages.fold("Pok\u00e9 Ball")));
+            assertEquals("pokemon catcher",
+                    ImportCardImages.normName(ImportCardImages.fold("Pok\u00e9mon Catcher")));
+            assertEquals("pokegear 3 0",
+                    ImportCardImages.normName(ImportCardImages.fold("Pok\u00e9gear 3.0")));
+        }
+
+        /**
+         * These are TCGplayer's own spellings, read off the product table -
+         * "Nidoran F", "Mew Star", "Diancie Prism Star" - not invented ones.
+         */
+        @Test
+        void spellsSymbolsTheWayTcgplayerDoes() {
+            assertEquals("nidoran f",
+                    ImportCardImages.normName(ImportCardImages.fold("Nidoran \u2640")));
+            assertEquals("nidoran m",
+                    ImportCardImages.normName(ImportCardImages.fold("Nidoran \u2642")));
+            assertEquals("mew star",
+                    ImportCardImages.normName(ImportCardImages.fold("Mew \u2605")));
+            assertEquals("diancie prism star",
+                    ImportCardImages.normName(ImportCardImages.fold("Diancie \u25c7")));
+        }
+
+        /**
+         * The one that guards Part 27. Delta species is card IDENTITY the
+         * owner classified through stripped_qualifier: "Aerodactyl δ" is
+         * TCGplayer's "Aerodactyl (Delta Species)", matched at tier 2 with
+         * `delta species` recorded and classified `identity`. Folding δ to a
+         * word would resolve those at tier 1 instead and silently rewrite
+         * settled verdicts. NFD leaves it alone because it carries no
+         * combining mark - which makes this a property to pin, not code.
+         */
+        @Test
+        void leavesDeltaAndTheGreekLettersAlone() {
+            for (String greek : new String[]{"\u03b4", "\u03b1", "\u03b2", "\u03b3"}) {
+                assertEquals("Aerodactyl " + greek,
+                        ImportCardImages.fold("Aerodactyl " + greek),
+                        "fold() must not touch " + greek);
+            }
+            // ...and so the normalised name is unchanged either way.
+            assertEquals(ImportCardImages.normName("Aerodactyl \u03b4"),
+                    ImportCardImages.normName(ImportCardImages.fold("Aerodactyl \u03b4")));
+        }
+
+        /**
+         * TCGplayer is not consistent with itself: one card is "Nidoran F",
+         * another "Nidoran (F)", and the catalog writes "Nidoran ♀" for both.
+         * The bracketed form normalises to a bare "nidoran" - a one-letter
+         * token is not a printing qualifier - so indexing only the folded
+         * spelling would win one and lose the other. Measured at the time:
+         * folding alone +332/-1, keying both +331/-0.
+         */
+        @Test
+        void keysACatalogCardUnderBothSpellings() {
+            var keys = ImportCardImages.nameKeys("Nidoran \u2640");
+            assertTrue(keys.contains("nidoran"), "unfolded spelling: " + keys);
+            assertTrue(keys.contains("nidoran f"), "folded spelling: " + keys);
+            assertEquals(2, keys.size(), keys.toString());
+        }
+
+        /**
+         * A card with nothing to fold must be indexed ONCE, or the size()==1
+         * ambiguity checks in loose() and numCoded() stop meaning what they
+         * say and every plain card becomes its own collision.
+         */
+        @Test
+        void keysAnOrdinaryCardExactlyOnce() {
+            assertEquals(1, ImportCardImages.nameKeys("Pikachu").size());
+            assertEquals(1, ImportCardImages.nameKeys("Charizard").size());
+            // delta collapses to the same key both ways, so it is one entry too
+            assertEquals(1, ImportCardImages.nameKeys("Aerodactyl \u03b4").size());
+        }
+
+        @Test
+        void handlesNull() {
+            assertNull(ImportCardImages.fold(null));
+            assertTrue(ImportCardImages.nameKeys(null).isEmpty());
+        }
+    }
+
+    @Nested
     @DisplayName("normName")
     class NormName {
 

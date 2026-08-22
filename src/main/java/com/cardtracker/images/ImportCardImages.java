@@ -15,6 +15,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.text.Normalizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -24,6 +25,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -220,17 +222,20 @@ public class ImportCardImages {
             }
 
             for (Card c : catalog) {
-                String n = normName(c.name());
                 String d = numberDigits(c.number());
-                if (n == null || d == null) continue;
-                byKeyStrict.computeIfAbsent(n + "|" + d + "|" + c.printedTotal(),
-                        k -> new ArrayList<>()).add(c);
+                if (d == null) continue;
                 String cCode = numberCode(c.number());
-                if (cCode != null) {
-                    byKeyNumCode.computeIfAbsent(n + "|" + cCode,
+                // Under BOTH spellings - see nameKeys(). Keying only the folded
+                // one would trade "Nidoran (F)" away to win "Nidoran F".
+                for (String n : nameKeys(c.name())) {
+                    byKeyStrict.computeIfAbsent(n + "|" + d + "|" + c.printedTotal(),
                             k -> new ArrayList<>()).add(c);
+                    if (cCode != null) {
+                        byKeyNumCode.computeIfAbsent(n + "|" + cCode,
+                                k -> new ArrayList<>()).add(c);
+                    }
+                    byKeyLoose.computeIfAbsent(n + "|" + d, k -> new ArrayList<>()).add(c);
                 }
-                byKeyLoose.computeIfAbsent(n + "|" + d, k -> new ArrayList<>()).add(c);
             }
 
             // If any set is still missing, the catalog is incomplete - and a
@@ -253,8 +258,11 @@ public class ImportCardImages {
             List<String> baseArtNumCodeSample = new ArrayList<>();
             List<String> baseArtLooseSample = new ArrayList<>();
             for (Product p : todo) {
-                String nFull = normName(p.name);
-                String nBase = normNameBase(p.name);
+                // fold() first: the catalog writes "Poké Ball" and "Nidoran ♀"
+                // where TCGplayer writes "Poke Ball" and "Nidoran F".
+                String folded = fold(p.name);
+                String nFull = normName(folded);
+                String nBase = normNameBase(folded);
                 String d = numberDigits(p.cardNumber);
                 String t = numberTotal(p.cardNumber);
                 String code = numberCode(p.cardNumber);
@@ -596,6 +604,72 @@ public class ImportCardImages {
      * NUMBER is still stripped here - "Aerodactyl (1)" is simply Fossil #1
      * and matching it is not borrowing anything.
      */
+    /**
+     * Characters the two catalogs spell differently for the same card.
+     *
+     * pokemontcg.io prints the real glyphs; TCGplayer transliterates them, and
+     * {@link #finish} then replaces anything outside [a-z0-9 ] with a space -
+     * so "Pokémon Catcher" normalises to "pok mon catcher" and can never meet
+     * TCGplayer's "pokemon catcher". 430 catalog cards carry such a character
+     * and the accent alone accounted for 228 permanently missed images.
+     *
+     * The symbol mappings are TCGplayer's own spellings, read off the products
+     * rather than invented: "Nidoran ♀" is sold as "Nidoran F", "Mew ★" as
+     * "Mew Star", "Diancie ◇" as "Diancie Prism Star". They are a fixed list
+     * for the reason the qualifier vocabulary is a fixed list - a pattern that
+     * FINDS candidates must not also classify them.
+     *
+     * Deliberately absent: δ, α, β and γ. Those are card identity that the
+     * owner has already classified through {@code stripped_qualifier}
+     * ("Aerodactyl δ" is TCGplayer's "Aerodactyl (Delta Species)", and
+     * {@code delta species} is an `identity` row in
+     * {@code image_qualifier_class}). Folding them here would resolve those
+     * cards at tier 1 instead and silently rewrite verdicts Part 27 settled.
+     * NFD leaves them alone on their own - they carry no combining mark - so
+     * this is a property to test, not code to write.
+     */
+    private static final String[] SYMBOL_WORDS = {
+            "\u2640", " f ",           // ♀
+            "\u2642", " m ",           // ♂
+            "\u2605", " star ",        // ★
+            "\u25C7", " prism star ",  // ◇
+    };
+
+    private static final Pattern COMBINING = Pattern.compile("\\p{M}+");
+
+    /** "Poké Ball" -> "Poke Ball"; "Nidoran ♀" -> "Nidoran  f ". */
+    static String fold(String s) {
+        if (s == null) return null;
+        String v = s;
+        for (int i = 0; i < SYMBOL_WORDS.length; i += 2) {
+            v = v.replace(SYMBOL_WORDS[i], SYMBOL_WORDS[i + 1]);
+        }
+        return COMBINING.matcher(Normalizer.normalize(v, Normalizer.Form.NFD)).replaceAll("");
+    }
+
+    /**
+     * The distinct names a catalog card should be findable under: its own, and
+     * its folded spelling.
+     *
+     * BOTH, because TCGplayer is not consistent with itself - it sells one
+     * card as "Nidoran F" and another as "Nidoran (F)", and the catalog writes
+     * "Nidoran ♀" for both. The bracketed form normalises to a bare "nidoran"
+     * (a one-letter token is not a printing qualifier), so keying only the
+     * folded "nidoran f" would win the first and lose the second. Measured:
+     * folding alone was +332 and -1; keying both is +331 and -0, for the same
+     * total. A set, so a card whose spellings agree is indexed once and the
+     * ambiguity checks in {@link #loose} and {@link #numCoded} still mean what
+     * they say.
+     */
+    static Set<String> nameKeys(String catalogName) {
+        Set<String> keys = new LinkedHashSet<>();
+        String plain = normName(catalogName);
+        if (plain != null) keys.add(plain);
+        String folded = normName(fold(catalogName));
+        if (folded != null) keys.add(folded);
+        return keys;
+    }
+
     static String normName(String s) {
         if (s == null) return null;
         return finish(stripTrailingNoise(s.toLowerCase(Locale.ROOT), false));
