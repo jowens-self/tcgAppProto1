@@ -27,11 +27,26 @@ Built and working: daily price ingest for Pokemon (3) and One Piece (68)
 with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
 in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
 front end in `web/` with three screens (Card/Product Search, Movers,
-Sets); locally-cached Pokemon card images at 95.61% coverage; and as of
+Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
 2026-08-20 an actual test suite (see "Tests" below).
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **Image coverage is 95.72% and the remainder is no longer defect-shaped.**
+  Three rounds on 2026-08-20 took it from 94.1%, +452 images, `CHANGED 0`
+  and `LOST 0` at every step (Parts 32-34). What is left: 275 rows whose
+  name is absent upstream, 753 whose number is (mostly Trainer Kits and
+  Battle Academy 2024), 100 the matcher is deliberately refusing to guess
+  at, and the 61 `failed`. **Stop chasing it** unless the upstream catalog
+  changes - the next increment would cost a documented invariant for
+  eleven rows. The measured breakdown is in Part 34.
+- **A card number with no digits at all still matches** (`numberLetters()`,
+  `name+letter`). Part 21 fixed numbers whose digits are not at the start;
+  these have none - the Unown alphabet (`A/28` ... `Z/28`, `!`, `?`) and the
+  Alph Lithographs, numbered with the words `ONE`..`FOUR`. Its index holds
+  only cards `numberDigits()` cannot see, so it can never disturb another
+  tier. Note the guard: TCGplayer writes `N/A` for "no number", and reading
+  that as the letter N would hand it any card numbered N (Part 34).
 - **The two catalogs spell the same card differently, and `fold()` is what
   reconciles them.** pokemontcg.io prints `Pokémon Catcher`, `Poké Ball`,
   `Nidoran ♀`, `Mew ★`, `Diancie ◇`; TCGplayer writes those as `Pokemon
@@ -61,10 +76,10 @@ Behaviour worth knowing before reading the code, newest first:
   `item_movers()` clamps its smoothing to the window so short windows never
   compare overlapping medians (Part 31).
 - **Borrowed artwork is banded in the search detail view**, and only
-  borrowed artwork - `card_image_provenance()` reads 21,420 `own_art`,
+  borrowed artwork - `card_image_provenance()` reads 21,452 `own_art`,
   5,011 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
-  (Part 29). `unknown` has now held at 155 across two import rounds that
-  added 420 images between them, which is the fallback working rather than
+  (Part 29). `unknown` has now held at 155 across three import rounds that
+  added 452 images between them, which is the fallback working rather than
   luck: a qualifier the vocabulary has never seen defers to the structural
   test instead of becoming a shrug.
 - Smoothing is a **median**, never a mean (Part 24); the Sets screen
@@ -720,7 +735,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   claimancy. **The second signal cannot be derived** - that is the whole point
   of Part 27, and sole-claimancy alone confidently mislabelled cards until the
   owner corrected it.
-  State: **5,011 `base_art`, 21,420 `own_art`, 155 `unknown`**; 129 qualifiers
+  State: **5,011 `base_art`, 21,452 `own_art`, 155 `unknown`**; 129 qualifiers
   classified (4 `identity`, 125 `treatment`, of which 44 are the
   tournament/placement family). What is left is a scatter of a few cards each
   across promo sets. Three rules hold when adding one:

@@ -3462,6 +3462,95 @@ the two separate immediately.
 
 ---
 
+## Part 34 — The numbers with no digits
+
+Running Part 33's own diagnostic on what Part 33 left behind put the
+remaining 1,160 into four piles:
+
+```
+   753  name upstream, that number is not
+   275  name absent upstream (hopeless)
+   100  ambiguous - several catalog cards fit
+    32  LETTER-NUMBERED - recoverable
+```
+
+Only the last is a defect. The first two are absence, and the 100 ambiguous
+are where the matcher is *correctly* refusing to guess.
+
+### The same blind spot, one layer deeper
+
+Part 21 fixed card numbers whose digits are not at the *start* — `H1`,
+`SWSH014`, `RC4`. These have no digits **at all**:
+
+- the Unown alphabet in EX Unseen Forces, numbered `A/28` through `Z/28`
+  plus `!/28` and `?/28`;
+- the four HGSS-era Alph Lithographs, whose card numbers are the *words*
+  `ONE`, `TWO`, `THREE` and `FOUR`.
+
+`numberDigits()` returns null for every one, and that was fatal on both
+sides in precisely the way Part 21 documented: 32 catalog cards sat in no
+index at all, and the 32 products facing them never attempted a match.
+
+The letter is not recoverable from the name either — `Unown (A)` and
+`Unown [A]` both normalise to a bare `unown`, because a one-character
+bracketed token is not a printing qualifier and gets stripped. The card
+number field is the only place the letter survives.
+
+### Why this one is free
+
+`numberLetters()` answers exactly when `numberDigits()` cannot — a test pins
+that the two are disjoint and exhaustive over any non-blank number — so its
+index holds precisely the cards the other three indexes cannot see.
+Consulting it therefore cannot disturb a match any of them would have made.
+That is a stronger guarantee than Part 32's (which relied on `ok` rows never
+being re-read) and it is structural rather than measured.
+
+### The guard that earns its own test
+
+TCGplayer writes **`N/A`** for a product with no card number. Splitting on
+`/` and taking the head reads that as the letter `n`, which would hand those
+products any catalog card numbered N.
+
+A real letter number is letters over a count — `L/28` — so the fix is to
+require the denominator to be digits. Broken on purpose, the test reports
+`expected: <null> but was: <n>`, which is the bug it exists to stop.
+
+### Result
+
+```
+Done. matched=32 (downloaded=32, failed=0), no_match=1128
+```
+
+`ok` 26,586 → **26,618**, coverage 95.61% → **95.72%**, files on disk
+matching at 26,618. All 32 landed at tier 1, so provenance moved `own_art`
++32 with `base_art` and `unknown` both unchanged — no qualifier was stripped
+because none of these names carries one.
+
+`Alph Lithograph` resolved to `hgss1-ONE`, `hgss2-TWO`, `hgss3-THREE` and
+`hgss4-FOUR` — four identically-named products, each to its own set, which
+is the case that would have gone wrong quietly if the key had been the name
+alone. Checked as a picture: `Unown (!)` → `ex10-!` is the Unown whose body
+is shaped like an exclamation mark.
+
+### Where the images work now stands
+
+Three rounds in one day took coverage 94.1% → 95.72%, +452 images, with
+`CHANGED 0` and `LOST 0` at every step. What is left is no longer
+defect-shaped:
+
+| | rows | |
+|---|---|---|
+| name absent upstream | 275 | hopeless |
+| name upstream, that number is not | 753 | mostly Trainer Kits + Battle Academy, hopeless |
+| ambiguous, matcher refusing to guess | 100 | ~11 reachable by set name, rejected as not worth the invariant |
+| `failed` | 61 | upstream serves no image |
+
+**This is a good place to stop chasing it.** Every remaining pile is either
+absence or a deliberate refusal, and the next increment would cost a
+documented invariant for eleven rows.
+
+---
+
 ## Key design decisions — quick reference
 
 | Decision | Chosen approach | Why |
