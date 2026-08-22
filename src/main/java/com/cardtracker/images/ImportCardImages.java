@@ -170,6 +170,7 @@ public class ImportCardImages {
 
             Map<String, List<Card>> byKeyStrict = new HashMap<>();
             Map<String, List<Card>> byKeyNumCode = new HashMap<>();
+            Map<String, List<Card>> byKeyLetter = new HashMap<>();
             Map<String, List<Card>> byKeyLoose = new HashMap<>();
             CatalogCache cache = new CatalogCache(imageDir.resolve(".catalog-cache"));
 
@@ -223,7 +224,19 @@ public class ImportCardImages {
 
             for (Card c : catalog) {
                 String d = numberDigits(c.number());
-                if (d == null) continue;
+                if (d == null) {
+                    // Not indexed anywhere before this: a card numbered "ONE"
+                    // or "!" has no digits, so it fell out of every key. See
+                    // numberLetters().
+                    String cLetters = numberLetters(c.number());
+                    if (cLetters != null) {
+                        for (String n : nameKeys(c.name())) {
+                            byKeyLetter.computeIfAbsent(n + "|@" + cLetters,
+                                    k -> new ArrayList<>()).add(c);
+                        }
+                    }
+                    continue;
+                }
                 String cCode = numberCode(c.number());
                 // Under BOTH spellings - see nameKeys(). Keying only the folded
                 // one would trade "Nidoran (F)" away to win "Nidoran F".
@@ -266,6 +279,7 @@ public class ImportCardImages {
                 String d = numberDigits(p.cardNumber);
                 String t = numberTotal(p.cardNumber);
                 String code = numberCode(p.cardNumber);
+                String letters = numberLetters(p.cardNumber);
 
                 Card hit = null;
                 String rule = null;
@@ -286,6 +300,10 @@ public class ImportCardImages {
                         if (hit != null) rule = "name+number";
                     }
                 }
+                if (hit == null && nFull != null && letters != null) {
+                    hit = lettered(byKeyLetter, nFull, letters);
+                    if (hit != null) rule = "name+letter";
+                }
 
                 // Tier 2 - qualifier stripped. Only reached when tier 1 found
                 // nothing, which means the catalog has no card bearing this
@@ -293,16 +311,24 @@ public class ImportCardImages {
                 // Which tier succeeded is the whole signal - no set-name
                 // comparison is involved, and none should be (Part 21 showed
                 // the two catalogs disagree on set names).
-                if (hit == null && nBase != null && d != null && !nBase.equals(nFull)) {
-                    hit = strict(byKeyStrict, nBase, d, t);
-                    if (hit != null) rule = "name+number+total/base-art";
-                    if (hit == null) {
-                        hit = numCoded(byKeyNumCode, nBase, code);
-                        if (hit != null) rule = "name+numcode/base-art";
-                    }
-                    if (hit == null) {
-                        hit = loose(byKeyLoose, nBase, d);
-                        if (hit != null) rule = "name+number/base-art";
+                if (hit == null && nBase != null && !nBase.equals(nFull)
+                        && (d != null || letters != null)) {
+                    if (d == null) {
+                        // No digits to key on at all - the letter index is the
+                        // only one holding this card. See numberLetters().
+                        hit = lettered(byKeyLetter, nBase, letters);
+                        if (hit != null) rule = "name+letter/base-art";
+                    } else {
+                        hit = strict(byKeyStrict, nBase, d, t);
+                        if (hit != null) rule = "name+number+total/base-art";
+                        if (hit == null) {
+                            hit = numCoded(byKeyNumCode, nBase, code);
+                            if (hit != null) rule = "name+numcode/base-art";
+                        }
+                        if (hit == null) {
+                            hit = loose(byKeyLoose, nBase, d);
+                            if (hit != null) rule = "name+number/base-art";
+                        }
                     }
                     if (hit != null) {
                         strippedQualifier = strippedQualifier(p.name);
@@ -472,6 +498,17 @@ public class ImportCardImages {
         return (c != null && c.size() == 1) ? c.get(0) : null;
     }
 
+    /**
+     * Name + a card number that is entirely non-numeric, unambiguous only.
+     * Its index holds exactly the cards the other three cannot see at all, so
+     * consulting it can never disturb a match any of them would have made.
+     */
+    private static Card lettered(Map<String, List<Card>> idx, String n, String letters) {
+        if (letters == null) return null;
+        List<Card> c = idx.get(n + "|@" + letters);
+        return (c != null && c.size() == 1) ? c.get(0) : null;
+    }
+
     private static Card loose(Map<String, List<Card>> idx, String n, String d) {
         List<Card> c = idx.get(n + "|" + d);
         return (c != null && c.size() == 1) ? c.get(0) : null;
@@ -567,6 +604,8 @@ public class ImportCardImages {
      * cards from the index and stopping those products ever attempting one.
      */
     private static final Pattern ANY_DIGITS = Pattern.compile("([0-9]+)");
+    /** A denominator that is a plain count - see {@link #numberLetters}. */
+    private static final Pattern DIGITS_ONLY = Pattern.compile("[0-9]+");
     /**
      * An alphabetic prefix in front of a card number: the "H" of "H02", the
      * "SWSH" of "SWSH039". Bounded at 5 letters so a stray word can never be
@@ -787,6 +826,36 @@ public class ImportCardImages {
         if (s == null) return null;
         Matcher m = NUM_CODE.matcher(s.split("/")[0].toLowerCase(Locale.ROOT));
         return m.find() ? m.group(1) + m.group(2) : null;
+    }
+
+    /**
+     * A card number with NO digits at all: "L/28" -> "l", "ONE" -> "one",
+     * "!/28" -> "!". Null whenever {@link #numberDigits} can answer.
+     *
+     * Part 21 fixed numbers whose digits are not at the start; this is the
+     * same blind spot one layer deeper, for numbers that have no digits to
+     * find. It was fatal on both sides exactly as Part 21's was - 32 catalog
+     * cards were absent from every index, and the products facing them never
+     * attempted a match. They are the Unown alphabet in Unseen Forces
+     * (A-Z plus ! and ?) and the four HGSS-era Alph Lithographs, whose
+     * numbers are the words ONE, TWO, THREE and FOUR.
+     *
+     * **A non-numeric denominator is rejected**, which is the whole
+     * subtlety: TCGplayer writes "N/A" for a card with no number, and
+     * splitting on "/" would read that as the letter "n" and hand it any
+     * catalog card numbered N. A real one reads "L/28" - letters over a
+     * count - so requiring the denominator to be digits separates them.
+     */
+    static String numberLetters(String s) {
+        if (s == null) return null;
+        if (ANY_DIGITS.matcher(s.split("/")[0]).find()) return null;
+        String[] parts = s.split("/", -1);
+        if (parts.length > 2) return null;
+        if (parts.length == 2 && (parts[1].isBlank() || !DIGITS_ONLY.matcher(parts[1].trim()).matches())) {
+            return null;
+        }
+        String head = parts[0].trim().toLowerCase(Locale.ROOT);
+        return head.isEmpty() ? null : head;
     }
 
     /** "004/102" -> "102"; anything without a denominator -> null. */

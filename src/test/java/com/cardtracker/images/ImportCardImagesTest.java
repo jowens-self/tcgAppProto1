@@ -204,6 +204,67 @@ class ImportCardImagesTest {
     }
 
     @Nested
+    @DisplayName("numberLetters")
+    class NumberLetters {
+
+        /**
+         * Part 21 fixed numbers whose digits are not at the start. These have
+         * no digits to find at all, and were fatal on both sides in exactly
+         * the same way: the Unown alphabet in Unseen Forces and the four
+         * HGSS-era Alph Lithographs, numbered ONE through FOUR.
+         */
+        @Test
+        void readsANumberThatIsEntirelyNonNumeric() {
+            assertEquals("l", ImportCardImages.numberLetters("L/28"));
+            assertEquals("one", ImportCardImages.numberLetters("ONE"));
+            assertEquals("four", ImportCardImages.numberLetters("FOUR"));
+            assertEquals("!", ImportCardImages.numberLetters("!/28"));
+            assertEquals("?", ImportCardImages.numberLetters("?/28"));
+        }
+
+        /**
+         * The subtlety worth a test of its own. TCGplayer writes "N/A" for a
+         * card with no number; splitting on "/" would read that as the letter
+         * N and hand it any catalog card numbered N. A real letter number
+         * reads "L/28" - letters over a count - so the denominator has to be
+         * digits.
+         */
+        @Test
+        void refusesNotApplicableAsIfItWereTheLetterN() {
+            assertNull(ImportCardImages.numberLetters("N/A"));
+            assertNull(ImportCardImages.numberLetters("n/a"));
+            assertNull(ImportCardImages.numberLetters("L/"));
+            assertNull(ImportCardImages.numberLetters("A/B/C"));
+        }
+
+        /** Silent whenever numberDigits() can answer - it owns those. */
+        @Test
+        void isNullWheneverThereAreDigits() {
+            assertNull(ImportCardImages.numberLetters("4"));
+            assertNull(ImportCardImages.numberLetters("004/102"));
+            assertNull(ImportCardImages.numberLetters("H02/H32"));
+            assertNull(ImportCardImages.numberLetters("SWSH039"));
+            assertNull(ImportCardImages.numberLetters(null));
+        }
+
+        /**
+         * The two are exhaustive and disjoint over any non-blank number: every
+         * number is answered by exactly one of them, which is what lets the
+         * letter index hold precisely the cards the other three cannot see.
+         */
+        @Test
+        void isExactlyTheComplementOfNumberDigits() {
+            for (String n : new String[]{"4", "004/102", "H02/H32", "SWSH039",
+                                         "L/28", "ONE", "!/28", "TG12/TG30"}) {
+                boolean digits = ImportCardImages.numberDigits(n) != null;
+                boolean lettersToo = ImportCardImages.numberLetters(n) != null;
+                assertNotEquals(digits, lettersToo,
+                        n + " must be answered by exactly one of the two");
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("fold / nameKeys")
     class Folding {
 
