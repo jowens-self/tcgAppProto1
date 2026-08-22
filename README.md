@@ -153,9 +153,11 @@ SELECT * FROM set_return(23353, '2024-02-08', '2026-08-13');
 --        325 |     1176.92 |   2790.15 |     137.07
 
 -- Current (or as-of) total value of a set. Singles only, same rule.
+-- "Current" is the newest day the database HOLDS, not today - pulls are on
+-- demand, so the newest snapshot is routinely yesterday with nothing wrong.
 SELECT * FROM set_value(23353);
 -- n_variants | total_value
---        326 |     2792.05
+--        326 |     2748.94   (as of 2026-08-21, read 2026-08-22)
 ```
 
 Sealed product is still fully trackable - just as an individual item, not

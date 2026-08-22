@@ -115,9 +115,34 @@ $$ LANGUAGE sql STABLE;
 
 -- Current (or as-of) total value of a set: sum of every single card's
 -- market_price on one day. Singles only, same hard rule as set_return.
+--
+-- **"Current" means the newest day we HOLD, not today.** This defaulted to
+-- CURRENT_DATE until 2026-08-22, and that made the no-argument call - the
+-- one README documents and the one a person reaches for in psql - return
+-- NULL for most of every day. Pulls are on demand, so the newest snapshot is
+-- routinely yesterday with nothing wrong; CURRENT_DATE in the container is
+-- also UTC while the host is UTC-5, so the two disagree for five hours each
+-- evening even on a day that did pull. Measured the day it was fixed:
+-- set_value(2848) gave 0 variants / NULL, while the same call anchored on
+-- MAX(snapshot_date) gave 369 variants / $8,430.52. Silent, and wrong in the
+-- direction that looks like "this set has no data."
+--
+-- item_movers() and game_set_overview() have always anchored this way. The
+-- anchor is deliberately the GLOBAL max rather than this group's own: one
+-- as-of date across every set is what makes their values comparable, and a
+-- per-group anchor would quietly price Pokemon on one day against One Piece
+-- on another. It also keeps this agreeing with game_set_overview(), which
+-- sql/checks/set_overview_matches_primitives.sql asserts column by column.
+--
+-- The scalar sub-select is NOT the pattern CLAUDE.md warns about ("window
+-- bounds go in scalar DATE variables, never a CTE sub-select"). That warning
+-- is about a bound the planner cannot fold, used in a BETWEEN over a large
+-- aggregate. This one is uncorrelated and compared with =, so it becomes an
+-- InitPlan parameter: checked with EXPLAIN ANALYZE on 2026-08-22, the plan
+-- still reads "Index Cond: (snapshot_date = $1)" on idx_snapshots_date.
 CREATE OR REPLACE FUNCTION set_value(
     p_group_id INTEGER,
-    p_as_of_date DATE DEFAULT CURRENT_DATE
+    p_as_of_date DATE DEFAULT NULL
 ) RETURNS TABLE (
     n_variants INTEGER,
     total_value NUMERIC
@@ -126,7 +151,9 @@ CREATE OR REPLACE FUNCTION set_value(
     FROM price_snapshots ps
     JOIN products p ON p.product_id = ps.product_id
     WHERE p.group_id = p_group_id AND p.is_sealed = FALSE
-      AND ps.snapshot_date = p_as_of_date AND ps.market_price IS NOT NULL;
+      AND ps.snapshot_date = COALESCE(
+            p_as_of_date, (SELECT MAX(s.snapshot_date) FROM price_snapshots s))
+      AND ps.market_price IS NOT NULL;
 $$ LANGUAGE sql STABLE;
 
 -- ---------------------------------------------------------------------------

@@ -149,6 +149,42 @@ class PriceMathSqlTest {
                 "an 8441.00 sealed box must not be inside a set total, got " + value);
     }
 
+    /**
+     * "Current" means the newest day the database HOLDS, not today.
+     *
+     * set_value() defaulted its as-of date to CURRENT_DATE until 2026-08-22,
+     * which made the no-argument call - the one README documents - return
+     * NULL for most of every day: pulls are on demand, so the newest snapshot
+     * is routinely yesterday with nothing wrong, and the container reads UTC
+     * where the host reads UTC-5. Live at the time of the fix, set_value(2848)
+     * gave 0 variants / NULL against 369 / $8,430.52 anchored on the data.
+     *
+     * The fixture makes this permanently detectable rather than luckily so:
+     * Fixtures.TODAY is a fixed 2026-08-19 and recedes further into the past
+     * with every real day, so a CURRENT_DATE default can never accidentally
+     * agree with it.
+     */
+    @Test
+    void setValueWithNoDateReadsTheNewestDayHeldNotToday() throws Exception {
+        String dated = db.scalar(
+                "SELECT total_value::TEXT FROM set_value(604, DATE '" + Fixtures.TODAY + "')");
+        String defaulted = db.scalar("SELECT total_value::TEXT FROM set_value(604)");
+
+        assertNotNull(defaulted,
+                "the no-argument call must find the newest day held, not ask for today");
+        assertEquals(dated, defaulted,
+                "defaulting the as-of date must equal naming the newest day held");
+    }
+
+    /** An as-of date given explicitly is still obeyed, empty answer included. */
+    @Test
+    void setValueStillHonoursAnExplicitDate() throws Exception {
+        String future = db.scalar(
+                "SELECT total_value::TEXT FROM set_value(604, DATE '" + Fixtures.TODAY + "' + 1)");
+        assertNull(future,
+                "a day the set has no prices on must report none, not fall back to another day");
+    }
+
     @Test
     void aSealedProductIsStillTrackableOnItsOwn() throws Exception {
         String ath = db.scalar("SELECT all_time_high::TEXT FROM item_all_time_high(99001, 'Unopened')");
