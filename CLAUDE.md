@@ -32,6 +32,21 @@ Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **Search pages at 50 and says so; it does not raise the limit.** A common
+  name has more than 200 matches (`Charizard`, `Pikachu`, `Trainer` all hit
+  the `LEAST(limit, 200)` ceiling), and until 2026-08-22 the screen showed 50
+  of them with no count and no way to reach the rest. Page size stays 50
+  because **every row's thumbnail opens its own JDBC connection** - Part 31
+  measured 300 concurrent mixed requests producing 50
+  `too many clients already` failures against `max_connections = 100`, so a
+  200-row page would sit at the edge of a number already observed failing.
+  Paging is sound only because `item_search()` orders by
+  `(rank, length(name), name, product_id)` - a tie anywhere in that would make
+  `OFFSET` duplicate and skip rows. The "Load more" race (a page in flight
+  when a new search lands) is held off by a generation counter, and the
+  property that makes it work - exactly one place replaces the list - is
+  asserted by `onlyOnePlaceReplacesTheSearchResultList`, not just described.
+  Part 37.
 - **The card detail chart takes a range, and the range is anchored on the
   DATA, not on a clock** (`windowStart()`, `history-window.ts`). 30d / 90d /
   180d / 1y / All, counted back from that variant's own newest snapshot -

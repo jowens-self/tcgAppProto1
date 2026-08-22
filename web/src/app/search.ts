@@ -36,6 +36,18 @@ export class Search {
   private readonly api = inject(CardTrackerApi);
 
   /**
+   * Rows per request, and the page size "Load more" advances by.
+   *
+   * 50 rather than the API's 200 ceiling because every row fetches its own
+   * thumbnail and every request opens its own JDBC connection - a page is
+   * ~50 concurrent connections against Postgres' max_connections of 100.
+   * Measured 2026-08-20: 200 concurrent all succeed, 300 mixed produce 50
+   * `too many clients` failures. Paging keeps each page inside that, where
+   * simply raising the limit would walk toward it.
+   */
+  private static readonly PAGE = 50;
+
+  /**
    * Templates can only call class members, so the shared rule is re-exposed
    * here rather than reimplemented - search and any future screen showing
    * labels must agree on when one is worth showing.
@@ -47,6 +59,24 @@ export class Search {
   protected readonly searching = signal(false);
   protected readonly searched = signal(false);
   protected readonly error = signal<string | null>(null);
+
+  /**
+   * Whether the last page came back full, which is the only evidence we have
+   * that more exist - the endpoint returns rows, not a total. A short page
+   * ends the list and the button disappears; a page that is exactly full but
+   * happens to be the last one costs one extra request to find that out,
+   * which is the honest trade for not claiming a count we were not given.
+   */
+  protected readonly moreAvailable = signal(false);
+  protected readonly loadingMore = signal(false);
+
+  /**
+   * Bumped every time a new result list is established. "Load more" captures
+   * it and drops its answer if it has moved - otherwise a page still in
+   * flight when a new search lands would append the old query's rows to the
+   * new query's list.
+   */
+  private generation = 0;
 
   protected readonly selected = signal<ItemSearchResult | null>(null);
   protected readonly variants = signal<ItemVariant[]>([]);
@@ -120,13 +150,13 @@ export class Search {
           return this.api.search(q, {
             game: this.game,
             includeSealed: !this.hideSealed,
-            limit: 50,
+            limit: Search.PAGE,
           });
         }),
       )
       .subscribe({
         next: (r) => {
-          this.results.set(r);
+          this.setResults(r);
           this.searching.set(false);
           this.searched.set(true);
         },
@@ -155,7 +185,7 @@ export class Search {
     const trimmed = value.trim();
     if (!trimmed) {
       // The API rejects an empty q with 400, so don't ask.
-      this.results.set([]);
+      this.setResults([]);
       this.searched.set(false);
       this.clearSelection();
       return;
@@ -167,15 +197,19 @@ export class Search {
   protected onFilterChange(): void {
     const trimmed = this.query.trim();
     if (trimmed) {
-      this.results.set([]);
+      this.setResults([]);
       // distinctUntilChanged would swallow an identical query string, so
       // go straight to the API instead of pushing through the subject.
       this.searching.set(true);
       this.api
-        .search(trimmed, { game: this.game, includeSealed: !this.hideSealed, limit: 50 })
+        .search(trimmed, {
+          game: this.game,
+          includeSealed: !this.hideSealed,
+          limit: Search.PAGE,
+        })
         .subscribe({
           next: (r) => {
-            this.results.set(r);
+            this.setResults(r);
             this.searching.set(false);
             this.searched.set(true);
           },
@@ -186,6 +220,58 @@ export class Search {
         });
     }
     this.clearSelection();
+  }
+
+  /**
+   * Replaces the result list and starts a new page generation. Every path
+   * that establishes a fresh list goes through here so none of them can
+   * forget to invalidate a page request already in flight.
+   */
+  private setResults(rows: ItemSearchResult[]): void {
+    this.generation++;
+    this.results.set(rows);
+    this.moreAvailable.set(rows.length === Search.PAGE);
+  }
+
+  /**
+   * Appends the next page.
+   *
+   * Deliberately not routed through the debounced subject: switchMap would
+   * cancel it against the next keystroke, and its whole job is to add to the
+   * current list rather than replace it. The offset is the list's own length
+   * rather than a counter, so the two cannot drift apart.
+   *
+   * Paging is only sound because item_search() orders by
+   * (rank, length(name), name, product_id) - deterministic down to the
+   * tiebreaker. Verified against the live API: three consecutive pages of
+   * "Charizard", zero overlap, identical on a repeat call. An ORDER BY that
+   * ties would silently duplicate and skip rows here.
+   */
+  protected loadMore(): void {
+    const trimmed = this.query.trim();
+    if (!trimmed || this.loadingMore()) return;
+
+    const issuedUnder = this.generation;
+    this.loadingMore.set(true);
+    this.api
+      .search(trimmed, {
+        game: this.game,
+        includeSealed: !this.hideSealed,
+        limit: Search.PAGE,
+        offset: this.results().length,
+      })
+      .subscribe({
+        next: (rows) => {
+          this.loadingMore.set(false);
+          if (issuedUnder !== this.generation) return; // a newer search won
+          this.results.update((cur) => [...cur, ...rows]);
+          this.moreAvailable.set(rows.length === Search.PAGE);
+        },
+        error: () => {
+          this.loadingMore.set(false);
+          this.error.set('Could not load more results.');
+        },
+      });
   }
 
   protected select(item: ItemSearchResult): void {

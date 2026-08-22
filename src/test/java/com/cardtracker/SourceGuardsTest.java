@@ -16,6 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -166,6 +167,35 @@ class SourceGuardsTest {
                 "price_snapshots is append-only: inserts use ON CONFLICT DO NOTHING so a "
                 + "re-run is safe and a bad run can never overwrite a good observation. "
                 + "The history is the whole asset:\n  " + String.join("\n  ", offences));
+    }
+
+    /**
+     * Search paging is safe only because every path that establishes a fresh
+     * result list runs through Search.setResults(), which bumps the
+     * generation counter that a page request in flight is checked against.
+     * A fourth path calling this.results.set() directly would skip that bump,
+     * and the symptom would be the old query's rows appended to the new
+     * query's list - intermittent, timing-dependent, and invisible in review.
+     *
+     * Asserted as a count rather than by parsing the method, because the
+     * property that actually matters is "exactly one writer", and that is
+     * what a count says. Appends go through results.update() inside
+     * loadMore(), behind the generation check. Part 36.
+     */
+    @Test
+    void onlyOnePlaceReplacesTheSearchResultList() throws IOException {
+        Path search = ROOT.resolve("web/src/app/search.ts");
+        if (!Files.isRegularFile(search)) return;
+
+        Matcher m = Pattern.compile("this\\.results\\.set\\(").matcher(read(search));
+        int writers = 0;
+        while (m.find()) writers++;
+
+        assertEquals(1, writers,
+                "web/src/app/search.ts must replace the result list in exactly one place "
+                + "(Search.setResults), so no path can establish a new list without bumping "
+                + "the page generation that Load more checks against. Found " + writers
+                + " - route the new one through setResults().");
     }
 
     // ------------------------------------------------------------------

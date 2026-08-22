@@ -113,6 +113,25 @@
         </span>
       </button>
     }
+
+    <!-- Only rendered while more may exist, so a finished list says nothing.
+         The count rides along with the button rather than standing alone:
+         "12 shown" under twelve visible rows is noise, but "50 shown" beside
+         a way to get more is the answer to "am I seeing everything?" - which
+         until now the screen quietly got wrong. -->
+    @if (moreAvailable()) {
+      <div class="more-row">
+        <span class="more-count">{{ results().length }} shown</span>
+        <button
+          type="button"
+          class="more"
+          [disabled]="loadingMore()"
+          (click)="loadMore()"
+        >
+          {{ loadingMore() ? 'Loading…' : 'Load more' }}
+        </button>
+      </div>
+    }
   </section>
 
   <aside class="detail" [class.empty]="!selected()" aria-label="Item detail">

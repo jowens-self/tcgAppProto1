@@ -53,6 +53,7 @@ origin through that date, then continuing forward from there).
 34. [Part 34 — The numbers with no digits](#part-34--the-numbers-with-no-digits)
 35. [Part 35 — The damage gap catch-up cannot see](#part-35--the-damage-gap-catch-up-cannot-see)
 36. [Part 36 — A month of a card, not all of it](#part-36--a-month-of-a-card-not-all-of-it)
+37. [Part 37 — The fifty-first Charizard](#part-37--the-fifty-first-charizard)
 36. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
 37. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
 38. [What's still open](#whats-still-open)
@@ -3879,6 +3880,99 @@ for them from a screenshot would be guessing at how they read the screen.
 is a range to *draw*, not two smoothed endpoints to compare: one day is a
 single dot and a week is six segments that read as noise at this width.
 Movers keeps them because a two-point comparison works fine over a week.
+
+---
+
+## Part 37 — The fifty-first Charizard
+
+*2026-08-22, immediately after Part 36.*
+
+Part 36 ended on a pattern worth chasing rather than a conclusion: the
+chart's date range was not a missing capability, it was an unreachable one —
+`item_history()` had taken dates since Part 16 and the UI had simply never
+asked. So the obvious next question was whether anything else in the API was
+being under-asked.
+
+`ApiServer` parses `offset` on `/api/items/search`. Nothing in the front end
+had ever sent it.
+
+### What that meant on screen
+
+The search box asked for 50 rows and rendered exactly what came back, with no
+count, no "showing 50 of", and no way to see row 51. Measured against the
+live API:
+
+```
+q=Charizard  limit=200  ->  200 rows   (the function's own LEAST(limit,200) ceiling)
+q=Pikachu    limit=200  ->  200 rows
+q=Trainer    limit=200  ->  200 rows
+```
+
+Every one of those is a search where the screen was showing a quarter of the
+matches and saying nothing about it. For a seller looking up a specific
+printing — the actual thing this screen is for — that is worse than a slow
+search: the card is simply not there, and the screen looks complete.
+
+### Why not just raise the limit
+
+Because it moves the cliff instead of removing it, and it moves it toward a
+measured failure. Every row fetches its own thumbnail and **every request
+opens its own JDBC connection** (`ApiServer.withRepo`, still deliberately not
+a pool). Part 31's load measurement: 200 concurrent requests all succeed, and
+at 300 mixed **50 return 500** with `FATAL: sorry, too many clients already`
+against Postgres' `max_connections = 100`.
+
+A page of 50 is ~50 concurrent connections — comfortably inside that, which
+is why the app has never felt the ceiling. Raising the limit to 200 would put
+a single ordinary search at the edge of the number that has actually been
+observed failing. Paging keeps every page the same safe size and makes the
+rest reachable, which is the outcome the limit was hiding, not enforcing.
+
+### Paging is only sound because the ORDER BY is total
+
+`OFFSET` on a query whose ordering has ties will silently duplicate some rows
+and skip others, and it will do it differently under load. `item_search()`
+orders by `(h.rank, length(h.name), h.name, h.product_id)` — deterministic
+all the way down to a unique tiebreaker.
+
+Checked rather than trusted, against the live API: three consecutive pages of
+"Charizard" at offsets 0, 50 and 100 returned 50 rows each with **zero
+overlap** between any pair, and page 0 was identical on a repeat call.
+
+### The bug this shape invites
+
+"Load more" next to a live search box is a race. The page request is in
+flight; the user types; the debounced search lands first and replaces the
+list; then the page request returns and appends the *old* query's rows to the
+*new* query's results. Intermittent, timing-dependent, and it looks like a
+search bug rather than a paging bug.
+
+The guard is a generation counter: `setResults()` bumps it, `loadMore()`
+captures it before the request and drops its answer if it has moved. What
+makes that trustworthy is not the counter but the fact that there is exactly
+one writer — every path that establishes a fresh list (a debounced search, a
+filter change, an emptied query) goes through `setResults()`, and appends go
+through `results.update()` inside `loadMore()` behind the check.
+
+"Exactly one writer" is a claim a future edit can break in one line without
+noticing, so it is asserted rather than described:
+`onlyOnePlaceReplacesTheSearchResultList` in `SourceGuardsTest` counts
+`this.results.set(` in `search.ts` and requires exactly one. That is the same
+move as every other guard in that file — turn a rule that lives in prose into
+something that fails a build.
+
+### The count is withheld where it would be noise
+
+The footer shows "50 shown" beside the button, and appears **only while more
+may exist**. Under a finished list of twelve results it would be noise; over
+a truncated list it is the answer to "am I seeing everything?", which is the
+question the screen had been getting wrong. Part 25's rule — a marker earns
+its place by being withheld somewhere — applied to a count.
+
+There is no total, because the endpoint does not return one. A full page is
+the only evidence that more exist, so the last page costs one extra request
+to discover it is the last. That is the honest trade against inventing a
+number the server never gave us.
 
 ---
 
