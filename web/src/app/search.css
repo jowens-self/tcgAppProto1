@@ -382,6 +382,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Chart range picker. Deliberately quieter than the .variant buttons above
+   it: those choose which market you are looking at, which is a different
+   card's worth of decision - this only changes how much of it is drawn. */
+.windows {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+}
+.window {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.window:hover {
+  color: inherit;
+  border-color: var(--line);
+}
+.window.active {
+  border-color: var(--accent);
+  background: var(--accent-fade);
+  color: inherit;
+}
+
 .ret-row {
   display: flex;
   justify-content: space-between;

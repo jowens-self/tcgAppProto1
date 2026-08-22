@@ -211,6 +211,24 @@
 
       @if (activeVariant()) {
         <div class="history">
+          <!-- Same day counts Movers and Sets offer, so a range means one
+               thing across the app. Each is measured back from this
+               variant's newest snapshot, not from today - the pull is
+               on-demand and the data is routinely a day behind. -->
+          <div class="windows" role="group" aria-label="Chart range">
+            @for (w of chartWindows; track w.label) {
+              <button
+                type="button"
+                class="window"
+                [class.active]="chartWindow() === w"
+                [attr.aria-pressed]="chartWindow() === w"
+                (click)="setChartWindow(w)"
+              >
+                {{ w.label }}
+              </button>
+            }
+          </div>
+
           @if (history().length) {
             @let ret = totalReturn();
             <div class="ret-row">

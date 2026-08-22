@@ -10,6 +10,7 @@ import {
   ItemVariant,
   PricePoint,
 } from './api.models';
+import { HISTORY_WINDOWS, HistoryWindow, windowStart } from './history-window';
 import { PriceChart } from './price-chart';
 import { variantLabelAddsInfo } from './variant-label';
 
@@ -52,6 +53,20 @@ export class Search {
   protected readonly activeVariant = signal<string | null>(null);
   protected readonly history = signal<PricePoint[]>([]);
   protected readonly loadingDetail = signal(false);
+
+  /**
+   * How much of the chosen variant's history the chart plots.
+   *
+   * Opens on "All" because that is what this screen has always shown and
+   * the whole series is the thing the database actually owns - 925 days of
+   * it. The shorter ranges are one click away, and the choice is sticky
+   * across cards, the way Movers keeps its own window between loads.
+   */
+  protected readonly chartWindows = HISTORY_WINDOWS;
+  protected readonly chartWindow = signal<HistoryWindow>(
+    HISTORY_WINDOWS[HISTORY_WINDOWS.length - 1],
+  );
+
 
   /**
    * Provenance of the selected card's picture, or null when we hold no image
@@ -231,10 +246,44 @@ export class Search {
   protected showVariant(productId: number, subType: string): void {
     this.activeVariant.set(subType);
     this.history.set([]);
-    this.api.history(productId, subType).subscribe({
+    this.api.history(productId, subType, this.windowFrom(subType)).subscribe({
       next: (h) => this.history.set(h),
       error: () => this.error.set(`No history for ${subType}.`),
     });
+  }
+
+  /** Re-fetches the open variant over the newly chosen range. */
+  protected setChartWindow(w: HistoryWindow): void {
+    if (this.chartWindow() === w) return;
+    this.chartWindow.set(w);
+    const productId = this.selected()?.productId;
+    const subType = this.activeVariant();
+    if (productId != null && subType) this.showVariant(productId, subType);
+  }
+
+  /**
+   * Start date for the current range, or undefined for "All".
+   *
+   * The range is anchored on this variant's own newest snapshot rather than
+   * on today - see history-window.ts for why a clock is the wrong anchor
+   * here.
+   *
+   * That anchor also makes an empty result impossible, which is worth
+   * knowing before writing a branch for one: item_variants() reports
+   * latestDate as MAX(snapshot_date) for this exact sub-type, so the range
+   * always contains at least that day's row. The endpoint 404s on an empty
+   * history, and from this screen that can now only mean a genuine failure
+   * - which is why it still surfaces as one.
+   *
+   * A variant with no latest date to anchor on cannot happen here either
+   * (the buttons are built from the same list), so that fallback is simply
+   * the unwindowed request rather than a guess.
+   */
+  private windowFrom(subType: string): string | undefined {
+    const days = this.chartWindow().days;
+    if (days === null) return undefined;
+    const variant = this.variants().find((v) => v.subTypeName === subType);
+    return variant ? windowStart(variant.latestDate, days) : undefined;
   }
 
   protected clearSelection(): void {
@@ -244,7 +293,7 @@ export class Search {
     this.activeVariant.set(null);
   }
 
-  /** Percent change across the whole loaded series, or null if unusable. */
+  /** Percent change across the loaded series, or null if unusable. */
   protected totalReturn(): number | null {
     const pts = this.history().filter((p) => p.trendablePrice != null);
     if (pts.length < 2) return null;

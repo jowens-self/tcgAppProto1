@@ -38,13 +38,18 @@ interface ChartPoint {
             'Price history from ' + first().date + ' to ' + last().date
           "
         >
-          <!-- all-time-high reference line, so a current price reads in context -->
+          <!-- The high of what is DRAWN, which is the all-time high only
+               when the whole history is drawn. Since the caller can hand us
+               a 30-day slice this is deliberately not called an ATH: the
+               real one is on the variant button above the chart, and a
+               dashed line claiming to be it while sitting at a one-month
+               peak would be the more confident of the two lies. -->
           <line
-            class="ath-line"
+            class="peak-line"
             [attr.x1]="0"
             [attr.x2]="W"
-            [attr.y1]="athY()"
-            [attr.y2]="athY()"
+            [attr.y1]="peakY()"
+            [attr.y2]="peakY()"
           />
           <path class="area" [attr.d]="areaPath()" />
           <path class="line" [attr.d]="linePath()" />
@@ -75,7 +80,7 @@ interface ChartPoint {
     }
     .area { fill: var(--accent-fade); stroke: none; }
     .dot { fill: var(--accent); }
-    .ath-line {
+    .peak-line {
       stroke: var(--line);
       stroke-width: 1;
       stroke-dasharray: 3 3;
@@ -138,7 +143,8 @@ export class PriceChart {
   protected readonly first = computed(() => this.points()[0]);
   protected readonly last = computed(() => this.points()[this.points().length - 1]);
 
-  protected readonly athY = computed(() => {
+  /** Smallest y is the highest price - SVG's origin is the top left. */
+  protected readonly peakY = computed(() => {
     const pts = this.points();
     return pts.length ? Math.min(...pts.map((p) => p.y)) : 0;
   });
