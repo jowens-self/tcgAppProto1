@@ -52,6 +52,7 @@ origin through that date, then continuing forward from there).
 33. [Part 33 — The accent that cost 228 images](#part-33--the-accent-that-cost-228-images)
 34. [Part 34 — The numbers with no digits](#part-34--the-numbers-with-no-digits)
 35. [Part 35 — The damage gap catch-up cannot see](#part-35--the-damage-gap-catch-up-cannot-see)
+36. [Part 36 — A month of a card, not all of it](#part-36--a-month-of-a-card-not-all-of-it)
 36. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
 37. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
 38. [What's still open](#whats-still-open)
@@ -3689,6 +3690,127 @@ Which is why the check asserts *coverage* rather than the absence of
 failures. A historical failure that was recovered from is the table doing its
 job; asserting `ingest_runs` has never failed would fail forever on a wound
 that has already healed.
+
+---
+
+## Part 36 — A month of a card, not all of it
+
+*2026-08-22.*
+
+Movers and Sets have let you pick a window since Part 31 — 1, 7, 14, 30, 90,
+180 days, a year. The detail chart, the one screen actually showing a single
+card's prices, had no range control at all. It drew everything it held, which
+by now is 925 days across roughly 600 pixels, so a month of price action
+occupied nineteen of them.
+
+### What that cost, on one card
+
+Umbreon VMAX 095/203 (Evolving Skies, Holofoil), read two ways on the same
+afternoon:
+
+| Range | From | Return |
+|---|---|---|
+| All | 2024-02-08 | **+391.70%** |
+| 90 days | 2026-05-24 | **-5.06%** |
+
+Both numbers are honest and they are answers to different questions. Only the
+first was reachable, and it was the one printed beside the chart by default —
+so the screen's single visible percentage was an all-time figure on an app
+whose other two screens default to thirty days.
+
+### Almost nothing needed building
+
+`item_history()` has taken `p_start_date`/`p_end_date` since Part 16, the API
+endpoint has parsed `from`/`to` for as long, and `CardTrackerApi.history()`
+already forwarded both. Three layers were ready and the fourth had never
+asked. The whole change is a pill row above the chart, a signal holding the
+chosen range, and one argument on a call that already accepted it.
+
+Worth noticing as a pattern rather than a one-off: the capability was not
+missing, it was unreachable, and nothing in the codebase looked wrong. A
+grep for an unused parameter would have found this months earlier than a
+person did.
+
+### The part that is a real decision: what "30 days" counts back from
+
+The obvious implementation subtracts thirty days from `new Date()`. It is
+wrong twice, and both failures are ones this project has already met:
+
+* **The browser's clock is host-local.** Every date in this database is UTC.
+  That exact confusion is why `price_history_integrity.sql`'s first draft
+  failed on a healthy database in Part 35 — the container reads UTC, the host
+  reads UTC-5, and for five hours each evening they disagree about what day
+  it is. CLAUDE.md's answer is "where a clock IS wanted, it is always
+  `ZoneOffset.UTC`", and a range picker in a browser is a place that rule had
+  never been asked to cover.
+* **Pulls are on demand, so the data is routinely behind today.** That is by
+  design — missing a day costs nothing, gap catch-up backfills it. But it
+  means counting back from *now* returns 28 days of prices on a day the pull
+  has not run yet, while the label still says 30.
+
+So the range is anchored on the **variant's own newest snapshot**, taken from
+`item_variants().latestDate`, and no clock is read at all. "30 days" then
+means thirty days of prices rather than a range that silently shortens as the
+data ages. `windowStart()` does the arithmetic on a `Date.UTC` epoch, where
+there is no DST and subtracting days cannot land on a 23-hour one and slip a
+date.
+
+Seven tests pin it (`history-window.spec.ts`, front end 9 -> 16). The ones
+that matter are not the boundary cases but the two anchors set in the past —
+`windowStart('2024-06-30', 30)` — which a clock-based implementation cannot
+produce no matter what day it runs. A test that only checked a recent date
+would pass for both implementations.
+
+### A branch written, then proved impossible
+
+The first draft handled the endpoint's empty-history 404 as an ordinary
+outcome: "no prices in this range", rendered quietly beside the chart rather
+than as an error banner. It reads as obviously correct — a card that stopped
+being listed has nothing in the last thirty days.
+
+It cannot happen. `item_variants()` reports `latest_date` as
+`MAX(snapshot_date)` grouped by `sub_type_name`, so the anchor is always a
+real row *for that exact variant*, and `item_history()` filters
+`snapshot_date >= from`. The range therefore always contains at least the
+anchor day. Checked against the live API rather than argued from the source:
+`from=2026-07-23` on a 2026-08-21 anchor returns exactly 30 rows,
+2026-07-23 -> 2026-08-21, both ends inclusive.
+
+The branch came out. From this screen a 404 can now only mean a genuine
+failure, and it surfaces as one — which is more useful than a state that
+cannot be reached, cannot be tested, and would quietly swallow a real
+contract break if the API ever changed. The invariant is written down in
+`windowFrom()` instead, where the next person to consider adding the branch
+back will read it first.
+
+### The dashed line that had to be renamed
+
+The chart draws a dashed reference line at the top of the plotted series. Its
+comment called it the all-time high, and it was — but only because the whole
+history was always what got plotted. With a 30-day range it sits on a
+one-month peak.
+
+Renamed `ath-line` -> `peak-line`, and the comment now says it marks the high
+of what is drawn. Nothing is lost: the genuine all-time high is on the
+variant button immediately above the chart, and the figcaption already prints
+the plotted high as a number. A dashed line claiming to be an ATH while
+resting on a month's peak would have been the more confident of the two lies,
+which is Part 25's rule about markers earning their place, applied to a
+marker that already existed.
+
+### What was deliberately not done
+
+**The default stayed "All".** Movers and Sets default to 30 days and there is
+a real argument that this should match them. It was left alone because this
+change is additive by choice: the screen opens exactly where it opened
+yesterday, the shorter ranges are one click away, and switching the default
+is a one-line change the owner can make after actually using it. Deciding it
+for them from a screenshot would be guessing at how they read the screen.
+
+**1 and 7 day ranges are not offered**, though Movers has both. A window here
+is a range to *draw*, not two smoothed endpoints to compare: one day is a
+single dot and a week is six segments that read as noise at this width.
+Movers keeps them because a two-point comparison works fine over a week.
 
 ---
 

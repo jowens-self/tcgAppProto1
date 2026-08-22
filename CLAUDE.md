@@ -32,6 +32,20 @@ Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **The card detail chart takes a range, and the range is anchored on the
+  DATA, not on a clock** (`windowStart()`, `history-window.ts`). 30d / 90d /
+  180d / 1y / All, counted back from that variant's own newest snapshot -
+  `item_variants().latestDate` - so "30 days" means thirty days of prices
+  even when the pull has not run today. **Do not "simplify" this to
+  `new Date()`**: the browser's clock is host-local where every date here is
+  UTC, and on-demand pulls mean the newest day is routinely behind today with
+  nothing wrong. Same class of bug as the phantom day, one layer up. That
+  anchor also makes an empty result impossible, so a 404 from
+  `/api/items/{id}/history` means a real failure and is meant to look like
+  one - a branch treating it as "no prices in range" was written, disproved,
+  and removed (Part 36). Opens on All, which is where the screen has always
+  opened; switching that to 30d to match Movers is a one-line change left to
+  the owner.
 - **Image coverage is 95.72% and the remainder is no longer defect-shaped.**
   Three rounds on 2026-08-21 took it from 94.1%, +452 images, `CHANGED 0`
   and `LOST 0` at every step (Parts 32-34). What is left: 275 rows whose
@@ -74,7 +88,9 @@ Behaviour worth knowing before reading the code, newest first:
   rule most likely to be "simplified" back into a bug.
 - **Movers and Sets offer 1 / 7 / 14 / 30 / 90 / 180 days / 1 year**, and
   `item_movers()` clamps its smoothing to the window so short windows never
-  compare overlapping medians (Part 31).
+  compare overlapping medians (Part 31). The detail chart offers the same
+  vocabulary minus 1 and 7 (`HISTORY_WINDOWS`): a range there is something to
+  *draw*, and one day is a dot.
 - **Borrowed artwork is banded in the search detail view**, and only
   borrowed artwork - `card_image_provenance()` reads 21,452 `own_art`,
   5,011 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
@@ -633,7 +649,7 @@ Parts 9 and 10.
 
 ```
 mvn test                    # 126 Java tests (also run by `mvn package`)
-cd web && npm test          # 9 front-end tests (vitest)
+cd web && npm test          # 16 front-end tests (vitest)
 ./sql/checks/run-all.sh     # 4 SQL invariants, ~18s; needs the container up
 ```
 
