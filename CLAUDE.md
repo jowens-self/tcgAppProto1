@@ -1,12 +1,12 @@
 # CardTracker
 
 A TCG price-history app, built by and initially for a TCGplayer/eBay
-seller but **intended to be shared** - see below. Pulls daily price data
+seller but intended to be shared. See below. Pulls daily price data
 from a third-party mirror into Postgres, append-only, to build a price
 history it controls. Answers: what's up, what's down, what's dead stock,
 what's it worth this week vs last month.
 Started Pokemon-only; which games are actually tracked is controlled by the
-`tracked_categories` table, not hardcoded — see "Multi-game support" below.
+`tracked_categories` table, not hardcoded. See "Multi-game support" below.
 
 **This is intended to ship.** Stated by the owner 2026-08-16: the app is
 meant to be shared, not just a personal tool, and features should be "universal
@@ -36,28 +36,28 @@ Behaviour worth knowing before reading the code, newest first:
   name has more than 200 matches (`Charizard`, `Pikachu`, `Trainer` all hit
   the `LEAST(limit, 200)` ceiling), and until recently the screen showed 50
   of them with no count and no way to reach the rest. Page size stays 50
-  because **every row's thumbnail opens its own JDBC connection** - Part 31
+  because every row's thumbnail opens its own JDBC connection. Part 31
   measured 300 concurrent mixed requests producing 50
   `too many clients already` failures against `max_connections = 100`, so a
   200-row page would sit at the edge of a number already observed failing.
   Paging is sound only because `item_search()` orders by
-  `(rank, length(name), name, product_id)` - a tie anywhere in that would make
+  `(rank, length(name), name, product_id)`. A tie anywhere in that would make
   `OFFSET` duplicate and skip rows. The "Load more" race (a page in flight
   when a new search lands) is held off by a generation counter, and the
-  property that makes it work - exactly one place replaces the list - is
+  property that makes it work, exactly one place replaces the list, is
   asserted by `onlyOnePlaceReplacesTheSearchResultList`, not just described.
   Part 37.
 - **The card detail chart takes a range, and the range is anchored on the
   DATA, not on a clock** (`windowStart()`, `history-window.ts`). 30d / 90d /
   180d / 1y / All, counted back from that variant's own newest snapshot -
-  `item_variants().latestDate` - so "30 days" means thirty days of prices
+  `item_variants().latestDate`, so "30 days" means thirty days of prices
   even when the pull has not run today. **Do not "simplify" this to
   `new Date()`**: the browser's clock is host-local where every date here is
   UTC, and on-demand pulls mean the newest day is routinely behind today with
   nothing wrong. Same class of bug as the phantom day, one layer up. That
   anchor also makes an empty result impossible, so a 404 from
   `/api/items/{id}/history` means a real failure and is meant to look like
-  one - a branch treating it as "no prices in range" was written, disproved,
+  one. A branch treating it as "no prices in range" was written, disproved,
   and removed (Part 36). Opens on All, which is where the screen has always
   opened; switching that to 30d to match Movers is a one-line change left to
   the owner.
@@ -67,11 +67,11 @@ Behaviour worth knowing before reading the code, newest first:
   name is absent upstream, 753 whose number is (mostly Trainer Kits and
   Battle Academy 2024), 100 the matcher is deliberately refusing to guess
   at, and the 61 `failed`. **Stop chasing it** unless the upstream catalog
-  changes - the next increment would cost a documented invariant for
+  changes. The next increment would cost a documented invariant for
   eleven rows. The measured breakdown is in Part 34.
 - **A card number with no digits at all still matches** (`numberLetters()`,
   `name+letter`). Part 21 fixed numbers whose digits are not at the start;
-  these have none - the Unown alphabet (`A/28` ... `Z/28`, `!`, `?`) and the
+  these have none: the Unown alphabet (`A/28` ... `Z/28`, `!`, `?`) and the
   Alph Lithographs, numbered with the words `ONE`..`FOUR`. Its index holds
   only cards `numberDigits()` cannot see, so it can never disturb another
   tier. Note the guard: TCGplayer writes `N/A` for "no number", and reading
@@ -82,24 +82,24 @@ Behaviour worth knowing before reading the code, newest first:
   Catcher`, `Poke Ball`, `Nidoran F`, `Mew Star`, `Diancie Prism Star`. Since
   `finish()` replaces anything outside `[a-z0-9 ]` with a space, the catalog
   side used to normalise to `pok mon catcher` and could never meet its
-  product. 430 catalog cards were affected; fixing it was **+331 images**
-  (Part 33). **`δ`, `α`, `β` and `γ` are deliberately NOT folded** - they are
+  product. 430 catalog cards were affected; fixing it was +331 images
+  (Part 33). **`δ`, `α`, `β` and `γ` are deliberately NOT folded**: they are
   card identity the owner already classified via `stripped_qualifier`, and
   folding them would rewrite Part 27's verdicts. A test pins that.
-  Catalog cards are keyed under **both** spellings, because TCGplayer sells
+  Catalog cards are keyed under both spellings, because TCGplayer sells
   one card as `Nidoran F` and another as `Nidoran (F)`.
 - **Image matching has a third tier: the card number's alphabetic prefix**
   (`numberCode()`, between strict and loose). `numberDigits()` discards the
   letters in `H02`, `BW64`, `SWSH039`; for a holo subset or a promo series
   those letters are the only thing identifying the printing. The tier can
-  only ever *narrow* a candidate list the loose key already held - never
-  widen one - which is the whole safety argument, and the property a test
-  pins directly. Worth **89 images across 15 sets**, measured twice, then
-  downloaded 2026-08-21: **coverage 94.1% -> 94.42%**, 26,166 -> 26,255 `ok`,
+  only ever *narrow* a candidate list the loose key already held, never
+  widen one, which is the whole safety argument, and the property a test
+  pins directly. Worth 89 images across 15 sets, measured twice, then
+  downloaded 2026-08-21: coverage 94.1% -> 94.42%, 26,166 -> 26,255 `ok`,
   0 failed, and the 61 known-dead rows left alone by `--skip-failed`
   (Part 32).
 - **The live pull dates itself from the mirror, not from any clock**
-  (`PriceSource.dataAsOf()`). See the Data invariants section - this is the
+  (`PriceSource.dataAsOf()`). See the Data invariants section. This is the
   rule most likely to be "simplified" back into a bug.
 - **Movers and Sets offer 1 / 7 / 14 / 30 / 90 / 180 days / 1 year**, and
   `item_movers()` clamps its smoothing to the window so short windows never
@@ -107,19 +107,19 @@ Behaviour worth knowing before reading the code, newest first:
   vocabulary minus 1 and 7 (`HISTORY_WINDOWS`): a range there is something to
   *draw*, and one day is a dot.
 - **Borrowed artwork is banded in the search detail view**, and only
-  borrowed artwork - `card_image_provenance()` reads 21,452 `own_art`,
+  borrowed artwork. `card_image_provenance()` reads 21,452 `own_art`,
   5,011 `base_art`, 155 `unknown`, and `unknown` is deliberately silent
   (Part 29). `unknown` has now held at 155 across three import rounds that
   added 452 images between them, which is the fallback working rather than
   luck: a qualifier the vocabulary has never seen defers to the structural
   test instead of becoming a shrug.
-- Smoothing is a **median**, never a mean (Part 24); the Sets screen
+- Smoothing is a median, never a mean (Part 24); the Sets screen
   corrects one-day price errors and says so per row (Part 24); variant
   labels appear only when not already in the card's name (Part 25); Movers
   and Sets open on the largest tracked game, picked from `productCount` and
   never a hardcoded id (Part 25).
 
-**Check state before assuming anything** - `./status.sh` reports what's
+**Check state before assuming anything.** `./status.sh` reports what's
 running, image-import progress and data freshness in one shot. The backlog
 at the bottom of this file goes stale faster than anything else here; two
 shipped features were still listed as to-do a few hours after shipping.
@@ -134,12 +134,12 @@ cd web && npx ng serve                                                 # UI :420
 
 `java -jar target/cardtracker-0.1.0.jar` pulls prices (idempotent per day,
 catches up gaps automatically). `com.cardtracker.images.ImportCardImages`
-fetches card images - resumable, run it from the project root.
+fetches card images. Resumable, run it from the project root.
 
 **Use `ImportCardImages --dry-run` before changing any matching rule.** It
 matches and reports without downloading, writing, or recording a single
 `no_match`. That matters because a `no_match` is never re-queried, so a
-wrong rule writes a permanent lie - and the dry run has already caught one
+wrong rule writes a permanent lie, and the dry run has already caught one
 (it flagged `Aerodactyl (1)` as a printing variant when `(1)` is a card
 number). `--group <id>` scopes a real run to one set, which is how a rule
 change should be validated before it touches 10,000 rows.
@@ -149,7 +149,7 @@ change should be validated before it touches 10,000 rows.
 - **Never `mvn package` while ANY process is running from the jar.** It
   overwrites in place and Java loads classes lazily, so a long job dies
   partway through. **That includes the API server, which is easy to
-  forget** - it happened 2026-08-19: the import was protected, the running
+  forget**. It happened 2026-08-19: the import was protected, the running
   `ApiServer` was not, and it kept serving until it needed a class it had
   not yet loaded, then threw `ClassNotFoundException` and 500'd the Sets
   screen. The fix is a restart, not a rebuild. Check first with
@@ -159,14 +159,14 @@ change should be validated before it touches 10,000 rows.
   behind; a call fitting both then fails as ambiguous rather than picking
   one. This bit `game_set_overview()` on 2026-08-19. Any function whose
   signature changes needs an explicit `DROP FUNCTION IF EXISTS
-  name(old,arg,types);` above its CREATE - `item_movers()` and
+  name(old,arg,types);` above its CREATE. `item_movers()` and
   `game_set_overview()` both carry one. Inspect with
   `SELECT oid::regprocedure FROM pg_proc WHERE proname='...';`
 - **Run tools from the project root.** The image directory default is
   relative, so a launch from elsewhere used to split the writer from the
-  reader silently - the importer downloading into a fresh empty tree while
+  reader silently: the importer downloading into a fresh empty tree while
   the API served 404s from the real one. Both now resolve through
-  `ImageDir.resolve()`, which **refuses to start** outside the project root
+  `ImageDir.resolve()`, which refuses to start outside the project root
   (detected by `pom.xml` + `sql/schema.sql`) and names the fix in the error.
   An explicit `CARDTRACKER_IMAGE_DIR` is honoured unchecked, so an absolute
   path still works from anywhere.
@@ -181,19 +181,19 @@ change should be validated before it touches 10,000 rows.
   sets to fail per attempt, and deep pagination is broken past ~12k rows.
   The importer retries and caches a complete catalog under
   `images/.catalog-cache` (7-day TTL); delete that file to force a refresh.
-  Separately, **image downloads can fail in sustained bursts** - observed
+  Separately, image downloads can fail in sustained bursts, observed
   2026-08-19, an 11-minute stretch of zero successes and ~2 failures a
   minute, which then recovered on its own. With 6 retries at up to 60s
-  each, a single image can occupy minutes, so **a silent log is not
-  necessarily a hang**. Check progress in the DB
+  each, a single image can occupy minutes, so a silent log is not
+  necessarily a hang. Check progress in the DB
   (`SELECT status, COUNT(*) FROM card_images GROUP BY status`) before
   killing anything; failures are recorded as `failed`, which a later run
   retries.
 - **The 61 remaining `failed` image rows are an upstream gap, not a
-  retryable blip - do not keep re-running the importer for them.** Checked
+  retryable blip. Do not keep re-running the importer for them.** Checked
   2026-08-20: a full retry pass re-checked 22 of the 61 and every one failed
   again, having already failed the day before. A transient burst would not
-  reproduce across days, and would not *cluster by set* - these do: 51 of 61
+  reproduce across days, and would not *cluster by set*; these do: 51 of 61
   are McDonald's promo collections (`mcd14` 13, `mcd15` 14, `mcd17` 12,
   `mcd18` 12), plus 7 `hsp` and 1 `ecard2`. pokemontcg.io lists the cards
   (a `source_id` matched) but does not serve the images. Retrying costs ~6
@@ -203,27 +203,27 @@ change should be validated before it touches 10,000 rows.
   filled. **`--skip-failed` makes this enforceable rather than remembered** -
   `failed` rows are otherwise always retried, which is right for a real blip
   and wrong for these.
-- **Some sets are absent from pokemontcg.io outright - check before blaming
+- **Some sets are absent from pokemontcg.io outright. Check before blaming
   a matching rule.** Audited 2026-08-21 across all 1,580 `no_match` rows
-  (Part 32): the **Trainer Kits** (XY, BW, HGSS, SM, DP - eight sets, 412
+  (Part 32): the Trainer Kits (XY, BW, HGSS, SM, DP; eight sets, 412
   rows) are not there at all. It carries `tk1a`/`tk1b`/`tk2a`/`tk2b`, the
   2003-era EX kits, and nothing since; the four "Trainer Gallery" sets a
   name search turns up are a different product. `Battle Academy 2024` (135
   rows) is likewise absent. Together with the 61 `failed`, that is ~608 rows
   no rule change can reach.
-- **Sort misses by match rate PER SET before diagnosing any of them** - it
+- **Sort misses by match rate PER SET before diagnosing any of them.** It
   is the one query that separates the two causes, and it is cheap:
   `COUNT(*) FILTER (WHERE status='ok')` against
   `COUNT(*) FILTER (WHERE status='no_match')` grouped by `group_id`. A set
   at 2% (Battle Academy 2024) is absent upstream and no rule will reach it.
   **A set at 94% with a hundred-row residue is a rule defect**, because
-  whatever works for its other 1,615 cards is plainly working - that ratio
+  whatever works for its other 1,615 cards is plainly working; that ratio
   is what exposed Part 33's accent bug inside World Championship Decks.
   "Upstream doesn't have it" has now been wrong three times (Parts 21, 32,
   33) and every time the real cause was normalization. It hides well
   because absence and a normalization defect look identical from a single
-  row - the difference is that absence is **set**-shaped while a
-  normalization defect is **character**-shaped, scattering across many
+  row: the difference is that absence is set-shaped while a
+  normalization defect is character-shaped, scattering across many
   otherwise-healthy sets.
 
 ---
@@ -231,8 +231,8 @@ change should be validated before it touches 10,000 rows.
 ## Before you cite a rule here
 
 Not every line in this file came from the owner. Some are design decisions
-Claude made and recorded as description, and one of those - "Not a product.
-No users, no auth, no server, nothing public" - was later quoted back at the
+Claude made and recorded as description, and one of those, "Not a product.
+No users, no auth, no server, nothing public", was later quoted back at the
 owner as though they had forbidden a hosted version. They never said it, and
 it was used to argue against their own feature idea.
 
@@ -251,38 +251,38 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
 
 - **Hard ban threshold: >10,000 requests in a 24h period "may be banned."**
   A full sync should need at most 10,000 requests. Enforced in code as a
-  circuit breaker in `Throttle.MAX_REQUESTS_PER_RUN` (9000) — do not raise
+  circuit breaker in `Throttle.MAX_REQUESTS_PER_RUN` (9000). Do not raise
   this without re-reading the docs. If a sync starts needing more requests,
-  the sync logic is doing redundant work — fix that, don't raise the ceiling.
+  the sync logic is doing redundant work. Fix that, don't raise the ceiling.
 - **Pacing: >=100ms between requests** is the documented minimum (the FAQ's
   own example code uses 250ms). Exceeding a reasonable req/sec rate gets the
-  IP throttled for 10 minutes. `Throttle.politeDefault()` uses 750ms —
+  IP throttled for 10 minutes. `Throttle.politeDefault()` uses 750ms,
   deliberately well inside the minimum. Don't tighten this without a reason.
 - **Custom User-Agent required** on every request, format `App/X.Y.Z`.
   Generic or missing User-Agents may be blocked outright. Current value
-  lives in `TcgCsvPriceSource.USER_AGENT` — bump the version number when
+  lives in `TcgCsvPriceSource.USER_AGENT`. Bump the version number when
   request behavior changes.
 - **Data refreshes once daily, around 20:00 UTC.** There's a
   `last-updated.txt` you can check before pulling; if the timestamp hasn't
-  advanced since your last successful run, skip the sync. **Implemented
-  2026-08-20** as `PriceSource.dataAsOf()` - and it turned out to be better
+  advanced since your last successful run, skip the sync. Implemented
+  2026-08-20 as `PriceSource.dataAsOf()`, and it turned out to be better
   than a skip: the timestamp says which DAY the live endpoints are serving,
   so the pull is dated from it rather than being abandoned. A premature run
   now re-writes a day already held, which `ON CONFLICT DO NOTHING` makes a
-  free no-op. It is **a correctness fix, not just politeness** - this was
+  free no-op. It is a correctness fix, not just politeness. This was
   filed as "a future improvement, not required for ban-safety" until
-  2026-08-20, when a pull that ran before the daily refresh wrote **51,287
+  2026-08-20, when a pull that ran before the daily refresh wrote 51,287
   rows under `snapshot_date` 2026-08-20 that are 100% identical to
-  2026-08-19** - every product, every sub-type, same price. A phantom day.
+  2026-08-19: every product, every sub-type, same price. A phantom day.
   Verified across the whole history: exactly ONE such pair exists, so this is
   a one-off from an early pull, not a systemic corruption. Effects: a 1-day
-  window reports every card at 0.00% (honestly - the stored data really is
+  window reports every card at 0.00% (honestly: the stored data really is
   unchanged), and a duplicated day gets an extra vote in the 3-day medians
   Movers uses. Detect it with a per-date `COUNT(*)`/`SUM(market_price)`
   signature compared against the previous day. Note `price_snapshots` is
   **Resolved 2026-08-20 on the owner's instruction:** the 51,287 rows and both
-  `ingest_runs` rows were deleted, so history ended at 08-19 - genuinely the
-  newest day observed. **The real 2026-08-20 landed at 21:25 UTC the same day**,
+  `ingest_runs` rows were deleted, so history ended at 08-19, genuinely the
+  newest day observed. The real 2026-08-20 landed at 21:25 UTC the same day,
   after the mirror's 20:05 refresh: 51,308 rows, 29.5% of prices actually
   different from 08-19 (versus 0% for the phantom day), 610 requests. The delete ran in a transaction
   behind a guard that aborted unless every column of every row matched 08-19;
@@ -290,9 +290,9 @@ and [tcgcsv.com/faq](https://tcgcsv.com/faq) on 2026-08-12:
   **This is the only deliberate deletion from `price_snapshots` to date.**
   The append-only rule protects OBSERVATIONS; these were a copy of one, never
   observed on the date they claimed. That distinction is the whole
-  justification - "it looked wrong" is not one - and a future duplicate should
+  justification ("it looked wrong" is not one) and a future duplicate should
   be prevented by `dataAsOf()`, not deleted after the fact.
-- **No browser requests** — tcgcsv.com has a restrictive CORS policy and is
+- **No browser requests.** tcgcsv.com has a restrictive CORS policy and is
   backend-only by design, which matches how this app calls it.
 
 Any change to request volume, retry logic, or concurrency in
@@ -309,8 +309,8 @@ These are risk decisions, not style preferences. The owner sells on
 speculative. Protecting those accounts outranks every feature.
 
 **The general rule, which governs every case below:** this project talks
-to `tcgcsv.com` and nothing else. Any other outbound host - a marketplace,
-a CDN, an image API, anything - requires the owner's explicit permission
+to `tcgcsv.com` and nothing else. Any other outbound host (a marketplace,
+a CDN, an image API, anything) requires the owner's explicit permission
 first, asked for before any code is written or any request is made. Do not
 reason from "this specific request seems harmless" to "therefore it's
 allowed." The owner's livelihood is on the other side of that judgment
@@ -318,11 +318,11 @@ call, and it is not one to make on their behalf.
 
 - **Never contact eBay.** Added 2026-08-15 at the owner's explicit
   instruction: they sell there as well. No API calls, no page fetches, no
-  image hotlinking, no scraping, no automation - and not "just to check
+  image hotlinking, no scraping, no automation, and not "just to check
   something." Same standard as TCGplayer below, for the same reason:
   a real income account that a project like this must never put at risk.
 
-**Permitted hosts - only these.** Anything else needs explicit permission
+**Permitted hosts, only these.** Anything else needs explicit permission
 asked for before any code is written.
 
 | Host | Granted | For |
@@ -335,7 +335,7 @@ pokemontcg.io is a free community project, so it gets the same etiquette
 as tcgcsv: descriptive User-Agent, paced requests, and never re-fetching
 what's already been fetched. Its catalog is pulled once and matched
 offline rather than queried per card, and each image is fetched once then
-served from our own disk - so the browser never contacts it at all. This
+served from our own disk, so the browser never contacts it at all. This
 permission covers Pokemon images specifically; it is not a general
 licence to add image providers. One Piece has no source yet and needs its
 own conversation.
@@ -351,20 +351,20 @@ own conversation.
 - **No product images. Not from any TCGplayer host, in any component.**
   Reinforced 2026-08-15 after the front end shipped with result thumbnails
   bound to `products.image_url`, which points at
-  `tcgplayer-cdn.tcgplayer.com` - roughly 50 browser requests to a
+  `tcgplayer-cdn.tcgplayer.com`, roughly 50 browser requests to a
   TCGplayer domain per search. That is a violation of the rule above even
   though tcgcsv publishes the URL and documents it, and even though it
-  isn't scraping. **"Only tcgcsv" means only tcgcsv - a CDN subdomain is
+  isn't scraping. **"Only tcgcsv" means only tcgcsv: a CDN subdomain is
   still TCGplayer, and the intent of the rule is zero traffic to them, not
   zero *crawling* of them.** Do not reintroduce images from that host
   under any framing: not lazy-loaded, not one-at-a-time on click, not
-  proxied through our own API (worse - that makes it server-side and
+  proxied through our own API (worse: that makes it server-side and
   automated). `ItemSearchResult` in `web/src/app/api.models.ts`
   deliberately omits the `imageUrl` field so it cannot be bound to an
   `<img>` by accident; the API still returns it, which is harmless because
   returning a string fetches nothing. If images are ever genuinely wanted,
   they need a source that is not TCGplayer, and that is a decision for the
-  owner to make deliberately - not an implementation detail.
+  owner to make deliberately, not an implementation detail.
   **Outbound product *links* remain fine and are a core feature:** an
   `href` issues no request. Nothing is fetched unless the owner clicks it,
   which is them visiting TCGplayer in their own browser, as they would
@@ -383,7 +383,7 @@ price-park) plus engineering rules derived from them.
 - **`price_snapshots` is append-only.** Inserts use `ON CONFLICT DO NOTHING`.
   Never change this to `DO UPDATE`. Re-running a pull must be safe; a bad run
   must never overwrite a good observation. The history is the whole asset.
-- **Never compute on `high_price`.** Sellers "price park" — listing at absurd
+- **Never compute on `high_price`.** Sellers "price park", listing at absurd
   values so nothing sells. Store it, ignore it. Trend on `market_price`, with
   `mid` then `low` as fallback (see `PriceSnapshot.trendablePrice`).
 - **All-time high is computed on demand, never stored.**
@@ -391,18 +391,18 @@ price-park) plus engineering rules derived from them.
   `item_all_time_high()`. Not an incrementally-updated table: that would
   only compare against *new* rows, so a backfill turning up an older,
   higher price would leave it silently wrong. Recomputing is always
-  correct. Uses the mid/low fallback deliberately - a MAX over all history
+  correct. Uses the mid/low fallback deliberately: a MAX over all history
   has no anchor-bias risk, unlike the two-point comparisons in
   `item_return`/`set_return`, which withhold it on purpose.
-- **A set's price/return covers its singles only - never sealed
+- **A set's price/return covers its singles only, never sealed
   product.** `set_return()`/`set_value()` hardcode `is_sealed = FALSE`
   internally; it is *not* a caller-adjustable parameter. Sealed product
   stays fully trackable individually via
-  `item_return()`/`item_all_time_high()` - it just never contributes to a
+  `item_return()`/`item_all_time_high()`. It just never contributes to a
   set aggregate. Sealed items had been dominating those numbers (one
   $8,441 display case was a third of a set's "total value"; Paldean Fates
   went $25,100.93 -> $2,792.05 once fixed). See Part 12 and Part 14.
-- **Smoothing is a MEDIAN, never a mean** - `item_movers()` since
+- **Smoothing is a MEDIAN, never a mean.** `item_movers()` since
   2026-08-18, `game_set_overview()`'s despiking from the start. A mean
   damps real moves and leaks prices across a step: measured live, it
   reported Lillie 125a/156's genuine $41.10 -> $123.32 step (+200.0%) as
@@ -414,14 +414,14 @@ price-park) plus engineering rules derived from them.
   `percentile_cont` interpolates and can invent one. Part 24.
 - **A reading that swings hard and reverts the next day is
   replaced with the median of its neighbours, and the row says so.**
-  Decided 2026-08-18 - the owner's framing was "if something swings -80%
+  Decided 2026-08-18. The owner's framing was "if something swings -80%
   and then picks right back up at its normal price then that is probably
   an error," explicitly *not* a request to smooth every correction. The
   test keys on PERSISTENCE, not magnitude: a real move leaves a new level
   behind it, an error leaves the same level either side, so no threshold
   on "how big a real move may be" is ever needed. Four things are
   load-bearing:
-    * **Median, never mean** - same reasoning and evidence as the rule
+    * **Median, never mean.** Same reasoning and evidence as the rule
       above; do not re-derive it.
     * **A dollar gate**, because the effect is heavy-tailed: 4,700 events
       in 90 days, but 15 of them carry 99.4% of the distortion. Default
@@ -436,7 +436,7 @@ price-park) plus engineering rules derived from them.
   Two structural limits, both in Part 24: the newest date can never be
   despiked (its next day has not been observed yet), and a 3-window median
   catches one-day impulses only. Widening it to catch two-day runs was
-  **considered and decided against** - median-5 over Flaaffy (85475)
+  **considered and decided against**: median-5 over Flaaffy (85475)
   returns $1.69, erasing a genuine two-day move entirely. Real two-day
   steps are too common for that trade; do not reopen it without new
   evidence.
@@ -444,7 +444,7 @@ price-park) plus engineering rules derived from them.
   contributor, never alone.** Measured 2026-08-18: 44 of 283 sets have
   over half their 30-day movement coming from one row, and the worst case
   (Base Set Shadowless, +59.96%) was 86.6% one oscillating card. The
-  metric itself is unchanged - `set_return()`'s definition is an decision and `game_set_overview()` reproduces it exactly - but a bare
+  metric itself is unchanged (`set_return()`'s definition is an decision and `game_set_overview()` reproduces it exactly) but a bare
   percentage invites a reader to treat a one-card artifact as a set-wide
   verdict. Share is computed against GROSS movement (sum of absolute
   deltas), not net: net passes through zero and produced four-digit
@@ -453,52 +453,52 @@ price-park) plus engineering rules derived from them.
   to TCGplayer are a core feature; an aggregate that loses the ID is a bug.
 - **The live pull's `snapshot_date` comes from the MIRROR, not any clock**
   (`PriceSource.dataAsOf()`, reading tcgcsv's `last-updated.txt`). The live
-  price endpoints carry no date - they answer "what are the prices now" - and
+  price endpoints carry no date (they answer "what are the prices now") and
   tcgcsv refreshes at ~20:00 UTC, so before that refresh "now" is still
   yesterday's data. Dating it from our own clock is what wrote the phantom
   day on 2026-08-20. **Do not "simplify" this back to `LocalDate.now()` of
   any zone**: the clock answers when we asked, which is a different fact from
   what we got. The archive path never needed it because its URL names the
-  date. A parse failure refuses the run rather than falling back - and that
+  date. A parse failure refuses the run rather than falling back, and that
   is safe because missing a day costs nothing (gap catch-up backfills it).
   The skip test is `hasDateCovered()`, which accepts either ingest source,
   since the mirror's date is usually one the archive already filled.
 - **"Current" means the newest day the database HOLDS, never
   `CURRENT_DATE`.** Any function or screen with an as-of default anchors on
   `MAX(snapshot_date)`. `item_movers()` and `game_set_overview()` always did;
-  `set_value()` did not until 2026-08-22, and its no-argument call - the one
-  README documents and a person types in psql - returned NULL for most of
+  `set_value()` did not until 2026-08-22, and its no-argument call (the one
+  README documents and a person types in psql) returned NULL for most of
   every day. Pulls are on demand, so the newest snapshot is routinely
   yesterday with nothing wrong, and the container reads UTC where the host
   reads UTC-5. It is silent when it goes wrong: NULL reads as "this set has
   no data," not as "you asked about a day we have not pulled." Note what hid
-  it - every automated caller passes an explicit date, so the suite and the
+  it: every automated caller passes an explicit date, so the suite and the
   app exercised the parameter and never the default. The front end obeys the
   same rule via `windowStart()`. Part 36.
 - **Where a clock IS wanted, it is always `LocalDate.now(ZoneOffset.UTC)`,
   never host-local.** Decided 2026-08-12. `BackfillArchive` computes its end
   date this way and `App` its log line (`ProductPullTest` did too, until Part
   13 deleted it); `App`'s `snapshot_date` no longer comes from a clock at all
-  - see the rule directly above. Matching the archive
+  (see the rule directly above). Matching the archive
   backfill's own day boundary and
-  the container's default clock - so `snapshot_date` means the same thing
+  the container's default clock, so `snapshot_date` means the same thing
   across the whole table's history, and `CURRENT_DATE` in raw SQL always
   agrees with it. If a new place ever needs "today," use `ZoneOffset.UTC`
-  explicitly - bare `LocalDate.now()` is the bug this fixed.
+  explicitly. Bare `LocalDate.now()` is the bug this fixed.
   (One pre-fix run is stamped under the old convention and was left
-  alone on purpose - append-only means it was valid when written.)
+  alone on purpose: append-only means it was valid when written.)
 - **Percent change returns null on a zero or negative starting
   price.** Do not "fix" it to 0 or infinity. Lives in SQL only
   (`CASE WHEN start_price > 0 ...`); there is no Java implementation.
 
 ## Architecture intent
 
-Design decisions, revisable - though the ones the owner set are called out
+Design decisions, revisable, though the ones the owner set are called out
 in the text where it matters.
 
 `PriceSource` and `InventorySource` exist so the data sources are swappable.
 TCGCSV has no per-condition pricing and no uptime guarantee; a paid provider
-may replace it later. Keep provider specifics inside the implementations —
+may replace it later. Keep provider specifics inside the implementations;
 nothing above them should know the mirror exists.
 
 Future: Angular front end, then cloud. Both talk to our own API, never to the
@@ -506,7 +506,7 @@ mirror directly (it has a restrictive CORS policy and asks that data be
 ingested server-side).
 
 **That API now exists** (`com.cardtracker.api.ApiServer`, added
-2026-08-14 - see DEVELOPMENT_HISTORY.md Part 16 and README "Read API").
+2026-08-14; see DEVELOPMENT_HISTORY.md Part 16 and README "Read API").
 Rules it establishes, worth keeping:
 
 - **It is read-only, and should stay that way.**
@@ -517,8 +517,8 @@ Rules it establishes, worth keeping:
   guarantees are; an API that can write is an API that can violate them.
 - **Handlers call SQL functions, not inline SQL.** Every method on
   `QueryRepository` is a thin call into `sql/functions.sql`. That keeps
-  query logic verifiable directly in psql - which is how this project
-  checks its own numbers - and stops the API and hand-written analysis
+  query logic verifiable directly in psql, which is how this project
+  checks its own numbers, and stops the API and hand-written analysis
   from quietly diverging. New endpoint, new SQL function.
 - **A bulk SQL function that restates a per-item one must be
   cross-checked against it, not assumed equal.** `game_set_overview()`
@@ -533,12 +533,12 @@ Rules it establishes, worth keeping:
   sub-select.** In `item_movers()` and `game_set_overview()` both. From a
   sub-select the planner cannot fold them to constants, misses
   `idx_snapshots_date` and aggregates far more of the 41M-row table than
-  needed - measured at ~5x and ~6GB spilled to temp files.
+  needed, measured at ~5x and ~6GB spilled to temp files.
 - **Reads go through `QueryRepository`, not `PriceRepository`.** The
   latter is write-only by design; keeping them apart stops ingestion and
   the API surface from coupling.
 - **One DB connection per request** (`ApiServer.withRepo`). A JDBC
-  `Connection` is not thread-safe and Javalin is multithreaded - sharing
+  `Connection` is not thread-safe and Javalin is multithreaded; sharing
   one corrupts results intermittently instead of failing cleanly. That
   method is the single place to add a pool if this ever leaves localhost.
   **Measured 2026-08-20, so the ceiling is no longer hypothetical:** 250
@@ -546,10 +546,10 @@ Rules it establishes, worth keeping:
   with `FATAL: sorry, too many clients already` against Postgres'
   `max_connections = 100`. A realistic page (50 thumbnails at once) passes
   comfortably and the server recovers on its own, so this is a shipping
-  blocker, not a local one. Adding a pool means adding a dependency - the
+  blocker, not a local one. Adding a pool means adding a dependency, the
   owner's call, not a silent one.
 - **`high_price` is absent from every response** (owner's rule, made structural), and `PricePoint` has no
-  field for it - the "store it, ignore it" rule made structural rather
+  field for it: the "store it, ignore it" rule made structural rather
   than left as something a future chart author must remember. Same for
   `trendable_price`, which is returned precomputed so the
   market->mid->low fallback can't be re-derived wrong.
@@ -563,7 +563,7 @@ Rules it establishes, worth keeping:
   number only if it contains a digit, which is what keeps `Charizard ex`,
   `VMAX` and `GX` working as names; (2) if the parsed reading returns zero
   rows, the whole string is retried as a plain name. That fallback is not
-  optional polish - the last-token rule genuinely guesses wrong on cards
+  optional polish: the last-token rule genuinely guesses wrong on cards
   like `Nemona - Pikachu 42` (real card, number `180/198`), and without
   the retry those return nothing. Number matching goes through
   `normalize_card_number()`/`card_number_digits()`, never string equality:
@@ -576,37 +576,37 @@ Rules it establishes, worth keeping:
   doesn't already say** (owner, 2026-08-19, replacing their own
   2026-08-18 rule that labelled every variant loudly). `variant_label()` derives the label FROM
   the product name, so 78.7% of the time it repeated words already on
-  screen beside it. The test is containment - `variantLabelAddsInfo()` in
-  `web/src/app/variant-label.ts` - and it cannot mis-fire across cards
+  screen beside it. The test is containment: `variantLabelAddsInfo()` in
+  `web/src/app/variant-label.ts`, and it cannot mis-fire across cards
   because the label always comes from the very name it is tested against.
   What survives is the ~21% that reformats rather than repeats:
   `Night Stretcher - 2025 (Riley McKay)` -> `2025 World Championship`.
-  **Styling is deliberately quiet** - an ordinary chip beside card number
+  **Styling is deliberately quiet**: an ordinary chip beside card number
   and rarity, because it is identity, not a warning. **`--warn` has been spent, and not
   on this chip:** it belongs to a genuinely borrowed image, and since Part 29
-  it marks exactly that - `.art-warn-band` on the detail artwork, driven by
+  it marks exactly that: `.art-warn-band` on the detail artwork, driven by
   `card_image_provenance()`. This chip stays quiet.
   Three internals are load-bearing, all bugs first: a trailing bracket
   faces the same validity test as a parenthetical (`is_variant_word()`,
-  shared by both - otherwise all 26 `Unown [A]`..`[Z]` get a one-letter
+  shared by both, otherwise all 26 `Unown [A]`..`[Z]` get a one-letter
   "variant"); a trailing card number is stripped before extraction
   (`... [Professor Magnolia] - 223`); and `is_variant_word()` is mirrored
   in Java as `ImportCardImages.isVariantWord()` so the rule deciding a
-  row's label and the rule deciding its image cannot drift - change both
+  row's label and the rule deciding its image cannot drift: change both
   or neither, then run
-  `sql/checks/is_variant_word_matches_its_java_port.sql`. **Both trim their
-  own argument** (Part 30): relying on callers to btrim first left 81 of
+  `sql/checks/is_variant_word_matches_its_java_port.sql`. Both trim their
+  own argument (Part 30): relying on callers to btrim first left 81 of
   2,547 real tokens disagreeing once padded, and note bare `btrim(x)` strips
-  spaces only where Java's `trim()` also takes tabs and newlines - the
+  spaces only where Java's `trim()` also takes tabs and newlines. The
   character set in that function is deliberate, not decoration. Parts 22, 25, 26.
 - **Search results must carry `card_number` and `rarity`.** Added
   2026-08-14 after the owner pointed out a gap: a set commonly reprints
   one card at several rarities, and those are different markets. SV03
-  Obsidian Flames has four "Charizard ex" - 125/197 Double Rare $5.65,
+  Obsidian Flames has four "Charizard ex": 125/197 Double Rare $5.65,
   215/197 Ultra Rare $22.35, 223/197 Special Illustration Rare $108.58,
   228/197 Hyper Rare $37.37. Without these fields a result list shows
   four identical rows spanning a 19x price range. Read from
-  `extendedData` via `extended_field()`, **not** parsed out of the name -
+  `extendedData` via `extended_field()`, not parsed out of the name -
   TCGplayer appends the number to the name only sometimes (5,276 of
   34,435 singles), while `extendedData` carries `Number` and `Rarity`
   for 100% of singles in both tracked games (verified 2026-08-14). Any
@@ -616,7 +616,7 @@ Rules it establishes, worth keeping:
 
 ## Multi-game support
 
-Which games get pulled is **data, not code**: `tracked_categories`
+Which games get pulled is data, not code: `tracked_categories`
 (schema.sql) lists the category_ids `App`/`BackfillArchive` pull. Adding a
 game is an INSERT. Currently Pokemon (3) and One Piece (68).
 
@@ -630,7 +630,7 @@ game is an INSERT. Currently Pokemon (3) and One Piece (68).
   `tcgcsv-archive-68`) so each game has independent idempotency and
   failure tracking; one game failing never masks another.
 - **`Throttle` is one shared instance across all categories** in
-  a run - the 9000-request breaker is a whole-process limit, not per
+  a run. The 9000-request breaker is a whole-process limit, not per
   game. `App` logs each category's own count as a delta.
 - **Watch the 10,000/24h ban ceiling as games are added.** One
   Pokemon-sized category is ~436 requests/day.
@@ -642,7 +642,7 @@ Part 15.
 
 Java 21, Maven, Postgres 16 via `docker compose up -d`, macOS. Schema
 loads from `sql/schema.sql` on first container boot. Rebuild with
-`mvn package` after any source change - everything runs the jar, not the
+`mvn package` after any source change; everything runs the jar, not the
 source. Setup details are in README.
 
 **Do not run `mvn package` while a long-running job is using the jar**
@@ -653,14 +653,14 @@ classes lazily, so a running process can die partway through.
 this data unattended yet, so a daemon would mean Docker Desktop parked in
 memory for no one. Run the jar by hand when you want fresh data.
 
-**Missing a day costs nothing** - that's why on-demand is safe. tcgcsv's
+**Missing a day costs nothing**: that's why on-demand is safe. tcgcsv's
 archives persist back to 2024-02-08 and `App` runs gap catch-up
 unconditionally on every run, so skipping a week just means the next run
 backfills those seven days. A day with no pull is a day with no *new*
 row, not a lost one.
 
 **The trigger for a scheduled daemon is hosting, not a front end.** A
-local front end changes nothing - whoever opens it can trigger the pull.
+local front end changes nothing: whoever opens it can trigger the pull.
 Unattended freshness only matters once someone *other than the owner*
 loads the app. (Now that shipping is the goal, this is approaching.)
 The LaunchAgent template is checked in at `com.cardtracker.daily.plist`,
@@ -669,7 +669,7 @@ built and verified 2026-08-13, then deliberately unloaded.
 **`App` is idempotent per day and self-healing:** it skips the fetch if
 today (UTC) already has a successful run, and catches up missing prior
 days before pulling today. Both verified end-to-end against an isolated
-scratch database, not just by code review - see DEVELOPMENT_HISTORY.md
+scratch database, not just by code review; see DEVELOPMENT_HISTORY.md
 Parts 9 and 10.
 
 ## Tests (added 2026-08-20 - there were none before)
@@ -680,11 +680,11 @@ cd web && npm test          # 16 front-end tests (vitest)
 ./sql/checks/run-all.sh     # 4 SQL invariants, ~18s; needs the container up
 ```
 
-Tests needing Postgres **skip** rather than fail when no container is running,
+Tests needing Postgres skip rather than fail when no container is running,
 so `mvn test` stays useful without Docker.
 
-Four rules shape the suite. The rest - what each tier covers, and what is
-deliberately left to human judgment - is DEVELOPMENT_HISTORY.md Part 31.
+Four rules shape the suite. The rest (what each tier covers, and what is
+deliberately left to human judgment) is DEVELOPMENT_HISTORY.md Part 31.
 
 - **No test may contact tcgcsv.com or pokemontcg.io.** Both are free, no-SLA
   services with a ban threshold, and a suite runs far more often than a daily
@@ -710,16 +710,16 @@ deliberately left to human judgment - is DEVELOPMENT_HISTORY.md Part 31.
 Owner asked for tighter commit bodies that don't re-narrate what
 DEVELOPMENT_HISTORY.md already covers.
 
-Keep commit message bodies tight and scoped to *this* change - what changed
+Keep commit message bodies tight and scoped to *this* change: what changed
 and why, enough for `git log`/`git blame`/a bisect six months from now.
 Don't re-narrate the full reasoning journey in the commit body when
-DEVELOPMENT_HISTORY.md already carries it in more depth - that duplication
+DEVELOPMENT_HISTORY.md already carries it in more depth. That duplication
 crept in over this project's early commits (several bodies ended up
 reading like mini-essays, overlapping real estate with the dev history
 doc). Point to DEVELOPMENT_HISTORY.md's relevant Part for the deeper "how
 we got here" narrative instead of repeating it. Concrete numbers/impact
 are still worth keeping in the commit body when they exist (e.g. "810,451
-rows deleted," "$25,100.93 -> $2,792.05") - that's the kind of thing a
+rows deleted," "$25,100.93 -> $2,792.05"). That's the kind of thing a
 diff alone won't show and is genuinely useful at commit-message scope, not
 narrative bloat.
 
@@ -727,15 +727,15 @@ narrative bloat.
 
 **One genuine unknown remains.** The Seller Portal CSV's columns have never
 been seen. `InventorySource` is an interface with no implementation on
-purpose - do not guess the columns; ask for a sample export first. Whether
+purpose. Do not guess the columns; ask for a sample export first. Whether
 it carries a SKU ID or only a product ID decides whether per-condition joins
 are possible at all.
 
 Two former unknowns are settled and should not be re-litigated:
 
 - **tcgcsv field names are correct** (verified 2026-08-12 by direct curl).
-  The live response also contained a genuine price-parked row - `marketPrice`
-  ~70 against `highPrice` 9999 - which is what justifies the `high_price`
+  The live response also contained a genuine price-parked row, `marketPrice`
+  ~70 against `highPrice` 9999, which is what justifies the `high_price`
   rule above. Names live in `TcgCsvPriceSource`.
 - **`product_id` is stable across time**, so long-range trends and
   all-time-high are safe to trust. Checked 2026-08-13 against the earliest
@@ -747,7 +747,7 @@ Two former unknowns are settled and should not be re-litigated:
 
 ## Excluded products and sealed classification
 
-- **Code cards are excluded from ingestion entirely** - not
+- **Code cards are excluded from ingestion entirely**, not
   filtered at query time. They're digital redemption codes that crater
   toward $0 and wreck set-level aggregates. Classified by name prefix
   ("Code Card...") in `App`, Pokemon only. The 1,253 already backfilled
@@ -768,17 +768,17 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
 
 ## Backlog
 
-- **Classify the remaining 155 `unknown` image qualifiers - owner's call, one
+- **Classify the remaining 155 `unknown` image qualifiers: owner's call, one
   INSERT each, no code change.** `card_image_provenance()` decides whose
   artwork a card shows from two signals: a structural test (who else claims
   the same `source_id`) and `image_qualifier_class`, a table of the owner's
-  domain calls - `identity` (the catalog holds this card in its own right,
+  domain calls: `identity` (the catalog holds this card in its own right,
   e.g. `delta species`) or `treatment` (a stamp or foil over a base printing,
   e.g. `prerelease`, `cosmos holo`). A `treatment` is `base_art` whatever its
-  claimancy. **The second signal cannot be derived** - that is the whole point
+  claimancy. **The second signal cannot be derived**: that is the whole point
   of Part 27, and sole-claimancy alone confidently mislabelled cards until the
   owner corrected it.
-  State: **5,011 `base_art`, 21,452 `own_art`, 155 `unknown`**; 129 qualifiers
+  State: 5,011 `base_art`, 21,452 `own_art`, 155 `unknown`; 129 qualifiers
   classified (4 `identity`, 125 `treatment`, of which 44 are the
   tournament/placement family). What is left is a scatter of a few cards each
   across promo sets. Three rules hold when adding one:
@@ -791,7 +791,7 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
       duplicate it. That is an invariant in the check file, not a convention.
     * **An unclassified qualifier falls back to the structural test** rather
       than being guessed at, which is why leaving 155 open is safe.
-  Verdicts are computed, never stored - one more vocabulary row would silently
+  Verdicts are computed, never stored: one more vocabulary row would silently
   invalidate a stored value. Invariants: every column of
   `sql/checks/card_image_provenance_invariants.sql` must read `t`.
   Full reasoning, the known 3-row imprecision, and how each family was chosen:
@@ -803,38 +803,38 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   there. `shiny` is the one actually worth a decision and it is not
   guessable from here: it covers Platinum's `SH` and Call of Legends' `SL`
   subsets, where the shiny really is different artwork (the recovered
-  `Vulpix (Shiny)` is gold, not orange) - which argues `identity` - but the
+  `Vulpix (Shiny)` is gold, not orange), which argues `identity`, but the
   word is also used elsewhere for foil treatments, which argues `treatment`.
   That is exactly the split Part 27 says cannot be derived.
 - **Should the provenance band appear in the search grid?** Open since Part 29,
-  and no longer blocked on speed - `card_image_provenance()` went from ~96ms to
+  and no longer blocked on speed. `card_image_provenance()` went from ~96ms to
   ~5ms per product on 2026-08-20, so a result page is affordable now. What
   remains is a product judgment, and Part 25 is the precedent worth weighing:
-  a marker earns its place by being **withheld** somewhere. This would band
+  a marker earns its place by being withheld somewhere. This would band
   roughly a fifth of every page, where the detail view bands one card you
   chose to look at.
-- **Connection pool, when this leaves localhost - not before.** Every request
+- **Connection pool, when this leaves localhost, not before.** Every request
   opens its own JDBC connection (`ApiServer.withRepo`, the single place to
   change). Measured 2026-08-20 against the running server: 200 concurrent
-  requests all succeed; at 300 mixed, **50 fail** with
+  requests all succeed; at 300 mixed, 50 fail with
   `FATAL: sorry, too many clients already` against `max_connections = 100`,
   and it recovers unattended. A realistic page is ~50 concurrent thumbnails,
-  well inside the limit - which is why this has never been felt locally.
-  Deliberately **not** done yet: the fix is a new dependency (HikariCP) on a
+  well inside the limit, which is why this has never been felt locally.
+  Deliberately not done yet: the fix is a new dependency (HikariCP) on a
   short list, and the moment it matters is the same moment the localhost-only
   CORS rule needs revisiting. Do both together, against a real hosting
   decision, rather than adding a dependency for load that does not exist.
 - Inventory CSV ingest, once a real export exists
 - Inventory + price join views
-- **Community art showcase (owner's idea, 2026-08-16)** - themed voting
+- **Community art showcase (owner's idea, 2026-08-16)**: themed voting
   prompts ("best beach vibes", "favourite darker-theme art") over card
   art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md
   "What's still open" for the full note. **Read it before building any of
   this**: the owner confirmed 2026-08-16 that the app is meant to ship, so
   a multi-user version is in scope, not a violation. The one genuinely
-  open question is card-art redistribution - showing Pokemon art publicly
+  open question is card-art redistribution: showing Pokemon art publicly
   is not the same act as showing it in a local tool.
-- **Oscillating `market_price` on thin markets - needs a domain decision.**
+- **Oscillating `market_price` on thin markets: needs a domain decision.**
   Found building the set overview (Part 23). Some cards'
   `market_price` flips between two far-apart values for weeks at a time -
   Base Set (Shadowless) Charizard 1st Ed Holofoil sits at ~$250 or at
@@ -844,13 +844,13 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   large: 44 of 283 sets have over half their 30-day movement from a single
   row. The set screen discloses this rather than correcting it. The open
   question is whether such readings should be flagged or treated as
-  suspect at ingest - a domain call of the same kind as the code-card
+  suspect at ingest, a domain call of the same kind as the code-card
   exclusion, and it affects Movers and all-time-high too. See
   DEVELOPMENT_HISTORY.md Part 23.
-- One Piece card images - no permitted source exists yet; needs its own
+- One Piece card images: no permitted source exists yet; needs its own
   conversation before any code.
 
-Completed items aren't tracked here - git history and
+Completed items aren't tracked here. Git history and
 DEVELOPMENT_HISTORY.md carry them, and DEVELOPMENT_HISTORY.md's "What's
 still open" is the fuller list of open threads.
 
