@@ -6,18 +6,18 @@
 --
 -- Hard rule baked in here, not left as caller-adjustable: a set's price or
 -- return is defined ONLY over its singles (is_sealed = FALSE). Sealed
--- product is a fully separate category - it's trackable individually via
+-- product is a fully separate category, and it's trackable individually via
 -- item_return()/item_all_time_high() same as any product, but it never
 -- contributes to a set-level aggregate. See CLAUDE.md.
 
--- Return for one specific product+variant between two exact dates - a
+-- Return for one specific product+variant between two exact dates. A
 -- card OR a sealed item, deliberately, since the math is identical either
 -- way and a product_id already has a fixed category the moment you pick
 -- it. Named item_*, not card_*, and returns name/is_sealed alongside the
 -- numbers specifically so the category is always visible in the result
 -- rather than something the caller has to already know or look up
 -- separately. Empty result (no row) if either date has no recorded price
--- for that item - deliberately not "nearest available date," so a caller
+-- for that item, deliberately not "nearest available date," so a caller
 -- never silently gets a different day than the one they asked for.
 CREATE OR REPLACE FUNCTION item_return(
     p_product_id INTEGER,
@@ -49,7 +49,7 @@ CREATE OR REPLACE FUNCTION item_return(
     WHERE p.product_id = p_product_id;
 $$ LANGUAGE sql STABLE;
 
--- All-time high for one product+variant, card or sealed - same naming and
+-- All-time high for one product+variant, card or sealed, with the same naming and
 -- visibility reasoning as item_return above. Uses the market->mid->low
 -- fallback (see PriceSnapshot.trendablePrice / CLAUDE.md "Data invariants")
 -- since this is a MAX() over the whole history, not a two-point comparison -
@@ -74,7 +74,7 @@ $$ LANGUAGE sql STABLE;
 -- the two totals. Restricted to the (product, variant) basket present with
 -- a real market_price on BOTH dates, so a coverage change between the two
 -- days (tcgcsv tracking more/fewer products) never masquerades as a price
--- move - see the "9 extra cards" investigation in Part 12.
+-- move. See the "9 extra cards" investigation in Part 12.
 CREATE OR REPLACE FUNCTION set_return(
     p_group_id INTEGER,
     p_start_date DATE,
@@ -117,8 +117,8 @@ $$ LANGUAGE sql STABLE;
 -- market_price on one day. Singles only, same hard rule as set_return.
 --
 -- **"Current" means the newest day we HOLD, not today.** This defaulted to
--- CURRENT_DATE until 2026-08-22, and that made the no-argument call - the
--- one README documents and the one a person reaches for in psql - return
+-- CURRENT_DATE until 2026-08-22, and that made the no-argument call (the
+-- one README documents and the one a person reaches for in psql) return
 -- NULL for most of every day. Pulls are on demand, so the newest snapshot is
 -- routinely yesterday with nothing wrong; CURRENT_DATE in the container is
 -- also UTC while the host is UTC-5, so the two disagree for five hours each
@@ -162,7 +162,7 @@ $$ LANGUAGE sql STABLE;
 -- The three functions below are the read path every future component needs
 -- before it can ask anything interesting: find an item, see which variants
 -- it actually has, then pull that variant's history. They're deliberately
--- "item", not "card" - sealed product is looked up exactly the same way,
+-- "item", not "card", since sealed product is looked up exactly the same way,
 -- the same reasoning that renamed card_return -> item_return.
 --
 -- Note the split: search returns products, NOT (product, variant) rows.
@@ -180,7 +180,7 @@ $$ LANGUAGE sql STABLE;
 -- disagree about it.
 --
 -- Note this is the same blob the is_sealed classifier keys on (presence of
--- a 'Number' field) - see CLAUDE.md. Verified 2026-08-14: 'Number' and
+-- a 'Number' field); see CLAUDE.md. Verified 2026-08-14: 'Number' and
 -- 'Rarity' are both populated for all 34,435 singles, Pokemon and One
 -- Piece alike, so they're safe to rely on rather than treat as optional.
 CREATE OR REPLACE FUNCTION extended_field(p_extended_data JSONB, p_field TEXT)
@@ -201,14 +201,14 @@ $$ LANGUAGE sql IMMUTABLE;
 --            916    "196"       bare
 --            532    "TG10/TG30" same slash rule, letters kept
 --            111    "098a/122"  variant suffix letter, kept ("98a" != "98")
---   One Piece 6,274 "OP17-028"  the card number is AFTER the dash - the
+--   One Piece 6,274 "OP17-028"  the card number is after the dash, and the
 --                               leading part is the set code, not the card
 -- Getting the side wrong would silently match the set size or the set code
 -- instead of the card, so the two are split on separately rather than by a
 -- single generic rule.
 --
 -- Leading zeros are stripped from the start of each digit run ("004" -> "4",
--- "098a" -> "98a") but interior and trailing zeros are untouched - "040" and
+-- "098a" -> "98a") but interior and trailing zeros are untouched, so "040" and
 -- "4" are genuinely different cards, only the padding is noise.
 CREATE OR REPLACE FUNCTION normalize_card_number(p_raw TEXT)
 RETURNS TEXT AS $$
@@ -246,7 +246,7 @@ $$ LANGUAGE sql IMMUTABLE;
 
 -- Name search across products, newest-relevance first. Case-insensitive
 -- substring match, backed by the pg_trgm GIN index on products.name (see
--- schema.sql) - without that index this is a full seq scan on every
+-- schema.sql). Without that index this is a full seq scan on every
 -- keystroke.
 --
 -- Ranking is deliberately simple and explainable rather than a similarity
@@ -254,22 +254,22 @@ $$ LANGUAGE sql IMMUTABLE;
 -- broken by name length so "Charizard" outranks "Charizard G" and
 -- "Bug Catcher - 189/236 (#34 Charizard Stamped)". Card names are short
 -- and highly repeated across sets (266 Pokemon products match
--- 'charizard'), so set_name/game are returned on every row - a bare name
+-- 'charizard'), so set_name/game are returned on every row, since a bare name
 -- list is genuinely ambiguous here, not just less pretty.
 --
 -- p_category_id filters to one game (NULL = all tracked games).
 -- p_include_sealed = FALSE hides sealed product. It IS a parameter here,
--- unlike in set_return/set_value where sealed is hardcoded out - looking
+-- unlike in set_return/set_value where sealed is hardcoded out. Looking
 -- something up is not a set-level aggregate, and "find me that booster
 -- box" is a legitimate search.
 --
 -- card_number and rarity come from extendedData, NOT from the name, and
--- they are not decoration - they are frequently the only thing separating
+-- they are not decoration: they are frequently the only thing separating
 -- two hits. The same set routinely reprints one card at several rarities:
 -- SV03 Obsidian Flames has three "Charizard ex" (125/197 Double Rare,
 -- 215/197 Ultra Rare, 223/197 Special Illustration Rare) that trade at
 -- very different prices. TCGplayer does append the number to the name in
--- those cases, but only sometimes - just 5,276 of 34,435 singles have a
+-- those cases, but only sometimes: just 5,276 of 34,435 singles have a
 -- number in the name, so Base Set Charizard would come back with nothing
 -- to identify it. extendedData carries Number and Rarity for 100% of
 -- singles in both tracked games, so that's the source used here.
@@ -277,7 +277,7 @@ $$ LANGUAGE sql IMMUTABLE;
 -- return type of existing function"), so adding a column to the RETURNS
 -- TABLE below makes a plain re-run of this file fail against any database
 -- that already has the older signature. Dropping first keeps this file
--- re-runnable, which is the whole point of it - it's loaded on fresh boot
+-- re-runnable, which is the whole point of it, since it's loaded on fresh boot
 -- (where this is a no-op) and re-applied by hand after every edit. Signature
 -- is spelled out because item_search is overload-free but Postgres still
 -- needs the exact argument list to identify it.
@@ -309,12 +309,12 @@ RETURNS BOOLEAN AS $$
     -- 2026-08-20: 81 of 2,547 real tokens flip verdict when padded.
     --
     -- The character set is explicit because bare btrim(x) strips SPACES ONLY,
-    -- while Java's String.trim() also removes tabs and newlines - so the
+    -- while Java's String.trim() also removes tabs and newlines, so the
     -- obvious one-argument btrim() left the two still disagreeing on E'\tZ\n'.
     -- Java additionally strips every control char below U+0020; those do not
     -- occur in this catalog, and the check file pins the whitespace cases.
     --
-    -- No effect on current callers, which already btrim - verified by
+    -- No effect on current callers, which already btrim; verified by
     -- comparing variant_label() across all 38,587 products, unchanged.
     SELECT btrim(p_token, E' \t\n\r\f\v') IS NOT NULL
        AND btrim(p_token, E' \t\n\r\f\v') ~ '[A-Za-z]'
@@ -326,7 +326,7 @@ $$ LANGUAGE sql IMMUTABLE;
 -- product is an ordinary printing.
 --
 -- This exists because TCGplayer encodes the variant in the NAME, not in
--- extendedData - unlike Number and Rarity, which have their own fields.
+-- extendedData, unlike Number and Rarity, which have their own fields.
 -- "Blastoise - 13/95 (Cracked Ice Holo)" and plain "Blastoise" are
 -- different products at different prices, and the parenthetical is the only
 -- thing that says so.
@@ -337,7 +337,7 @@ $$ LANGUAGE sql IMMUTABLE;
 --
 -- Three rules, each earning its place against real data:
 --
---  1. A trailing "- YYYY (Person)" is a World Championship deck - the
+--  1. A trailing "- YYYY (Person)" is a World Championship deck, and the
 --     parenthetical is the DECK PILOT, not a variant, so rendering it
 --     as-is would put a stranger's name on the card. Verified 2026-08-18:
 --     all 1,947 Pokemon products matching this shape are in World
@@ -352,7 +352,7 @@ $$ LANGUAGE sql IMMUTABLE;
 --     test as the parenthetical, which is not optional: Unown is catalogued
 --     as "Unown [A]" ... "Unown [Z]", and without the length floor every
 --     one of those 26 cards gets a one-letter "variant" label. The real
---     bracket vocabulary is words - Staff, Winner, Set of 4, 1st Place.
+--     bracket vocabulary is words: Staff, Winner, Set of 4, 1st Place.
 CREATE OR REPLACE FUNCTION variant_label(p_name TEXT)
 RETURNS TEXT AS $$
 DECLARE
@@ -424,7 +424,7 @@ CREATE OR REPLACE FUNCTION item_search_core(
     -- The LIMIT has to be applied BEFORE the per-product variant lookup,
     -- not after: as one CTE with the lateral join inline, Postgres runs
     -- the variant scan for every match (266 for 'charizard') and only then
-    -- takes 25 - measured at 722ms vs 37ms for this shape.
+    -- takes 25, measured at 722ms vs 37ms for this shape.
     WITH hits AS (
         SELECT p.product_id, p.name, p.is_sealed, p.group_id, p.category_id,
                p.url, p.image_url, p.extended_data,
@@ -436,13 +436,13 @@ CREATE OR REPLACE FUNCTION item_search_core(
           AND (p_category_id IS NULL OR p.category_id = p_category_id)
           AND (p_include_sealed OR p.is_sealed = FALSE)
           -- Number match runs only when one was supplied, and only against
-          -- rows the (indexed) name filter already kept - so the JSON
+          -- rows the (indexed) name filter already kept, so the JSON
           -- unwrap happens for a handful of rows, not the whole catalog.
           --
           -- Two ways to match. The full normalized key is the strict one
           -- ("xy67a" matches only XY67a). The digits-only key is the loose
           -- one, so "121" finds XY121 and "28" finds OP17-028 without
-          -- having to type the set code - but it is allowed ONLY when the
+          -- having to type the set code, but it is allowed only when the
           -- typed number has no letters in it. Otherwise typing "XY67a"
           -- would also match XY67, since both reduce to digits "67",
           -- throwing away the variant letter the user deliberately typed.
@@ -456,7 +456,7 @@ CREATE OR REPLACE FUNCTION item_search_core(
         -- is load-bearing for paging: many products share an identical name
         -- across sets (there are dozens of cards named exactly "Charizard"),
         -- so rank/length/name alone leaves them tied and Postgres free to
-        -- order them differently per call - which makes OFFSET silently
+        -- order them differently per call, which makes OFFSET silently
         -- duplicate or skip rows between pages.
         ORDER BY rank, length(p.name), p.name, p.product_id
         LIMIT LEAST(COALESCE(p_limit, 25), 200) OFFSET GREATEST(COALESCE(p_offset, 0), 0)
@@ -486,7 +486,7 @@ $$ LANGUAGE sql STABLE;
 -- searches by name exactly as before.
 --
 -- How the split is decided:
---   * An explicit '#' always wins - everything left of it is the name,
+--   * An explicit '#' always wins: everything left of it is the name,
 --     everything right is the number. This is the escape hatch for a card
 --     whose name genuinely ends in a number.
 --   * Otherwise the LAST whitespace-separated token is treated as a number
@@ -496,7 +496,7 @@ $$ LANGUAGE sql STABLE;
 --     safe, because none of them contain a digit.
 --
 -- **The fallback is the important part.** That last-token rule guesses, and
--- it can guess wrong - a card genuinely named "... 2" would be read as
+-- it can guess wrong, since a card genuinely named "... 2" would be read as
 -- name "..." plus number 2. So when the parsed interpretation returns
 -- nothing, the whole original string is retried as a plain name. A wrong
 -- guess therefore costs one extra query and is invisible to the user,
@@ -561,7 +561,7 @@ $$ LANGUAGE plpgsql STABLE;
 -- This is the bridge between search and item_return/item_all_time_high:
 -- both of those require a sub_type_name, and a caller has no way to guess
 -- whether a given card exists as Normal, Holofoil, Reverse Holofoil, or
--- some combination - it varies per product and even changes over time
+-- some combination. It varies per product and even changes over time
 -- (Altaria 83514's Normal variant only starts 2025-03-28 while its
 -- Holofoil goes back to 2024-02-08, which is why first_date is returned
 -- rather than assumed).
@@ -601,7 +601,7 @@ $$ LANGUAGE sql STABLE;
 -- Price time series for one product+variant, for charting.
 --
 -- high_price is deliberately NOT returned. Sellers price-park (list at
--- absurd values so nothing sells), so it's noise - CLAUDE.md's "store it,
+-- absurd values so nothing sells), so it's noise, per CLAUDE.md's "store it,
 -- ignore it" rule. Omitting it from the API entirely makes that rule
 -- structural rather than a convention a future caller has to know about,
 -- the same way set_return() hardcodes sealed product out instead of
@@ -609,7 +609,7 @@ $$ LANGUAGE sql STABLE;
 --
 -- trendable_price is the documented market->mid->low fallback (see
 -- PriceSnapshot.trendablePrice) precomputed, so a chart doesn't have to
--- re-derive the fallback rule - and can't get it wrong.
+-- re-derive the fallback rule, and can't get it wrong.
 --
 -- NULL dates mean "no bound": both NULL gives the item's full history.
 CREATE OR REPLACE FUNCTION item_history(
@@ -643,7 +643,7 @@ $$ LANGUAGE sql STABLE;
 -- Biggest price moves over a window, for the "what moved this week" screen.
 --
 -- Rows are per (product, variant), NOT per product like item_search. A mover
--- IS a specific variant's move - Holofoil and Reverse Holofoil are different
+-- is a specific variant's move, and Holofoil and Reverse Holofoil are different
 -- markets that move independently, so collapsing them would be the sub-type
 -- invariant violation, not the other way round.
 --
@@ -665,7 +665,7 @@ $$ LANGUAGE sql STABLE;
 --     reported +80.0%, because one day of the post-step price leaked into
 --     the "then" window. The median reports +200.0% exactly.
 --   * Flaaffy (85475, Reverse Holofoil) sat at $1.69 for nine days then
---     moved to $50.83. The mean called the current price $34.45 - a number
+--     moved to $50.83. The mean called the current price $34.45, a number
 --     the card has never traded at. The median says $50.83.
 --
 -- A median leaves steps and monotone trends untouched while annihilating
@@ -693,7 +693,7 @@ $$ LANGUAGE sql STABLE;
 -- four of the top twelve were sub-$1 cards moving a few cents. Defaults to
 -- $1, applied to the STARTING average.
 --
--- market_price only, no mid/low fallback - same reasoning as item_return
+-- market_price only, no mid/low fallback, same reasoning as item_return
 -- (DEVELOPMENT_HISTORY.md Part 12): a fallback price on a two-anchor
 -- comparison is where the -99% return bug came from.
 --
@@ -731,7 +731,7 @@ DECLARE
     -- [end-days-(smooth-1), end-days], so they stay disjoint only while
     -- smooth <= days. At the default smoothing of 3 a 1-day window had the
     -- two windows sharing two of their three days, which damps every real
-    -- move toward zero - the same failure mode as the mean this function
+    -- move toward zero, the same failure mode as the mean this function
     -- stopped using in Part 24, arriving by a different route. No effect on
     -- 7/30/90, where 3 <= days already.
     v_smooth      INTEGER := LEAST(GREATEST(COALESCE(p_smoothing, 3), 1),
@@ -778,7 +778,7 @@ BEGIN
     -- through the CTEs and guesses 2 rows out of this join when the truth is
     -- ~23,000; believing 2, it picks nested loops against groups (302 rows)
     -- and categories, materialises the real 23,000 and rescans them once per
-    -- group - loops=302, ~7GB of temp file traffic, measured. Cutting to the
+    -- group: loops=302, about 7GB of temp file traffic, measured. Cutting to the
     -- LIMIT here means groups, categories and the extended_data unwrap only
     -- ever see 50 rows, so the bad estimate stops mattering.
     -- Only products is joined at this stage, and only because the filters
@@ -852,7 +852,7 @@ $$ LANGUAGE sql STABLE;
 --
 -- One row per set: what it's worth today and how it moved over a window.
 -- The per-set primitives set_value()/set_return() already answer this for
--- ONE set, but the screen needs every set of a game at once - 302 tracked
+-- one set, but the screen needs every set of a game at once, 302 tracked
 -- groups, so calling them per set is 604 round trips. This is those two
 -- functions' definitions computed set-wide in a single pass; the semantics
 -- are deliberately identical (with p_despike = FALSE, see below), and
@@ -861,7 +861,7 @@ $$ LANGUAGE sql STABLE;
 -- Three things carried over from the primitives, all load-bearing:
 --
 --   * Singles only (is_sealed = FALSE), hardcoded, not a parameter. Same
---     hard rule as set_return() - see this file's header and CLAUDE.md.
+--     hard rule as set_return(); see this file's header and CLAUDE.md.
 --   * The return uses only rows priced on BOTH days (an inner join on
 --     product_id + sub_type_name), so a set's composition changing inside
 --     the window can't masquerade as a price move.
@@ -873,7 +873,7 @@ $$ LANGUAGE sql STABLE;
 -- WHY THE CONCENTRATION COLUMNS EXIST (top_*). Measured 2026-08-18: among
 -- Pokemon sets with a >=2% 30-day move, the single largest contributing row
 -- is routinely 50-87% of ALL movement in the set. Base Set (Shadowless)
--- read +59.96% on a basket of 202 - and $9,750 of the $10,718 move was one
+-- read +59.96% on a basket of 202, and $9,750 of the $10,718 move was one
 -- row, Charizard 1st Edition Holofoil, whose market_price sits at ~$250 or
 -- at exactly $10,000 for weeks at a time. Report the biggest single
 -- contributor and its share of gross movement, so a set carried by one row
@@ -884,8 +884,8 @@ $$ LANGUAGE sql STABLE;
 -- DESPIKING (p_despike). A separate defect from the above, and the owner's
 -- call on 2026-08-18: a price that swings hard and is back to its previous
 -- level the very next day is almost certainly an upstream error, not a
--- move. The test keys on PERSISTENCE, not magnitude - a real move leaves a
--- new level behind it, an error leaves the same level on both sides - so it
+-- move. The test keys on persistence, not magnitude: a real move leaves a
+-- new level behind it, an error leaves the same level on both sides, so it
 -- needs no opinion about how large a genuine move may be.
 --
 -- A reading is replaced with median(prev, cur, next) when all of:
@@ -907,7 +907,7 @@ $$ LANGUAGE sql STABLE;
 --
 -- The dollar gate exists because the effect is heavily tailed. Over the 90
 -- days to 2026-08-18 there were 4,700 such spikes, but 4,652 were sub-$1
--- penny cards worth $138 in total, while 15 spikes carried $32,440 - 99.4%
+-- penny cards worth $138 in total, while 15 spikes carried $32,440, or 99.4%
 -- of all distortion. Filtering everything would churn thousands of rows to
 -- fix rounding noise; $10 catches 26 spikes and 99.6% of the money.
 --
@@ -926,7 +926,7 @@ $$ LANGUAGE sql STABLE;
 -- p_days defaults to 30 rather than movers' 7: a set of 200+ cards averages
 -- out most of what a week shows.
 -- Adding the despike parameters changed this function's signature, and
--- CREATE OR REPLACE does not replace across signatures - it creates a second
+-- CREATE OR REPLACE does not replace across signatures. It creates a second
 -- OVERLOAD, leaving the old 3-argument version behind. Two candidates then
 -- make game_set_overview(NULL, 30) ambiguous and it fails to resolve at all.
 -- Same guard as item_movers() above, for the same reason.
@@ -1019,7 +1019,7 @@ BEGIN
         FROM resolved r
         WHERE r.cur IS NOT NULL
     ),
-    -- median-of-3 as max(min(a,b), min(max(a,b), c)) - no sort, no
+    -- median-of-3 as max(min(a,b), min(max(a,b), c)): no sort, no
     -- percentile_cont, and correct for any ordering of the three.
     priced AS (
         SELECT f.which, f.gid, f.pid, f.stn, f.is_spike,
@@ -1112,7 +1112,7 @@ $$ LANGUAGE plpgsql STABLE;
 
 -- One spelling for a printing qualifier that TCGplayer writes several ways.
 --
--- ImportCardImages records stripped_qualifier verbatim, which is right - it
+-- ImportCardImages records stripped_qualifier verbatim, which is right, since it
 -- is a fact about the product's name, and "Semi-Finalist" and "Semi
 -- Finalist" really are both out there. But the classification vocabulary in
 -- image_qualifier_class should not need a row per spelling, so the two sides
@@ -1137,7 +1137,7 @@ $$ LANGUAGE sql IMMUTABLE;
 
 -- Whose artwork is a card actually showing?
 --
--- Background: ImportCardImages records stripped_qualifier - the printing
+-- Background: ImportCardImages records stripped_qualifier, the printing
 -- qualifier it had to drop before a product matched a pokemontcg.io card
 -- (DEVELOPMENT_HISTORY.md Part 26). That column was deliberately a fact
 -- ("the word dropped") rather than a verdict ("the picture is wrong"),
@@ -1147,16 +1147,16 @@ $$ LANGUAGE sql IMMUTABLE;
 --
 -- TWO signals decide it, and they answer different halves.
 --
--- 1. STRUCTURAL - who else claims the same catalog card? One pokemontcg.io
+-- 1. Structural: who else claims the same catalog card? One pokemontcg.io
 --    card is one picture, so when several of our products resolve to the
 --    same source_id they are all displaying that one picture, whatever
 --    their names promise. Verified on disk (Part 27): plain Blastoise
 --    13/95 (Unleashed) and both the Cracked Ice Holo and Prerelease
 --    listings of it are three byte-identical files (md5 4cc2be6f...),
 --    while Acerola 112/147 and Acerola (Full Art) 142/147 hash differently
---    and are visibly different cards - bordered art against full-bleed.
+--    and are visibly different cards: bordered art against full-bleed.
 --
--- 2. VOCABULARY - image_qualifier_class, the owner's domain calls. The
+-- 2. Vocabulary: image_qualifier_class, the owner's domain calls. The
 --    structural test has a blind spot it cannot see on its own: a sole
 --    claimant is only proof that no OTHER product took the picture, not
 --    that the picture matches the physical card. "Bronzong - SWSH091
@@ -1165,14 +1165,14 @@ $$ LANGUAGE sql IMMUTABLE;
 --    always carry a stamp (owner, 2026-08-19), sole-claimancy gave 18 such
 --    cards a false all-clear until the vocabulary table was consulted.
 --    Conversely Delta Species is card identity, not a treatment, so its
---    159 sole claimants are genuinely correct - the same structural fact
+--    159 sole claimants are genuinely correct, the same structural fact
 --    reads oppositely depending on the word, which is exactly why the word
 --    has to come from someone who knows Pokemon printings.
 --
 -- Verdicts:
 --   'own_art'  sole claimant, or the unqualified claimant of a shared
 --              card, or an 'identity' qualifier among qualified claimants
---   'base_art' the picture is not this printing - either an unqualified
+--   'base_art' the picture is not this printing: either an unqualified
 --              product claims the same card, or the qualifier is a
 --              'treatment' whose stamp/foil the catalog art never carries.
 --              owner_product_id names the holder when one exists; a
@@ -1185,7 +1185,7 @@ $$ LANGUAGE sql IMMUTABLE;
 -- Two things this deliberately does NOT do. It does not write a verdict
 -- column: a later import that finally matches the missing plain printing,
 -- or one more row in image_qualifier_class, would silently invalidate a
--- stored value - the staleness argument that keeps all-time-high computed
+-- stored value, the staleness argument that keeps all-time-high computed
 -- on demand (CLAUDE.md, Data invariants). And it does not treat 'unknown'
 -- as a synonym for base_art.
 --
@@ -1216,7 +1216,7 @@ CREATE OR REPLACE FUNCTION card_image_provenance(
         WHERE ci.status = 'ok' AND ci.source_id IS NOT NULL
           -- Narrow to the asked-for card's picture BEFORE grouping. Every
           -- verdict depends only on who else claims the same source_id, so
-          -- restricting to that one group changes no answer - but without it
+          -- restricting to that one group changes no answer, but without it
           -- a single-product lookup builds all ~21,000 groups and then throws
           -- them away, which is why the detail view cost ~96ms. Verified by
           -- comparing all 26,166 rows before and after: byte-identical.
@@ -1232,7 +1232,7 @@ CREATE OR REPLACE FUNCTION card_image_provenance(
         FROM ok GROUP BY source_id
     ),
     -- Who holds the printing the catalog art actually depicts? An
-    -- unqualified claimant first - several may exist (duplicate TCGplayer
+    -- unqualified claimant first, and several may exist (duplicate TCGplayer
     -- listings, or the same card with and without its number in the name,
     -- "Houndoom" / "Houndoom - 008/064"), so the shortest name is picked
     -- purely to name one of them. Failing that, an 'identity' claimant:

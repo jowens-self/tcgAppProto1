@@ -3,7 +3,7 @@
 -- game_set_overview() exists because the screen needs every set at once and
 -- the per-set primitives would be 604 round trips (302 groups x 2). That
 -- makes it a SECOND definition of numbers set_value()/set_return() already
--- define - exactly the duplication the "handlers call SQL functions, not
+-- define, exactly the duplication the "handlers call SQL functions, not
 -- inline SQL" rule exists to prevent. The duplication is only acceptable
 -- while this check passes.
 --
@@ -15,13 +15,13 @@
 -- so that null matches null: a set with no common basket has a NULL return
 -- on both sides, and `NULL = NULL` would report that agreement as failure.
 --
--- Checks the top 20 by value rather than all 302 - it calls two functions
+-- Checks the top 20 by value rather than all 302, since it calls two functions
 -- per set, so the full sweep is slow, and the high-value sets are where a
 -- divergence would matter most. Raise the LIMIT for a fuller sweep.
 --
 -- DESPIKING IS DELIBERATELY OFF here (the FALSE argument). set_return() is
 -- a raw two-point comparison, so with despiking on the two legitimately
--- disagree wherever a suspect reading was replaced - that is the feature
+-- disagree wherever a suspect reading was replaced, and that is the feature
 -- working, not a regression. Passing FALSE keeps this check testing the
 -- aggregation logic, which is what it exists for.
 --

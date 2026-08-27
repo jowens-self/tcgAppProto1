@@ -7,7 +7,7 @@
 --
 -- The Java side trims its argument internally. The SQL side did not until
 -- 2026-08-20, so the two matched only while every caller remembered to
--- btrim() first - and variant_label() does, which is why nothing was ever
+-- btrim() first, and variant_label() does, which is why nothing was ever
 -- visibly wrong. Both bugs these rules exist to prevent return the moment a
 -- caller forgets: ' Z ' clears the length floor that keeps all 26
 -- "Unown [A]".."[Z]" from reading as variants, and ' XY73 ' slips past the
@@ -16,8 +16,8 @@
 -- padded with a single space either side.
 --
 -- This cannot call the Java directly, so it checks the property that makes
--- the two equivalent - the SQL function is insensitive to surrounding
--- whitespace - plus the two documented bug shapes by name.
+-- the two equivalent (the SQL function is insensitive to surrounding
+-- whitespace), plus the two documented bug shapes by name.
 --
 -- Run it after touching either implementation:
 --   docker compose exec -T db psql -U cardtracker -d cardtracker \

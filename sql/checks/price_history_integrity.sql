@@ -6,7 +6,7 @@
 -- delay and nothing else.
 --
 -- A SHORT day does not. A partial ingest leaves the date PRESENT, so gap
--- catch-up will never look at it again - there is no gap to find. It stays
+-- catch-up will never look at it again, since there is no gap to find. It stays
 -- wrong until a person notices, and until 2026-08-21 nobody was watching.
 -- That asymmetry is what this file is for; the rest is cheap to carry
 -- alongside.
@@ -18,13 +18,13 @@
 -- a failing row says how bad it is rather than only that it is bad.
 --
 -- COST: ~20s, most of it the one scan of price_snapshots joined to products
--- (41M rows). That is why day_counts is MATERIALIZED - without it the planner
+-- (41M rows). That is why day_counts is MATERIALIZED. Without it the planner
 -- re-runs that scan for each assertion that reads it.
 --
 -- Two things deliberately NOT asserted:
 --
 --   * Duplicate (product_id, snapshot_date). Multiple rows per product per day
---     are CORRECT - TCGplayer prices each printing separately, and the primary
+--     are correct: TCGplayer prices each printing separately, and the primary
 --     key is (product_id, sub_type_name, snapshot_date). The PK already makes
 --     a true duplicate impossible, so a check here would only restate the
 --     schema. Written down because the naive version of this check flagged
@@ -36,7 +36,7 @@
 --     tcgcsv's catalog keeps its history without ever gaining a catalog entry.
 --     That is the append-only design working. They are invisible to every
 --     query (all of them join products), so no number is wrong. What IS
---     asserted is that no orphan is still RECEIVING snapshots - that would
+--     asserted is that no orphan is still receiving snapshots, which would
 --     mean the daily pull had started writing prices for products it cannot
 --     name, which is a different thing entirely.
 --
@@ -46,7 +46,7 @@
 -- container is UTC while the machine writing the data is UTC-5: for five
 -- hours every evening the two disagree about what day it is. That is the
 -- same defect CLAUDE.md calls the rule most likely to be "simplified" back
--- into a bug - PriceSource.dataAsOf() exists precisely so the pull dates
+-- into a bug. PriceSource.dataAsOf() exists precisely so the pull dates
 -- itself from the mirror rather than from a clock, and SourceGuardsTest
 -- fails the build on a bare LocalDate.now(). A check that reintroduced it
 -- would have been worse than no check: a suite that cries wolf every
@@ -71,7 +71,7 @@ span AS (
     FROM day_counts GROUP BY 1
 ),
 local AS (
-  -- A partial ingest leaves NO gap - the date is present, just short - so it
+  -- A partial ingest leaves no gap (the date is present, just short), so it
   -- can only be caught by size. Centred 31-day mean rather than a global one
   -- so ordinary catalog growth is not mistaken for damage. Observed spread on
   -- 2026-08-21 was 96.2%-104.2% of local, so the 85% floor has ~11 points of
@@ -128,7 +128,7 @@ UNION ALL
 -- form of "did the pull work": it asks whether the data present was fully
 -- written, not whether a pull happened recently. A run that died midway is
 -- recorded `failed` and its day re-ingested later, so a historical failure is
--- the table working - `ingest_runs` currently holds exactly one, the
+-- the table working. `ingest_runs` currently holds exactly one, the
 -- DateTimeParseException on the mirror's 7-digit fractional timestamp, and
 -- 2026-08-12 has an ok run alongside it.
 SELECT 'every day of price data traces to a completed ingest run',
