@@ -14,12 +14,12 @@ import java.util.List;
 
 /**
  * Reads the card catalog from pokemontcg.io, the only permitted image source
- * (see CLAUDE.md "Permitted hosts" - TCGplayer's CDN is off limits).
+ * (see CLAUDE.md "Permitted hosts"; TCGplayer's CDN is off limits).
  *
  * Fetched PER SET, not by paging the whole card list. That's not arbitrary:
  * their deep pagination is broken. With pageSize=250, pages 50 and beyond
  * (offset ~12,250 of 20,479) return HTTP 500 every time, across repeated
- * attempts - it is not a transient failure. Per-set queries are bounded and
+ * attempts, so it is not a transient failure. Per-set queries are bounded and
  * work reliably.
  *
  * The API is also genuinely flaky even on good requests: an initial run saw
@@ -48,7 +48,7 @@ public class PokemonTcgCatalog {
                        String imageUrl) {
     }
 
-    /** Every set id, newest first is irrelevant here - order doesn't matter. */
+    /** Every set id, newest first is irrelevant here; order doesn't matter. */
     public List<String> setIds() throws Exception {
         JsonNode root = getJson(BASE + "/sets?pageSize=" + PAGE_SIZE + "&select=id");
         List<String> ids = new ArrayList<>();
@@ -60,7 +60,7 @@ public class PokemonTcgCatalog {
 
     /**
      * All cards in one set. Paged, because a handful of sets exceed the page
-     * size - an earlier version capped at one page and silently lost ~220
+     * size. An earlier version capped at one page and silently lost ~220
      * cards.
      */
     public List<Card> cardsInSet(String setId) throws Exception {
@@ -112,7 +112,7 @@ public class PokemonTcgCatalog {
 
     /**
      * Exponential backoff. Six attempts because the observed failures are
-     * transient but persistent enough that three wasn't sufficient - a set
+     * transient but persistent enough that three wasn't sufficient. A set
      * that failed four times in a row succeeded on a later run.
      */
     private <T> HttpResponse<T> sendWithRetry(HttpRequest req, HttpResponse.BodyHandler<T> handler)

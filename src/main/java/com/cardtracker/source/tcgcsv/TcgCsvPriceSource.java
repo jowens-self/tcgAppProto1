@@ -36,7 +36,7 @@ public class TcgCsvPriceSource implements PriceSource {
      * missing ones. Bump the version when behaviour changes so they can
      * identify us if we ever misbehave. Public because BackfillArchive
      * sends this same header to tcgcsv's archive CDN and shares this
-     * constant rather than keeping its own copy - the two must not drift.
+     * constant rather than keeping its own copy, since the two must not drift.
      */
     public static final String USER_AGENT = "CardTracker/0.1.0";
 
@@ -135,7 +135,7 @@ public class TcgCsvPriceSource implements PriceSource {
 
     /**
      * Shared with BackfillArchive, which parses the same JSON shape from
-     * extracted archive files instead of a live response - one mapping,
+     * extracted archive files instead of a live response. One mapping,
      * used both places, so the two can't drift apart.
      */
     public static List<PriceSnapshot> toPriceSnapshots(JsonNode results, LocalDate snapshotDate) {
@@ -144,7 +144,7 @@ public class TcgCsvPriceSource implements PriceSource {
             out.add(new PriceSnapshot(
                     n.path("productId").asInt(),
                     // Normal / Holofoil / Reverse Holofoil / 1st Edition.
-                    // Part of the primary key - never collapse these together.
+                    // Part of the primary key. Never collapse these together.
                     n.path("subTypeName").asText("Unknown"),
                     snapshotDate,
                     decimal(n, "marketPrice"),
@@ -162,7 +162,7 @@ public class TcgCsvPriceSource implements PriceSource {
      * The DATE of that timestamp is the day the current live data belongs to,
      * and that mapping is verified rather than assumed: on 2026-08-20 the
      * marker read 2026-08-19T20:05:19+0000, and the live endpoints returned
-     * data identical to archive prices-2026-08-19 - all 51,287 rows.
+     * data identical to archive prices-2026-08-19, all 51,287 rows.
      *
      * Deliberately NOT throttled through the shared Throttle and not counted
      * against the request budget: it is one tiny request whose entire purpose
@@ -185,7 +185,7 @@ public class TcgCsvPriceSource implements PriceSource {
 
     /**
      * Split out from {@link #dataAsOf()} so the parsing can be tested without
-     * a request - this project owes tcgcsv no traffic from a test suite.
+     * a request, since this project owes tcgcsv no traffic from a test suite.
      *
      * Package-private for that reason only.
      */

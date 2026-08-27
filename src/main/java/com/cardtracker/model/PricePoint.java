@@ -6,8 +6,8 @@ import java.time.LocalDate;
 /**
  * One day of a variant's price history, from item_history().
  *
- * No highPrice field, on purpose. Sellers "price park" - listing at absurd
- * values so nothing sells - so high_price is noise the project stores but
+ * No highPrice field, on purpose. Sellers "price park" by listing at absurd
+ * values so nothing sells, so high_price is noise the project stores but
  * never computes on. Leaving it off this record (and out of item_history())
  * makes that rule structural instead of something a future chart author has
  * to remember, the same way set_return() hardcodes sealed product out rather

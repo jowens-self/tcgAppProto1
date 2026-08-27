@@ -12,7 +12,7 @@ import java.util.UUID;
  *
  * Part 10 set this precedent with a scratch Postgres container: full realism,
  * zero risk. The same reasoning applies here and matters more, because these
- * tests insert prices - and `price_snapshots` is append-only with no way back.
+ * tests insert prices, and `price_snapshots` is append-only with no way back.
  * **No test may ever be pointed at the working database.** The name is
  * randomised per run so a test cannot collide with a previous one, and it is
  * dropped in teardown.

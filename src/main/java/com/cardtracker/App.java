@@ -20,7 +20,7 @@ import java.util.Set;
 
 /**
  * Daily price pull, for every category in `tracked_categories` (see
- * sql/schema.sql - adding a card game is an INSERT, not a code change).
+ * sql/schema.sql, where adding a card game is an INSERT, not a code change).
  *
  * Run this once per day. The mirror refreshes around 20:00 UTC, so scheduling
  * it for the small hours local time means you always get a complete day.
@@ -35,13 +35,13 @@ public class App {
         PriceSource source = new TcgCsvPriceSource(Throttle.politeDefault());
 
         // Resolved from the mirror, not from this machine's clock. The UTC
-        // rule below is still right and still applies everywhere else - this
+        // rule below is still right and still applies everywhere else. This
         // is a different problem to the Part 5 timezone bug, and fixing that
         // one could not have prevented this one.
         //
         // The live price endpoints carry no date: they answer "what are the
         // prices now". tcgcsv refreshes once daily at ~20:00 UTC, so between
-        // midnight and that refresh "now" is still YESTERDAY's data - and
+        // midnight and that refresh "now" is still yesterday's data, and
         // stamping it with today's date writes a day that never happened.
         // That is exactly what a 02:15 UTC run did on 2026-08-20, storing
         // 51,287 rows identical to 2026-08-19.
@@ -50,7 +50,7 @@ public class App {
         // date (prices-2026-08-19.ppmd.7z). This gives the live path the same
         // property: ask the source what day it is serving, then trust the
         // answer. A premature run now re-writes a day we already hold, which
-        // ON CONFLICT DO NOTHING makes a free no-op - so being early is safe
+        // ON CONFLICT DO NOTHING makes a free no-op, so being early is safe
         // rather than corrupting.
         LocalDate snapshotDate = source.dataAsOf();
         LocalDate yesterday = snapshotDate.minusDays(1);
@@ -67,12 +67,12 @@ public class App {
             // live pull. BackfillArchive.run() already skips anything
             // already covered via one indexed lookup per (category, day),
             // and shares one archive download across every category that
-            // still needs a given day - so calling it unconditionally here
+            // still needs a given day, so calling it unconditionally here
             // is cheap on a normal day, not just "cheap if we bother to
             // check first." Its own per-(category, day) loop already logs
             // failures to ingest_runs; this try/catch only guards the setup
             // phase before that loop starts (temp dir creation, the initial
-            // repo queries) - a narrower version of the exact bug fixed in
+            // repo queries), a narrower version of the exact bug fixed in
             // DEVELOPMENT_HISTORY.md Part 13, where a failure before any
             // ingest_runs row existed could otherwise vanish with no trace.
             // A catch-up hiccup here doesn't block today's live pulls below
@@ -118,7 +118,7 @@ public class App {
             return;
         }
 
-        // Throttle is shared across every category on purpose - the
+        // Throttle is shared across every category on purpose. The
         // 9000-request circuit breaker has to apply to the whole process,
         // not reset per category. requestsUsed() is therefore cumulative,
         // so this category's own count is a delta, not the running total.
@@ -143,7 +143,7 @@ public class App {
                 Set<Integer> excludedInGroup = new HashSet<>();
                 for (Product p : products) {
                     // Code cards are a Pokemon-specific quirk (see
-                    // DEVELOPMENT_HISTORY.md) - a digital TCG Live
+                    // DEVELOPMENT_HISTORY.md), a digital TCG Live
                     // redemption bundled in some sealed Pokemon product,
                     // not something to assume any other game also has.
                     // Other categories may turn up their own quirks later;
@@ -188,11 +188,11 @@ public class App {
     }
 
     /**
-     * Digital code-card redemptions - a separate TCGplayer catalog listing
+     * Digital code-card redemptions, a separate TCGplayer catalog listing
      * for the online code packed inside some sealed product, not a physical
      * card. Behaves nothing like a real card price-wise (see
      * DEVELOPMENT_HISTORY.md) so it's excluded everywhere, not just filtered
-     * at query time. Pokemon-specific - see the call site.
+     * at query time. Pokemon-specific; see the call site.
      */
     static boolean isCodeCard(String name) {
         return name != null && name.regionMatches(true, 0, "Code Card", 0, "Code Card".length());

@@ -14,7 +14,7 @@ public record PriceSnapshot(
         BigDecimal directLowPrice) {
 
     /**
-     * market_price if present, else mid, else low. Never high - sellers
+     * market_price if present, else mid, else low. Never high, because sellers
      * price-park it, so it's noise, not signal (see CLAUDE.md).
      */
     public BigDecimal trendablePrice() {

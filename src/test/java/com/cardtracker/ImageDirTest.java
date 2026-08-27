@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The default image directory is a relative path, so it names a different
  * directory for every working directory a process starts from. Launched
  * anywhere but the project root, the importer created a fresh empty tree and
- * downloaded into it while the API served 404s from the real one - neither
+ * downloaded into it while the API served 404s from the real one, and neither
  * side erroring, which is why it went unnoticed for a day (Part 28).
  */
 @DisplayName("ImageDir")
@@ -40,7 +40,7 @@ class ImageDirTest {
 
     /**
      * The failure this exists to prevent. Note the second assertion: refusing
-     * is only useful if it happens BEFORE the directory is created - the decoy
+     * is only useful if it happens before the directory is created, since the decoy
      * tree left behind is what made the original bug invisible.
      */
     @Test
@@ -76,7 +76,7 @@ class ImageDirTest {
 
     /**
      * An explicit path is a decision, not an accident, so it is honoured with
-     * no root check at all - that is what lets a deliberate run happen from
+     * no root check at all, which is what lets a deliberate run happen from
      * anywhere, including the one-off imports this project actually does.
      */
     @Test

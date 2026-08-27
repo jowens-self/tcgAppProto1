@@ -197,7 +197,7 @@ public class PriceRepository {
     }
 
     /**
-     * Global, not scoped to a category - a TCGplayer product_id belongs to
+     * Global, not scoped to a category, since a TCGplayer product_id belongs to
      * exactly one category already, so filtering by category here would be
      * redundant, not more correct.
      */
@@ -212,7 +212,7 @@ public class PriceRepository {
 
     // --- tracked categories ---------------------------------------------------
     //
-    // Which tcgcsv categories App/BackfillArchive actually pull - data, not
+    // Which tcgcsv categories App/BackfillArchive actually pull. Data, not
     // code, so adding a card game is "INSERT a row," not a rebuild.
 
     public List<Integer> trackedCategoryIds() throws Exception {
@@ -229,7 +229,7 @@ public class PriceRepository {
 
     /**
      * Lets a batch job (BackfillArchive) skip a day without downloading or
-     * parsing anything for it. Only "ok" counts - a day that previously
+     * parsing anything for it. Only "ok" counts, since a day that previously
      * failed partway through is retried in full, not resumed mid-day.
      */
     public boolean hasSuccessfulRun(String source, LocalDate snapshotDate) throws Exception {
@@ -249,7 +249,7 @@ public class PriceRepository {
      *
      * hasSuccessfulRun() matches one exact source string, which was right
      * while the live pull only ever asked about a date nothing else could
-     * have filled - "today". Now that the date comes from the mirror rather
+     * have filled, i.e. "today". Now that the date comes from the mirror rather
      * than the clock, a run started before the daily refresh legitimately
      * asks about yesterday, and yesterday is usually already in hand from
      * `tcgcsv-archive-N`. Without this the pull would spend ~436 requests

@@ -48,7 +48,7 @@ public class ApiServer {
         app.start(port);
         System.out.printf("CardTracker API on http://localhost:%d  (read-only)%n", port);
         // Printed because a wrong image root is otherwise indistinguishable
-        // from "we have no image for that card" - both render as a placeholder.
+        // from "we have no image for that card". Both render as a placeholder.
         System.out.printf("  serving card images from %s%n", imageRoot);
     }
 
@@ -56,7 +56,7 @@ public class ApiServer {
      * Builds the app without starting it, so a test can bind an ephemeral port
      * and point it at a throwaway database.
      *
-     * The routing is thin, but the response CONTRACT is not - no endpoint may
+     * The routing is thin, but the response contract is not: no endpoint may
      * ever return high_price, a bad image path must not escape the image root,
      * and an absent value must arrive as null rather than 0. Those are worth
      * exercising over real HTTP rather than by reading the handlers.
@@ -64,14 +64,14 @@ public class ApiServer {
     public static Javalin createApp(String url, String user, String pass, Path imageRoot) {
         Javalin app = Javalin.create(config -> {
             // LocalDate must serialize as "2026-08-14", not an array of ints
-            // or an epoch number - the client charts on these directly.
+            // or an epoch number. The client charts on these directly.
             config.jsonMapper(new JavalinJackson().updateMapper(m -> {
                 m.registerModule(new JavaTimeModule());
                 m.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
             }));
             // The Angular dev server runs on its own port, so browser calls
             // here are cross-origin and blocked without this. Scoped to
-            // localhost deliberately - this API is local-only and read-only,
+            // localhost deliberately, since this API is local-only and read-only,
             // but that's no reason to let any site on the internet query it
             // from a visitor's browser.
             config.bundledPlugins.enableCors(cors -> cors.addRule(rule -> {
@@ -160,7 +160,7 @@ public class ApiServer {
         });
 
         // Cached card thumbnail, served off OUR disk. The browser must never
-        // fetch an image from a third party - that is the rule that got broken
+        // fetch an image from a third party. That is the rule that got broken
         // with TCGplayer's CDN (see CLAUDE.md), and it holds for the permitted
         // image source too: ImportCardImages fetches once, this serves forever.
         //
@@ -196,7 +196,7 @@ public class ApiServer {
             int id = pathId(ctx.pathParam("productId"));
             var variants = withRepo(url, user, pass, repo -> repo.variants(id));
             // An empty variant list means the id has no price history at all,
-            // which for a client is the same failure as an unknown id - say so
+            // which for a client is the same failure as an unknown id, so say so
             // rather than returning [] and letting a UI render a blank chart.
             if (variants.isEmpty()) {
                 throw new NotFoundResponse("No price history for product " + id);
@@ -205,7 +205,7 @@ public class ApiServer {
         });
 
         // Whose artwork this card's thumbnail actually shows. Kept separate
-        // from /items/{id} because only the detail view needs it - folding it
+        // from /items/{id} because only the detail view needs it. Folding it
         // in would make every caller pay for something most never render.
         // (It cost ~96ms until 2026-08-20 and now costs ~5ms, so the argument
         // is about relevance rather than expense.)
@@ -255,7 +255,7 @@ public class ApiServer {
      * intermittent corruption under any parallel use rather than a clean
      * failure. Opening one per request costs a few ms locally, which is the
      * same order as the queries themselves. If this ever moves off localhost
-     * or serves more than one person, put HikariCP here - this method is the
+     * or serves more than one person, put HikariCP here. This method is the
      * only place that would change.
      */
     private static <T> T withRepo(String url, String user, String pass,

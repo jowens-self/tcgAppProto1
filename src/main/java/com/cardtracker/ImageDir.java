@@ -16,13 +16,13 @@ import java.nio.file.Path;
  * {@code images} is a relative path, so it names a different directory for
  * every working directory a process is launched from. Launched anywhere but
  * the project root, the importer created a fresh empty tree and downloaded
- * into it while the API went on serving 404s from the real one - neither side
+ * into it while the API went on serving 404s from the real one, and neither side
  * erroring, which is why it went unnoticed for a day (CLAUDE.md, "Run tools
  * from the project root"). Resolving against the jar instead would put images
  * under {@code target/}, which {@code mvn package} is free to wipe, so the
  * directory stays where it is and the launch is checked instead.
  *
- * An explicit {@code CARDTRACKER_IMAGE_DIR} is always honoured unchecked - a
+ * An explicit {@code CARDTRACKER_IMAGE_DIR} is always honoured unchecked, so a
  * path someone set is a decision, not an accident.
  */
 public final class ImageDir {
@@ -40,7 +40,7 @@ public final class ImageDir {
      * The image root as an absolute path.
      *
      * @throws IllegalStateException when the default is in play and the
-     *         working directory is not the project root - deliberately fatal,
+     *         working directory is not the project root. Deliberately fatal,
      *         because every alternative here fails silently.
      */
     public static Path resolve() {

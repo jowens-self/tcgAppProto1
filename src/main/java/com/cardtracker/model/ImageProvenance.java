@@ -5,16 +5,16 @@ package com.cardtracker.model;
  * card_image_provenance().
  *
  * One pokemontcg.io card is one picture, so several of our products can end
- * up sharing it - a printing with a stamp or a foil treatment has no catalog
+ * up sharing it: a printing with a stamp or a foil treatment has no catalog
  * entry of its own and matches the base printing's image instead. This says
  * which case a given product is in:
  *
  * <ul>
- *   <li>{@code own_art} - the picture is this printing's own.</li>
- *   <li>{@code base_art} - the picture belongs to another printing, named by
+ *   <li>{@code own_art}: the picture is this printing's own.</li>
+ *   <li>{@code base_art}: the picture belongs to another printing, named by
  *       {@link #ownerName()}. What the card physically has that the picture
  *       does not is {@link #strippedQualifier()}.</li>
- *   <li>{@code unknown} - the qualifier is not in {@code image_qualifier_class}
+ *   <li>{@code unknown}: the qualifier is not in {@code image_qualifier_class}
  *       and the structural test could not settle it. Deliberately not a guess.</li>
  * </ul>
  *
@@ -23,7 +23,7 @@ package com.cardtracker.model;
  * every labelled product, because at the time nothing could tell a borrowed
  * picture from an ordinary one. This can.
  *
- * The verdict is computed per request and never stored - a later import or one
+ * The verdict is computed per request and never stored, because a later import or one
  * more row in the vocabulary table would silently invalidate a stored value.
  */
 public record ImageProvenance(

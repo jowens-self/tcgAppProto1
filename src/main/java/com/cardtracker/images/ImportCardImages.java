@@ -42,7 +42,7 @@ import java.util.regex.Pattern;
  *   ... [--limit N] [--group GROUP_ID] [--match-only] [--skip-failed]
  *
  * **Why images are cached locally rather than hotlinked.** The browser must
- * never contact a third party for these - our own API serves them off disk.
+ * never contact a third party for these; our own API serves them off disk.
  * That was the rule that got broken once already with TCGplayer's CDN (see
  * CLAUDE.md), and it applies to a permitted host too: fetch once, serve
  * forever, no per-view traffic to anyone.
@@ -52,9 +52,9 @@ import java.util.regex.Pattern;
  * (60.6%); after the two fixes below, 26,166. An earlier
  * version of this comment blamed the gap on the upstream catalog, claiming
  * "World Championship decks / jumbo / prize packs / promos are absent
- * entirely." **That claim is false** - audited 2026-08-18 against the
+ * entirely." That claim is false. Audited 2026-08-18 against the
  * cached catalog: `swshp` alone carries 304 promo cards we had written off.
- * The real causes are two normalization defects below - see
+ * The real causes are two normalization defects below. See
  * DEVELOPMENT_HISTORY.md Part 21. Replayed offline, fixing both recovers
  * 8,834 of the 10,912 no_match rows (81%).
  *
@@ -73,7 +73,7 @@ import java.util.regex.Pattern;
  * Tier 1 is preferred because the catalog usually carries the qualifier too
  * ("Professor's Research (Professor Magnolia)"), so it resolves to the
  * card's own artwork. Reaching tier 2 means the catalog holds no card
- * bearing that printing, so the image is the base printing's - and the
+ * bearing that printing, so the image is the base printing's, and the
  * qualifier that had to be dropped is stored in
  * {@code card_images.stripped_qualifier}.
  *
@@ -85,7 +85,7 @@ import java.util.regex.Pattern;
  * match time and never by comparing set names: the two catalogs disagree on
  * those.
  *
- * **This part of Part 26 was superseded - do not re-derive it.** The comment
+ * This part of Part 26 was superseded, so don't re-derive it. The comment
  * here used to conclude that whether a stripped qualifier means the picture
  * is wrong "has no mechanical answer." Part 27 found one: a pokemontcg.io
  * card is one picture, so asking which OTHER products claim the same
@@ -94,7 +94,7 @@ import java.util.regex.Pattern;
  * {@code card_image_provenance()} in sql/functions.sql combines the two. The
  * verdict is computed there, never stored here.
  *
- * **Record the stripped word VERBATIM - do not normalise it in this class.**
+ * Record the stripped word verbatim; don't normalise it in this class.
  * TCGplayer genuinely sells both "Semi-Finalist" and "Semi Finalist"
  * printings, so folding them here would destroy a true fact about the catalog
  * to tidy a lookup table. Spelling variants are reconciled at comparison
@@ -102,7 +102,7 @@ import java.util.regex.Pattern;
  *
  * Use {@code --dry-run} to measure rules without writing or downloading
  * anything. It exists because the misses this records are permanent, and
- * the rules have been wrong before - the dry run caught a defect in the
+ * the rules have been wrong before, and the dry run caught a defect in the
  * first version of the tier-2 test, which mistook parenthesised card
  * numbers ("Aerodactyl (1)") for printing qualifiers.
  *
@@ -111,7 +111,7 @@ import java.util.regex.Pattern;
  */
 public class ImportCardImages {
 
-    /** Pokemon only - no permitted image source exists for any other game. */
+    /** Pokemon only. No permitted image source exists for any other game. */
     private static final int POKEMON = 3;
 
     /** Rendered at 40x56 CSS px; 160 wide covers 2x displays with headroom. */
@@ -134,7 +134,7 @@ public class ImportCardImages {
                 // wrong before and the misses they record are permanent.
                 case "--dry-run" -> dryRun = true;
                 // Leave 'failed' rows alone. They are normally retried, which
-                // is right for a transient blip - but 61 of them are an
+                // is right for a transient blip, but 61 of them are an
                 // upstream gap that has now failed on three separate days
                 // (CLAUDE.md has the evidence), and retrying those costs ~6
                 // requests each against a free community API for no expected
@@ -145,7 +145,7 @@ public class ImportCardImages {
             }
         }
 
-        // Fails loudly if launched outside the project root - see ImageDir.
+        // Fails loudly if launched outside the project root. See ImageDir.
         Path imageDir = ImageDir.resolve();
         Files.createDirectories(imageDir);
 
@@ -159,7 +159,7 @@ public class ImportCardImages {
             List<Product> todo = productsNeedingImages(conn, onlyGroup, limit, dryRun, skipFailed);
             if (todo.isEmpty()) {
                 // Distinguish "there is nothing pending" from "you asked for
-                // none" - the old message claimed the former in both cases.
+                // none". The old message claimed the former in both cases.
                 System.out.println(limit <= 0
                         ? "Nothing selected: --limit " + limit + " requests no products."
                         : "Nothing pending - every matching Pokemon single already has a "
@@ -191,7 +191,7 @@ public class ImportCardImages {
                 // fails 5-11 sets out of 174 on any given attempt, essentially
                 // at random, and a set that fails once usually succeeds moments
                 // later. Without this the run almost never reaches a complete
-                // catalog - and an incomplete catalog blocks miss-recording
+                // catalog, and an incomplete catalog blocks miss-recording
                 // entirely (see below), so every future run then re-checks all
                 // ~11,700 unmatched products from scratch, forever.
                 for (int sweep = 1; sweep <= 3 && !pending.isEmpty(); sweep++) {
@@ -238,7 +238,7 @@ public class ImportCardImages {
                     continue;
                 }
                 String cCode = numberCode(c.number());
-                // Under BOTH spellings - see nameKeys(). Keying only the folded
+                // Under both spellings, see nameKeys(). Keying only the folded
                 // one would trade "Nidoran (F)" away to win "Nidoran F".
                 for (String n : nameKeys(c.name())) {
                     byKeyStrict.computeIfAbsent(n + "|" + d + "|" + c.printedTotal(),
@@ -251,7 +251,7 @@ public class ImportCardImages {
                 }
             }
 
-            // If any set is still missing, the catalog is incomplete - and a
+            // If any set is still missing, the catalog is incomplete, and a
             // product that looks unmatched might simply live in a set we never
             // saw. Writing 'no_match' then would be a permanent lie: those rows
             // are never re-checked, so a transient 500 would silently cost that
@@ -285,7 +285,7 @@ public class ImportCardImages {
                 String rule = null;
                 String strippedQualifier = null;
 
-                // Tier 1 - the product's own name, printing qualifier intact.
+                // Tier 1: the product's own name, printing qualifier intact.
                 // Preferred always: when the catalog carries the qualifier too
                 // this resolves to the card's actual artwork.
                 if (nFull != null && d != null) {
@@ -305,17 +305,17 @@ public class ImportCardImages {
                     if (hit != null) rule = "name+letter";
                 }
 
-                // Tier 2 - qualifier stripped. Only reached when tier 1 found
+                // Tier 2: qualifier stripped. Only reached when tier 1 found
                 // nothing, which means the catalog has no card bearing this
                 // printing: whatever comes back is the BASE printing's art.
-                // Which tier succeeded is the whole signal - no set-name
+                // Which tier succeeded is the signal, so no set-name
                 // comparison is involved, and none should be (Part 21 showed
                 // the two catalogs disagree on set names).
                 if (hit == null && nBase != null && !nBase.equals(nFull)
                         && (d != null || letters != null)) {
                     if (d == null) {
-                        // No digits to key on at all - the letter index is the
-                        // only one holding this card. See numberLetters().
+                        // No digits to key on at all, so the letter index
+                        // is the only one holding this card. See numberLetters().
                         hit = lettered(byKeyLetter, nBase, letters);
                         if (hit != null) rule = "name+letter/base-art";
                     } else {
@@ -431,7 +431,7 @@ public class ImportCardImages {
 
     /**
      * Pokemon singles with no usable card_images row yet. 'failed' rows ARE
-     * retried; 'ok' and 'no_match' are not - that negative caching is what
+     * retried; 'ok' and 'no_match' are not. That negative caching is what
      * stops ~11,000 unmatchable cards being re-checked on every run.
      *
      * Note what this means for a matching-rule change: an 'ok' row is never
@@ -480,7 +480,7 @@ public class ImportCardImages {
     }
 
     /**
-     * Name + number only, and only when it is unambiguous - a confidently
+     * Name + number only, and only when it is unambiguous, since a confidently
      * wrong image is worse than an obvious blank for someone pricing
      * inventory, so an ambiguous key is treated as no match at all.
      */
@@ -489,7 +489,7 @@ public class ImportCardImages {
      * unambiguous. Sits between {@link #strict} and {@link #loose} because it
      * is strictly more discriminating than the latter: every card keyed
      * "arcanine|h2" is also keyed "arcanine|2", so this can only ever narrow a
-     * candidate list the loose key would have found ambiguous - never widen
+     * candidate list the loose key would have found ambiguous, never widen
      * one. Same refusal on ambiguity, for the same reason.
      */
     private static Card numCoded(Map<String, List<Card>> idx, String n, String code) {
@@ -541,8 +541,8 @@ public class ImportCardImages {
 
     /**
      * Downscale to a real thumbnail. Their "small" PNG is ~157KB for
-     * something rendered at 40x56 - storing it as-is would be ~2.6GB across
-     * the catalog, versus roughly 200MB like this.
+     * something rendered at 40x56, and storing it as-is would be about
+     * 2.6GB across the catalog, versus roughly 200MB like this.
      */
     static byte[] toThumbnail(byte[] raw) throws Exception {
         BufferedImage src = ImageIO.read(new ByteArrayInputStream(raw));
@@ -592,19 +592,19 @@ public class ImportCardImages {
     private static final Pattern TRAILING_GROUP =
             Pattern.compile("\\s*[\\(\\[]([^\\)\\]]*)[\\)\\]]\\s*$");
     private static final Pattern HAS_LETTER = Pattern.compile("[A-Za-z]");
-    /** "2", "147", "XY72", "H1" - a card number wearing a parenthesis. */
+    /** "2", "147", "XY72", "H1": a card number wearing a parenthesis. */
     private static final Pattern CARD_CODE = Pattern.compile("^[A-Za-z]{0,4}[0-9]+[A-Za-z]?$");
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9 ]");
     private static final Pattern SPACES = Pattern.compile("\\s+");
     /**
      * Digits anywhere in the number, not anchored to its start. Anchoring was
      * the Part 21 defect: "H1", "SV066", "SWSH014", "RC4", "TG12" and "GG46"
-     * all begin with a letter, so the old pattern returned null - which was
+     * all begin with a letter, so the old pattern returned null, which was
      * fatal on BOTH sides of the match, dropping 1,550 of 20,479 catalog
      * cards from the index and stopping those products ever attempting one.
      */
     private static final Pattern ANY_DIGITS = Pattern.compile("([0-9]+)");
-    /** A denominator that is a plain count - see {@link #numberLetters}. */
+    /** A denominator that is a plain count. See {@link #numberLetters}. */
     private static final Pattern DIGITS_ONLY = Pattern.compile("[0-9]+");
     /**
      * An alphabetic prefix in front of a card number: the "H" of "H02", the
@@ -618,7 +618,7 @@ public class ImportCardImages {
      * number in disguise?
      *
      * A direct port of {@code is_variant_word()} in sql/functions.sql, and it
-     * must stay one - the two answer the same question about the same
+     * must stay one, because the two answer the same question about the same
      * strings, and a disagreement would mean the label a row displays and the
      * image it displays were decided by different rules. Both were bugs
      * first: without the length floor all 26 "Unown [A]".."[Z]" read as
@@ -640,7 +640,7 @@ public class ImportCardImages {
      * carries it too ("Professor's Research (Professor Magnolia)", "Ancient
      * Technical Machine [Ice]"), so keeping it is what makes those resolve to
      * their own artwork rather than the base card's. A parenthesised card
-     * NUMBER is still stripped here - "Aerodactyl (1)" is simply Fossil #1
+     * A number is still stripped here: "Aerodactyl (1)" is simply Fossil #1
      * and matching it is not borrowing anything.
      */
     /**
@@ -655,7 +655,7 @@ public class ImportCardImages {
      * The symbol mappings are TCGplayer's own spellings, read off the products
      * rather than invented: "Nidoran ♀" is sold as "Nidoran F", "Mew ★" as
      * "Mew Star", "Diancie ◇" as "Diancie Prism Star". They are a fixed list
-     * for the reason the qualifier vocabulary is a fixed list - a pattern that
+     * for the reason the qualifier vocabulary is a fixed list: a pattern that
      * FINDS candidates must not also classify them.
      *
      * Deliberately absent: δ, α, β and γ. Those are card identity that the
@@ -664,8 +664,8 @@ public class ImportCardImages {
      * {@code delta species} is an `identity` row in
      * {@code image_qualifier_class}). Folding them here would resolve those
      * cards at tier 1 instead and silently rewrite verdicts Part 27 settled.
-     * NFD leaves them alone on their own - they carry no combining mark - so
-     * this is a property to test, not code to write.
+     * NFD leaves them alone on their own because they carry no combining
+     * mark, so this is a property to test rather than code to write.
      */
     private static final String[] SYMBOL_WORDS = {
             "\u2640", " f ",           // ♀
@@ -690,7 +690,7 @@ public class ImportCardImages {
      * The distinct names a catalog card should be findable under: its own, and
      * its folded spelling.
      *
-     * BOTH, because TCGplayer is not consistent with itself - it sells one
+     * both, because TCGplayer is not consistent with itself: it sells one
      * card as "Nidoran F" and another as "Nidoran (F)", and the catalog writes
      * "Nidoran ♀" for both. The bracketed form normalises to a bare "nidoran"
      * (a one-letter token is not a printing qualifier), so keying only the
@@ -724,7 +724,7 @@ public class ImportCardImages {
      * the stripped_qualifier signal: decided by which name matched, never by
      * comparing set names, because the two catalogs disagree on those
      * (TCGplayer's "SWSH: Sword & Shield Promo Cards" is pokemontcg.io's
-     * "SWSH Black Star Promos" - ~900 cards a name comparison would wrongly
+     * "SWSH Black Star Promos", about 900 cards a name comparison would wrongly
      * call borrowed). See DEVELOPMENT_HISTORY.md Parts 21 and 26.
      */
     static String normNameBase(String s) {
@@ -763,7 +763,7 @@ public class ImportCardImages {
 
     /**
      * The printing qualifier {@link #normNameBase} would remove, or null if
-     * there isn't one - "Blastoise - 13/95 (Cracked Ice Holo)" -> "cracked
+     * there isn't one. "Blastoise - 13/95 (Cracked Ice Holo)" -> "cracked
      * ice holo".
      *
      * Recorded rather than interpreted. Whether a stripped qualifier means
@@ -773,7 +773,7 @@ public class ImportCardImages {
      * while "Delta Species" and "Team Plasma" are card identity that
      * pokemontcg.io simply spells differently ("Aerodactyl δ"), so the
      * picture is correct. Storing the word itself lets that classification be
-     * made once, later, in SQL - and applied retroactively without
+     * made once, later, in SQL, and applied retroactively without
      * re-running this import. See DEVELOPMENT_HISTORY.md Part 26.
      */
     static String strippedQualifier(String name) {
@@ -806,7 +806,7 @@ public class ImportCardImages {
      * {@link #numberDigits} discards that prefix, and for most cards it is
      * noise. For a holo subset or a promo series it is the only thing
      * identifying the printing, and discarding it loses the match twice over.
-     * TCGplayer numbers Aquapolis' holo subset "H02/H32" - 32 cards - where
+     * TCGplayer numbers Aquapolis' holo subset "H02/H32" (32 cards) where
      * the catalog numbers the same card "H2" inside a parent set of 147, so
      * the printed totals disagree and {@link #strict} misses. The bare digits
      * then collide with every other card #2 in every other set, so
@@ -819,7 +819,7 @@ public class ImportCardImages {
      *
      * **Null for a bare number on purpose.** Without a prefix this key is
      * character-for-character {@link #loose}'s, so it would add no
-     * discrimination - only a second tier reporting a different rule name for
+     * discrimination, only a second tier reporting a different rule name for
      * a decision already made.
      */
     static String numberCode(String s) {
@@ -834,7 +834,7 @@ public class ImportCardImages {
      *
      * Part 21 fixed numbers whose digits are not at the start; this is the
      * same blind spot one layer deeper, for numbers that have no digits to
-     * find. It was fatal on both sides exactly as Part 21's was - 32 catalog
+     * find. It was fatal on both sides exactly as Part 21's was: 32 catalog
      * cards were absent from every index, and the products facing them never
      * attempted a match. They are the Unown alphabet in Unseen Forces
      * (A-Z plus ! and ?) and the four HGSS-era Alph Lithographs, whose
@@ -843,8 +843,8 @@ public class ImportCardImages {
      * **A non-numeric denominator is rejected**, which is the whole
      * subtlety: TCGplayer writes "N/A" for a card with no number, and
      * splitting on "/" would read that as the letter "n" and hand it any
-     * catalog card numbered N. A real one reads "L/28" - letters over a
-     * count - so requiring the denominator to be digits separates them.
+     * catalog card numbered N. A real one reads "L/28", letters over a
+     * count, so requiring the denominator to be digits separates them.
      */
     static String numberLetters(String s) {
         if (s == null) return null;
@@ -867,7 +867,7 @@ public class ImportCardImages {
     }
 
     /**
-     * Leading zeros are dropped by string, not by parseInt - a pathological
+     * Leading zeros are dropped by string, not by parseInt, since a pathological
      * run of digits would overflow an int, and this never needs the value.
      */
     private static String firstNumber(String s) {

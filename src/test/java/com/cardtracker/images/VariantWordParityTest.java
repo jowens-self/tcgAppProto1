@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * decides a row's label and the other decides its image, so a disagreement
  * means the caption and the picture were chosen by different rules. Nothing
  * checked that until 2026-08-20, and when something finally did, they had
- * already drifted - not in either implementation, both of which were
+ * already drifted, though not in either implementation, both of which were
  * individually correct, but in the CONTRACT between them, which said nothing
  * about who trims. 81 of 2,547 real tokens changed verdict when padded.
  *
@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *  1. It runs BOTH implementations, rather than asserting a property of one.
  *  2. It compares in-process. The first version of this harness passed tokens
  *     through tab-separated text and reported 2,163 disagreements from 2,547
- *     inputs - the doubled count being the tell that tokens containing a
+ *     inputs, the doubled count being the tell that tokens containing a
  *     newline had been split in two. The harness was broken, not the code.
  *     Nothing here is serialised, so that failure mode is gone rather than
  *     guarded against.
@@ -115,7 +115,7 @@ class VariantWordParityTest {
 
     /**
      * The perturbation that actually found the bug. Agreement on the inputs
-     * that happen to occur proves very little - the callers were all btrimming,
+     * that happen to occur proves very little, since the callers were all btrimming,
      * so the plain corpus agreed perfectly while the contract was broken.
      */
     @Test

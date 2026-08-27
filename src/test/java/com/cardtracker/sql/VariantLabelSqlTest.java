@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * variant_label() and the number/qualifier helpers underneath it.
  *
- * Skipped when no Postgres is reachable - see TestDatabase.
+ * Skipped when no Postgres is reachable; see TestDatabase.
  */
 @EnabledIf("com.cardtracker.sql.TestDatabase#available")
 @DisplayName("variant_label + number normalisation")
@@ -91,7 +91,7 @@ class VariantLabelSqlTest {
 
     /**
      * The trailing card number has to come off before the qualifier is even
-     * visible to a trailing match - TCGplayer writes them in that order.
+     * visible to a trailing match, since TCGplayer writes them in that order.
      */
     @Test
     void aQualifierIsFoundBehindATrailingCardNumber() throws Exception {
@@ -132,7 +132,7 @@ class VariantLabelSqlTest {
 
     /**
      * The digits-only match is allowed only when the typed number has no
-     * letters, otherwise XY67a would also match XY67 - two different cards.
+     * letters, otherwise XY67a would also match XY67, two different cards.
      */
     @Test
     void aLetterSuffixIsNotTheSameCard() throws Exception {

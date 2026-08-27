@@ -2,7 +2,7 @@ package com.cardtracker.source.tcgcsv;
 
 /**
  * Endpoint shapes for tcgcsv.com, per its documented API. Verified against
- * live responses - see README "Verified against live data" - and proven by
+ * live responses (see README "Verified against live data") and proven by
  * every daily pull and the full 2024-02-08-onward archive backfill.
  */
 public final class TcgCsvUrls {
@@ -15,7 +15,7 @@ public final class TcgCsvUrls {
     }
 
     /**
-     * When the mirror last refreshed. Not under /tcgplayer - it describes the
+     * When the mirror last refreshed. Not under /tcgplayer, since it describes the
      * whole site, and it is the ONLY thing that says what date the live price
      * endpoints are currently serving. They carry no date themselves.
      */

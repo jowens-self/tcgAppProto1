@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The numbers. This is where every figure the owner has ever questioned came
  * from, and where a plausible-looking wrong answer does the most damage.
  *
- * Fixtures are chosen so the right answer can be computed on paper - see
+ * Fixtures are chosen so the right answer can be computed on paper; see
  * Fixtures. Where a case reproduces a specific historical bug, the comment
  * names it.
  */
@@ -48,7 +48,7 @@ class PriceMathSqlTest {
                 "0.00", "0.00", "0.00", "0.00", "0.00", "0.00",
                 "0.00", "0.00", "0.00", "25.00");
 
-        // market_price absent on the newest day - mid/low must carry the
+        // market_price absent on the newest day, so mid/low must carry the
         // all-time high, but never high_price.
         Fixtures.prices(db, 42385, "Holofoil",
                 "10.00", "12.00", "14.00", "16.00", "18.00", "20.00",
@@ -111,7 +111,7 @@ class PriceMathSqlTest {
     }
 
     /**
-     * Computed on demand, never stored - so a backfill turning up an older,
+     * Computed on demand, never stored, so a backfill turning up an older,
      * higher price is reflected immediately rather than leaving a stale value.
      */
     @Test
@@ -153,7 +153,7 @@ class PriceMathSqlTest {
      * "Current" means the newest day the database HOLDS, not today.
      *
      * set_value() defaulted its as-of date to CURRENT_DATE until 2026-08-22,
-     * which made the no-argument call - the one README documents - return
+     * which made the no-argument call (the one README documents) return
      * NULL for most of every day: pulls are on demand, so the newest snapshot
      * is routinely yesterday with nothing wrong, and the container reads UTC
      * where the host reads UTC-5. Live at the time of the fix, set_value(2848)
@@ -199,7 +199,7 @@ class PriceMathSqlTest {
     /**
      * A mean damps a real move and leaks prices across a step; measured live in
      * Part 24, a genuine 41.10 -> 123.32 step (+200.0%) was reported as +80.0%.
-     * A median over the same data reports it exactly - which is what this
+     * A median over the same data reports it exactly, which is what this
      * fixture reproduces: seven days at 100, then three at 300.
      */
     @Test
@@ -222,7 +222,7 @@ class PriceMathSqlTest {
      */
     @Test
     void aOneDayWindowDoesNotCompareOverlappingMedians() throws Exception {
-        // 42383 sits at 10.00 yesterday and 50.00 today - a true 1-day move of
+        // 42383 sits at 10.00 yesterday and 50.00 today, a true 1-day move of
         // +400%. With overlapping windows this reads far smaller.
         String pct = db.scalar("""
             SELECT ROUND(pct_change, 2)::TEXT FROM item_movers(

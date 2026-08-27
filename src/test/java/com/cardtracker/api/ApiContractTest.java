@@ -78,7 +78,7 @@ class ApiContractTest {
 
     /**
      * The structural version of "store it, ignore it". Sellers price-park, so
-     * high_price is noise dressed as data - and PricePoint has no field for it
+     * high_price is noise dressed as data, and PricePoint has no field for it
      * precisely so a future chart author cannot reach for it by accident. The
      * fixtures park it at 99,999, so a leak would be unmissable here.
      */
@@ -113,7 +113,7 @@ class ApiContractTest {
         assertTrue(body.contains("\"rarity\":\"Holo Rare\""), body);
     }
 
-    /** One hit per product carrying variantCount - never one row per variant. */
+    /** One hit per product carrying variantCount, never one row per variant. */
     @Test
     void searchReturnsOneRowPerProduct() throws Exception {
         String body = get("/items/search?q=Charizard&limit=10").body();
@@ -152,7 +152,7 @@ class ApiContractTest {
     }
 
     /**
-     * "No image" is an ordinary outcome, not an error - roughly 40% of Pokemon
+     * "No image" is an ordinary outcome, not an error. Roughly 40% of Pokemon
      * singles have no upstream image and One Piece has none at all.
      */
     @Test
@@ -187,7 +187,7 @@ class ApiContractTest {
     /**
      * The bug this caught for real. owner_product_id is null for every own_art
      * row, and the null test had been written inline in the record constructor
-     * several get() calls after the column it described - so it reported on
+     * several get() calls after the column it described, so it reported on
      * `provenance` instead and would have turned every absent owner into
      * product 0.
      */

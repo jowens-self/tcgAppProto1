@@ -8,7 +8,7 @@ import java.time.LocalDate;
  *
  * The bridge between search and item_return()/item_all_time_high(): both of
  * those need a subTypeName, and a caller cannot guess which variants a given
- * product actually has - it varies per product and changes over time, which
+ * product actually has. It varies per product and changes over time, which
  * is why firstDate is reported rather than assumed (Altaria 83514's Normal
  * variant starts 2025-03-28 while its Holofoil goes back to 2024-02-08).
  *

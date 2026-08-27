@@ -70,8 +70,8 @@ class IngestionSqlTest {
     }
 
     /**
-     * The one that cannot be allowed to regress. ON CONFLICT DO NOTHING - never
-     * DO UPDATE - is what stops a bad run from destroying a good observation.
+     * The one that cannot be allowed to regress. ON CONFLICT DO NOTHING, never
+     * DO UPDATE, is what stops a bad run from destroying a good observation.
      * The history is the whole asset.
      */
     @Test

@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * The market -> mid -> low fallback, and the one price that must never be part
  * of it.
  *
- * Sellers "price park" - listing at absurd values so nothing sells - so
+ * Sellers "price park" by listing at absurd values so nothing sells, so
  * high_price is noise dressed as data. A live tcgcsv response checked on
  * 2026-08-12 carried marketPrice ~70 against highPrice 9999 on the same row,
  * which is what turned this from a style preference into a rule.

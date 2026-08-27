@@ -10,7 +10,7 @@ public final class Throttle {
     /**
      * Hard stop well under the documented 10,000/24h ban threshold. A full
      * Pokemon sync needs a few hundred requests, so this only fires if
-     * something is looping - it's a circuit breaker, not a normal ceiling.
+     * something is looping. It's a circuit breaker, not a normal ceiling.
      */
     private static final int MAX_REQUESTS_PER_RUN = 9000;
 

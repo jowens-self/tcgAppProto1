@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * Digital redemption codes crater toward $0 and wreck set aggregates. Removing
  * the 1,253 already backfilled cost 810,451 price rows, which is why they are
- * excluded at INGEST rather than filtered at query time - and why the rule
+ * excluded at ingest rather than filtered at query time, and why the rule
  * that recognises them is worth pinning.
  *
  * Pokemon only: it is a packaging quirk, not an industry fact. A new game's

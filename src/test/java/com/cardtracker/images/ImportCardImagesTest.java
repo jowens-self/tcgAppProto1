@@ -30,7 +30,7 @@ class ImportCardImagesTest {
 
         /**
          * The length floor. Without it every one of "Unown [A]".."[Z]" reads
-         * as a printing variant - 26 cards labelled with a single letter.
+         * as a printing variant, 26 cards labelled with a single letter.
          */
         @ParameterizedTest
         @ValueSource(strings = {"A", "M", "Z"})
@@ -61,7 +61,7 @@ class ImportCardImagesTest {
         /**
          * Trims internally rather than trusting callers to do it. Its SQL
          * mirror relied on caller discipline until 2026-08-20, and 81 of
-         * 2,547 real tokens changed verdict when padded - every one of them
+         * 2,547 real tokens changed verdict when padded, and every one of them
          * re-opening one of the two bugs above. See Part 30.
          */
         @Test
@@ -100,7 +100,7 @@ class ImportCardImagesTest {
         }
 
         /**
-         * Leading zeros are padding, not value - so the printed "004/102"
+         * Leading zeros are padding, not value, so the printed "004/102"
          * matches a catalog card numbered 4. Dropping them by string rather
          * than parseInt is deliberate: a pathological run of digits would
          * overflow an int, and the numeric value is never wanted.
@@ -188,9 +188,10 @@ class ImportCardImagesTest {
 
         /**
          * Every card this keys is also keyed by numberDigits, which is what
-         * makes the tier a narrowing of the loose one rather than a widening
-         * - it can turn an ambiguous candidate list into a single hit, and can
-         * never introduce a candidate the loose key did not already hold.
+         * makes the tier a narrowing of the loose one rather than a
+         * widening. It can turn an ambiguous candidate list into a single
+         * hit, and can never introduce a candidate the loose key did not
+         * already hold.
          */
         @Test
         void isAlwaysANarrowingOfTheLooseKey() {
@@ -226,7 +227,7 @@ class ImportCardImagesTest {
          * The subtlety worth a test of its own. TCGplayer writes "N/A" for a
          * card with no number; splitting on "/" would read that as the letter
          * N and hand it any catalog card numbered N. A real letter number
-         * reads "L/28" - letters over a count - so the denominator has to be
+         * reads "L/28", letters over a count, so the denominator has to be
          * digits.
          */
         @Test
@@ -237,7 +238,7 @@ class ImportCardImagesTest {
             assertNull(ImportCardImages.numberLetters("A/B/C"));
         }
 
-        /** Silent whenever numberDigits() can answer - it owns those. */
+        /** Silent whenever numberDigits() can answer, since it owns those. */
         @Test
         void isNullWheneverThereAreDigits() {
             assertNull(ImportCardImages.numberLetters("4"));
@@ -286,7 +287,7 @@ class ImportCardImagesTest {
 
         /**
          * These are TCGplayer's own spellings, read off the product table -
-         * "Nidoran F", "Mew Star", "Diancie Prism Star" - not invented ones.
+         * "Nidoran F", "Mew Star", "Diancie Prism Star", not invented ones.
          */
         @Test
         void spellsSymbolsTheWayTcgplayerDoes() {
@@ -307,7 +308,7 @@ class ImportCardImagesTest {
          * `delta species` recorded and classified `identity`. Folding δ to a
          * word would resolve those at tier 1 instead and silently rewrite
          * settled verdicts. NFD leaves it alone because it carries no
-         * combining mark - which makes this a property to pin, not code.
+         * combining mark, which makes this a property to pin rather than code.
          */
         @Test
         void leavesDeltaAndTheGreekLettersAlone() {
@@ -324,8 +325,8 @@ class ImportCardImagesTest {
         /**
          * TCGplayer is not consistent with itself: one card is "Nidoran F",
          * another "Nidoran (F)", and the catalog writes "Nidoran ♀" for both.
-         * The bracketed form normalises to a bare "nidoran" - a one-letter
-         * token is not a printing qualifier - so indexing only the folded
+         * The bracketed form normalises to a bare "nidoran", and a one-letter
+         * token is not a printing qualifier, so indexing only the folded
          * spelling would win one and lose the other. Measured at the time:
          * folding alone +332/-1, keying both +331/-0.
          */
@@ -368,7 +369,7 @@ class ImportCardImagesTest {
         }
 
         /**
-         * A genuine qualifier is KEPT here - the catalog usually carries it
+         * A genuine qualifier is kept here, since the catalog usually carries it
          * too, and keeping it is what resolves the card to its own artwork
          * rather than the base printing's.
          */
@@ -418,7 +419,7 @@ class ImportCardImagesTest {
 
         /**
          * The number comes off before the qualifier is visible to a trailing
-         * match - TCGplayer writes the two in that order.
+         * match. TCGplayer writes the two in that order.
          */
         @Test
         void seesAQualifierSittingBehindACardNumber() {

@@ -6,7 +6,7 @@ package com.cardtracker.sql;
  *
  * That is deliberate. Snapshotting real output would pin whatever the
  * functions currently do, including any bug, and this project has shipped
- * numbers that looked plausible and were wrong - a set worth $25,100.93 that
+ * numbers that looked plausible and were wrong, like a set worth $25,100.93 that
  * was really $2,792.05, a +200% step reported as +80%. A fixture you can do
  * arithmetic on is the only kind that can catch that.
  *
@@ -132,7 +132,7 @@ public final class Fixtures {
               .append(value).append(", ")
               // low/mid track market so fallbacks are exercised only when a
               // test deliberately nulls market. high is parked absurdly high
-              // on purpose - nothing may ever compute on it.
+              // on purpose, since nothing may ever compute on it.
               .append(value).append(", ").append(value).append(", 99999.00)");
         }
         db.exec(sb.toString());

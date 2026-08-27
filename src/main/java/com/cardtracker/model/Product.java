@@ -1,7 +1,7 @@
 package com.cardtracker.model;
 
 /**
- * extendedData is kept as raw JSON, not parsed into fields - its shape
+ * extendedData is kept as raw JSON, not parsed into fields, because its shape
  * (card number, rarity, HP, attacks...) varies by category and isn't worth
  * modeling in Java. It lands straight in the `products.extended_data` jsonb
  * column, queryable there if needed.
@@ -10,7 +10,7 @@ package com.cardtracker.model;
  * single card always carries a "Number" field (its card number), sealed
  * product (boxes, packs, tins, cases, bundles...) never does. Verified
  * against real data spanning 1999 Base Set through 2026 sets before being
- * trusted - see DEVELOPMENT_HISTORY.md.
+ * trusted. See DEVELOPMENT_HISTORY.md.
  */
 public record Product(
         int productId,

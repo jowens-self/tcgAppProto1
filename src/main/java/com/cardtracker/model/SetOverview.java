@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
- * One row of game_set_overview() - a set's current value and how it moved
+ * One row of game_set_overview(): a set's current value and how it moved
  * over a window.
  *
  * Per SET, and singles only: sealed product never contributes to a set
@@ -30,10 +30,10 @@ import java.time.LocalDate;
  * {@code pctReturn} is null, never zero, when the starting basket is <= 0.
  *
  * {@code nDespiked} counts readings replaced by the median of their two
- * neighbours because they swung hard and came straight back - an upstream
+ * neighbours because they swung hard and came straight back, which is an upstream
  * error rather than a move (see game_set_overview()). It is usually 0, and
  * that is expected: the effect is rare but heavy-tailed. When it fires it
- * can be decisive - on 2026-08-04, one substitution moved EX Dragon
+ * can be decisive. On 2026-08-04, one substitution moved EX Dragon
  * Frontiers from -20.91% to +8.43%. Show it wherever the return is shown;
  * a corrected number that doesn't say it was corrected is worse than either
  * honest alternative.

@@ -27,18 +27,18 @@ import java.util.Set;
  * One-time (or resumable) backfill from tcgcsv's daily archives, covering
  * 2024-02-08 onward. Each archive bundles every TCG category for one day,
  * so one download per day serves every category in `tracked_categories`,
- * not just Pokemon - see CLAUDE.md.
+ * not just Pokemon. See CLAUDE.md.
  *
  * Idempotent by (category, day): before touching a date for a category,
  * checks ingest_runs for a prior "ok" run with source sourceFor(categoryId).
  * If a day is already covered for every tracked category, it's skipped
- * without downloading anything - so re-running this after a crash, months
+ * without downloading anything, so re-running this after a crash, months
  * later to catch up, or right after a new category is added to
  * tracked_categories, only does the (category, day) pairs it doesn't
  * already have.
  *
  * Requires the `7z` CLI on PATH (brew install p7zip). Not part of the daily
- * App run - this is a separate, occasional batch job.
+ * App run. This is a separate, occasional batch job.
  */
 public final class BackfillArchive {
 
@@ -51,7 +51,7 @@ public final class BackfillArchive {
 
     public static void main(String[] args) throws Exception {
         LocalDate start = args.length > 0 ? LocalDate.parse(args[0]) : EARLIEST_ARCHIVE;
-        // UTC, not host-local - matches App's snapshot_date convention.
+        // UTC, not host-local, matching App's snapshot_date convention.
         LocalDate end = args.length > 1 ? LocalDate.parse(args[1]) : LocalDate.now(ZoneOffset.UTC).minusDays(1);
 
         String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
@@ -65,7 +65,7 @@ public final class BackfillArchive {
 
     /**
      * Backfills [start, end], for every category in tracked_categories, into
-     * repo - skipping any (category, day) that already has a successful run.
+     * repo, skipping any (category, day) that already has a successful run.
      * Safe to call with a wide range even when most of it is already
      * covered: each already-done (category, day) costs one indexed lookup,
      * not a download, and a day already covered for every tracked category
@@ -147,7 +147,7 @@ public final class BackfillArchive {
                     deleteRecursive(extractDir);
                 }
 
-                // Politeness pacing for the archive CDN - distinct from Throttle,
+                // Politeness pacing for the archive CDN, distinct from Throttle,
                 // which enforces tcgcsv's documented live-API limits specifically.
                 // Once per day regardless of how many categories were processed
                 // from that day's shared download.

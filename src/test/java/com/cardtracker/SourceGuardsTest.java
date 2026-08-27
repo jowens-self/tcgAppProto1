@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Guards that assert facts about the codebase rather than its behaviour.
  *
  * These exist because this project's most durable rules live in CLAUDE.md as
- * prose, and prose is advisory - it can be read, agreed with, and violated in
+ * prose, and prose is advisory: it can be read, agreed with, and violated in
  * the same session. Each guard below turns one such rule into something that
  * fails a build. They are the cheapest tests here and each catches a whole
  * class rather than an instance.
@@ -78,7 +78,7 @@ class SourceGuardsTest {
     /**
      * Only these hosts may appear as a literal anywhere in shipped code.
      * tcgcsv and pokemontcg.io are the two granted permissions; localhost is
-     * our own API. Anything else - a marketplace, a CDN, an image provider -
+     * our own API. Anything else (a marketplace, a CDN, an image provider)
      * needs the owner's explicit permission BEFORE code is written, and this
      * is the check that makes "before" enforceable.
      */
@@ -111,7 +111,7 @@ class SourceGuardsTest {
 
     /**
      * The same rule where it was actually broken. An href fetches nothing, but
-     * an img src fetches on render - roughly 50 requests per search page when
+     * an img src fetches on render, roughly 50 requests per search page when
      * this last went wrong.
      */
     @Test
@@ -175,7 +175,7 @@ class SourceGuardsTest {
      * generation counter that a page request in flight is checked against.
      * A fourth path calling this.results.set() directly would skip that bump,
      * and the symptom would be the old query's rows appended to the new
-     * query's list - intermittent, timing-dependent, and invisible in review.
+     * query's list, which is intermittent, timing-dependent and invisible.
      *
      * Asserted as a count rather than by parsing the method, because the
      * property that actually matters is "exactly one writer", and that is
@@ -275,7 +275,7 @@ class SourceGuardsTest {
     /**
      * CLAUDE.md is read at the start of every session and its rules are
      * followed, so an identifier in it that names nothing is worse than a
-     * typo - it sends the reader looking for code that does not exist. A
+     * typo, because it sends the reader looking for code that does not exist. A
      * deleted class was cited inside a hard invariant for days before anyone
      * noticed.
      *
@@ -294,7 +294,7 @@ class SourceGuardsTest {
      * the doc is explaining history rather than claiming the class is there.
      *
      * An explicit list, not a pattern that sniffs for words like "deleted"
-     * nearby - the same call this project made for the tournament qualifier
+     * nearby, the same call this project made for the tournament qualifier
      * family. A pattern would quietly excuse a genuinely stale reference that
      * happened to sit in the wrong sentence.
      *

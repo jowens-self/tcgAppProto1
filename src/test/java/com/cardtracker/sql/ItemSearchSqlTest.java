@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * get tests rather than trust: the last token becomes a number only if it
  * contains a digit (otherwise "Charizard ex", "VMAX" and "GX" stop working as
  * names), and a parsed reading that returns zero rows is retried as a plain
- * name. That retry is not polish - the last-token rule genuinely guesses wrong
+ * name. That retry is not polish: the last-token rule genuinely guesses wrong
  * on real cards.
  */
 @EnabledIf("com.cardtracker.sql.TestDatabase#available")
@@ -62,7 +62,7 @@ class ItemSearchSqlTest {
 
     /**
      * A set commonly reprints one card at several rarities across a huge price
-     * range - SV03 has four Charizard ex from $5.65 to $108.58. Without these
+     * range. SV03 has four Charizard ex from $5.65 to $108.58. Without these
      * fields a result list shows identical rows.
      */
     @Test
@@ -97,7 +97,7 @@ class ItemSearchSqlTest {
     /**
      * The retry that is not optional. 'Nemona - Pikachu 42' is a real card
      * numbered 180/198, so the last-token rule parses "42" as its number and
-     * finds nothing - and the whole string must then be retried as a name.
+     * finds nothing, and the whole string must then be retried as a name.
      */
     @Test
     void aParsedReadingThatFindsNothingIsRetriedAsAPlainName() throws Exception {
@@ -118,7 +118,7 @@ class ItemSearchSqlTest {
 
     /**
      * The digits-only match is allowed only when the typed number has no
-     * letters, or XY67a would also match XY67 - two different cards.
+     * letters, or XY67a would also match XY67, two different cards.
      */
     @Test
     void aLetteredNumberDoesNotMatchTheBareOne() throws Exception {
@@ -147,7 +147,7 @@ class ItemSearchSqlTest {
     }
 
     /**
-     * One hit per product carrying variant_count - anything that puts a single
+     * One hit per product carrying variant_count. Anything that puts a single
      * "price" on a multi-variant product violates the sub-type invariant.
      */
     @Test

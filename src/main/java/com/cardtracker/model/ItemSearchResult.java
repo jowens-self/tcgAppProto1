@@ -3,7 +3,7 @@ package com.cardtracker.model;
 import java.time.LocalDate;
 
 /**
- * One hit from item_search() - a product, not a (product, variant) pair.
+ * One hit from item_search(): a product, not a (product, variant) pair.
  *
  * variantCount rather than a price is deliberate. A product commonly exists
  * as Normal / Holofoil / Reverse Holofoil trading at genuinely different
@@ -12,13 +12,13 @@ import java.time.LocalDate;
  * exist; ItemVariant (from item_variants()) carries their real prices.
  *
  * setName/game ride along on every hit because card names are ambiguous on
- * their own - 266 Pokemon products match "charizard", dozens named exactly
+ * their own. 266 Pokemon products match "charizard", dozens named exactly
  * that. A result list without the set is not identifiable.
  *
  * cardNumber/rarity are needed for the same reason and are not decoration:
  * a single set routinely reprints one card at several rarities, and those
  * copies trade at very different prices. SV03 Obsidian Flames has four
- * "Charizard ex" - 125/197 Double Rare, 215/197 Ultra Rare, 223/197 Special
+ * "Charizard ex": 125/197 Double Rare, 215/197 Ultra Rare, 223/197 Special
  * Illustration Rare, 228/197 Hyper Rare. Both come from extendedData rather
  * than the name: TCGplayer only sometimes appends the number to the name
  * (5,276 of 34,435 singles), while extendedData carries Number and Rarity
@@ -26,8 +26,8 @@ import java.time.LocalDate;
  * has neither.
  *
  * variantLabel is the printing qualifier pulled out of the name by
- * variant_label() - "Cracked Ice Holo", "Poke Ball Pattern", "2016 World
- * Championship" - or null for an ordinary printing. It matters for the same
+ * variant_label(), such as "Cracked Ice Holo", "Poke Ball Pattern", "2016 World
+ * Championship", or null for an ordinary printing. It matters for the same
  * reason cardNumber does: those are separate products at separate prices,
  * and the name is the only place TCGplayer records the distinction. The UI
  * also uses it to mark a card whose image may be the base printing rather

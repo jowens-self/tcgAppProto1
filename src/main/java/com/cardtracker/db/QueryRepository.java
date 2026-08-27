@@ -19,7 +19,7 @@ import java.util.List;
 
 /**
  * Reads price history. The counterpart to PriceRepository, which is
- * write-only by design ("Writes price history") - keeping the read path
+ * write-only by design ("Writes price history"). Keeping the read path
  * separate rather than growing that class means the ingestion code and the
  * API surface can't accidentally couple.
  *
@@ -104,14 +104,14 @@ public class QueryRepository {
 
     /**
      * Whose artwork one product's thumbnail shows, or null when we hold no
-     * image for it (no row, or the match failed) - which is an ordinary
+     * image for it (no row, or the match failed), which is an ordinary
      * outcome, not an error.
      *
      * Costs ~5ms since 2026-08-20, down from ~96ms: the function now narrows
      * to the asked-for card's source_id before grouping rather than building
      * all ~21,000 groups and discarding them. A result page's worth of calls
      * is no longer obviously out of reach, though whether to mark ~19% of
-     * search rows is a separate question - see Part 29.
+     * search rows is a separate question; see Part 29.
      */
     public ImageProvenance imageProvenance(int productId) throws Exception {
         String sql = "SELECT product_id, name, source_id, stripped_qualifier, "
@@ -122,7 +122,7 @@ public class QueryRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
                 // wasNull() reports on the most recent get, so the null test
-                // has to happen here and not inline below - by then several
+                // has to happen here and not inline below, because by then several
                 // more columns have been read.
                 int ownerId = rs.getInt("owner_product_id");
                 Integer ownerProductId = rs.wasNull() ? null : ownerId;
@@ -243,7 +243,7 @@ public class QueryRepository {
     /**
      * Relative path of a product's cached thumbnail, or null if we have no
      * image for it (never matched, or the download failed). Callers treat
-     * null as "show a placeholder" - roughly 40% of Pokemon singles have no
+     * null as "show a placeholder", since roughly 40% of Pokemon singles have no
      * upstream image at all, so absence is the normal case, not an error.
      */
     public String imagePath(int productId) throws Exception {
@@ -283,11 +283,11 @@ public class QueryRepository {
      * One query, not one per set: there are 302 tracked groups, so calling
      * set_value()/set_return() per set would be 604 round trips. The bulk
      * function's numbers are cross-checked against those primitives rather
-     * than assumed equal - see DEVELOPMENT_HISTORY.md Part 23.
+     * than assumed equal. See DEVELOPMENT_HISTORY.md Part 23.
      *
      * categoryId null = every tracked game. despike replaces readings that
      * swung hard and reverted the next day with the median of their
-     * neighbours - see game_set_overview(). Pass false for a raw two-point
+     * neighbours; see game_set_overview(). Pass false for a raw two-point
      * comparison matching set_return().
      */
     public List<SetOverview> setOverview(Integer categoryId, Integer days, LocalDate asOf,
@@ -385,7 +385,7 @@ public class QueryRepository {
 
     /**
      * getInt() maps SQL NULL to 0, which for a product_id is a real-looking
-     * id rather than "absent" - a set with no priced rows would otherwise
+     * id rather than "absent", since a set with no priced rows would otherwise
      * report a top mover with id 0.
      */
     private static Integer nullableInt(ResultSet rs, String column) throws Exception {

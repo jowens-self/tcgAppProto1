@@ -14,7 +14,7 @@ import java.util.List;
  * On-disk copy of the pokemontcg.io card catalog.
  *
  * Exists because downloading it takes 3-5 minutes and ~174 requests, and the
- * importer needs it on every invocation - including a `--group` run that only
+ * importer needs it on every invocation, including a `--group` run that only
  * cares about a hundred cards. That tax made importing set-by-set impractical,
  * which is the natural way to do it given how long a full run takes.
  *
@@ -52,7 +52,7 @@ public class CatalogCache {
                     new TypeReference<List<Card>>() {
                     });
             // A truncated or empty file is treated as a miss rather than an
-            // error - re-downloading is always safe, so there is no reason to
+            // error. Re-downloading is always safe, so there is no reason to
             // fail the run over a bad cache.
             return (cards == null || cards.isEmpty()) ? null : cards;
         } catch (Exception e) {

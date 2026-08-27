@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  *
  * No test here makes a request. tcgcsv is a free, no-SLA mirror run by one
  * person with a documented ban threshold, and a test suite runs far more often
- * than a daily pull - so the parsing is exercised against literal strings and
+ * than a daily pull, so the parsing is exercised against literal strings and
  * the HTTP call is left to the one real run that already proved it.
  */
 @DisplayName("last-updated.txt")
@@ -24,7 +24,7 @@ class TcgCsvPriceSourceTest {
      * The exact body served on 2026-08-20. The mapping from this timestamp to
      * a snapshot date is verified, not assumed: while the marker read this,
      * the live endpoints returned data identical to archive
-     * prices-2026-08-19 - all 51,287 rows.
+     * prices-2026-08-19, all 51,287 rows.
      */
     @Test
     void readsTheDateTheMirrorIsActuallyServing() {
@@ -40,12 +40,12 @@ class TcgCsvPriceSourceTest {
 
     /**
      * The refresh lands at ~20:00 UTC, so a non-UTC offset must be converted
-     * rather than truncated - reading the local date off the raw string would
+     * rather than truncated, since reading the local date off the raw string would
      * land on the wrong day for anything east of UTC.
      */
     @Test
     void convertsOffsetsToUtcBeforeTakingTheDate() {
-        // 2026-08-20T02:05+0600 is 2026-08-19T20:05Z - still the 19th.
+        // 2026-08-20T02:05+0600 is 2026-08-19T20:05Z, still the 19th.
         assertEquals(LocalDate.of(2026, 8, 19),
                 TcgCsvPriceSource.parseLastUpdated("2026-08-20T02:05:19+0600"));
     }
