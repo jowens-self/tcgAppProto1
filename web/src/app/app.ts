@@ -6,11 +6,11 @@ import { Sets } from './sets';
 type Tab = 'search' | 'movers' | 'sets';
 
 /**
- * Three screens, switched by a signal rather than the router. There is still
- * no deep-linking requirement; adding @angular/router for that would be
- * ceremony. Revisit when a screen needs its own URL (sharing a link, browser
- * back/forward) - that's the point routing starts earning its keep, and with
- * a third screen it's closer than it was.
+ * Three screens, switched by a signal rather than the router. Nothing needs
+ * a deep link yet, so wiring up @angular/router would be ceremony. Revisit
+ * when a screen does need its own URL, for sharing a link or for browser
+ * back/forward. That's where routing starts earning its keep, and with a
+ * third screen it's closer than it was.
  */
 @Component({
   selector: 'app-root',

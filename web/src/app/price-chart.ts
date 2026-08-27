@@ -15,12 +15,12 @@ interface ChartPoint {
  * No charting library on purpose: this needs one line and two labels, and
  * a dependency here would be a decision the project doesn't need to make
  * yet. If charts get richer (multiple series, brushing, tooltips on a
- * touch device), that's the point to reconsider - not before.
+ * touch device), that's the point to reconsider, not before.
  *
  * Charts `trendablePrice`, which the server already resolved via the
  * documented market->mid->low fallback. Days where even that is null are
- * dropped rather than plotted as zero - a missing observation is not a
- * price of $0, and connecting across the gap is the honest reading.
+ * dropped rather than plotted as zero. A missing observation is not a
+ * price of $0, and connecting across the gap is the better reading.
  */
 @Component({
   selector: 'price-chart',
@@ -143,7 +143,7 @@ export class PriceChart {
   protected readonly first = computed(() => this.points()[0]);
   protected readonly last = computed(() => this.points()[this.points().length - 1]);
 
-  /** Smallest y is the highest price - SVG's origin is the top left. */
+  /** Smallest y is the highest price, since SVG's origin is the top left. */
   protected readonly peakY = computed(() => {
     const pts = this.points();
     return pts.length ? Math.min(...pts.map((p) => p.y)) : 0;

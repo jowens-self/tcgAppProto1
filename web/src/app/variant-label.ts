@@ -18,7 +18,7 @@
  * tested against, so a coincidental match on some other product's text is
  * not possible.
  *
- * Why this exists at all - the labels used to be shown always, as a filled
+ * Why this exists at all: the labels used to be shown always, as a filled
  * --warn pill with a matching corner wedge on the thumbnail. That styling
  * was chosen for a different job: warning that a picture might be another
  * printing's artwork (Part 21/22). Applied to every labelled product it

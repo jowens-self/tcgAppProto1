@@ -93,7 +93,7 @@
        readings. Said plainly in the UI because "then" and "now" would
        otherwise imply exact daily prices, and a seller comparing this to a
        single day's number should know why they differ. Median rather than
-       average since 2026-08-18 - an average leaked prices across a step and
+      average since 2026-08-18. An average leaked prices across a step and
        misreported real moves (see item_movers() and Part 24). -->
   <!-- The smoothing is clamped to the window in item_movers(), so this
        sentence has to describe the window actually used: at 1 and 2 days a
@@ -105,7 +105,7 @@
       around {{ days }} days ago, so a one-off sale can't dominate the board.
     } @else {
       Comparing {{ days === 1 ? 'one day' : 'two days' }} directly against
-      {{ days === 1 ? 'the day' : 'the two days' }} before — too short a
+      {{ days === 1 ? 'the day' : 'the two days' }} before, too short a
       window to median across, so a single odd sale can move a row here.
     }
   </p>

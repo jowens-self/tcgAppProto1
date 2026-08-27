@@ -8,7 +8,7 @@
     class="q"
     type="search"
     name="q"
-    placeholder="Search by name, or name + number — e.g. Charizard 004"
+    placeholder="Search by name, or name + number, e.g. Charizard 004"
     autocomplete="off"
     spellcheck="false"
     [value]="query"
@@ -65,8 +65,8 @@
              once it actually loads. Avoids a broken-image flash on the ~40%
              of cards with no upstream image. -->
         <!-- No variant marker on the thumbnail. It used to carry an amber
-             corner wedge, but that marked every labelled product - 12,200 of
-             them - to warn about borrowed artwork that, as of 2026-08-19,
+             corner wedge, but that marked every labelled product, 12,200 of
+             them, to warn about borrowed artwork that, as of 2026-08-19,
              none of our 16 labelled-product images actually is. See
              DEVELOPMENT_HISTORY.md Part 25. -->
         <span class="thumb-box" aria-hidden="true">
@@ -97,7 +97,7 @@
             }
             <!-- Only when it isn't already in the name beside it: the label
                  is extracted FROM that name, so 78.7% of the time this chip
-                 was repeating words already on screen - and doing it louder
+                 was repeating words already on screen, and doing it louder
                  than the name itself. -->
             @if (variantLabelAddsInfo(item.name, item.variantLabel)) {
               <span class="tag variant">{{ item.variantLabel }}</span>
@@ -117,7 +117,7 @@
     <!-- Only rendered while more may exist, so a finished list says nothing.
          The count rides along with the button rather than standing alone:
          "12 shown" under twelve visible rows is noise, but "50 shown" beside
-         a way to get more is the answer to "am I seeing everything?" - which
+         a way to get more answers "am I seeing everything?", which
          until now the screen quietly got wrong. -->
     @if (moreAvailable()) {
       <div class="more-row">
@@ -167,11 +167,11 @@
         }
       </div>
 
-      <!-- Served off our own disk by /api/items/{id}/image - never a third
+      <!-- Served off our own disk by /api/items/{id}/image, never a third
            party. Hidden entirely once the image 404s, which is an ordinary
            outcome rather than an error. The band names the printing, but
-           only when that adds something the name above doesn't already say
-           - same rule as the list chip. -->
+           only when that adds something the name above doesn't already
+           say, the same rule as the list chip. -->
       @if (!noImage().has(selected()!.productId)) {
         <figure class="detail-art">
           <img
@@ -184,7 +184,7 @@
           />
           <!-- The caution Part 25 reserved --warn for and could not yet
                spend: this picture is provably another printing's, not this
-               card's. Only base_art earns it - own_art is correct and
+               card's. Only base_art earns it: own_art is correct and
                'unknown' is an open question, and neither is a warning.
                Sits at the top so it never collides with the variant band.
                The owner printing's name lives in the tooltip, not the band:
@@ -232,7 +232,7 @@
         <div class="history">
           <!-- Same day counts Movers and Sets offer, so a range means one
                thing across the app. Each is measured back from this
-               variant's newest snapshot, not from today - the pull is
+               variant's newest snapshot, not from today. The pull is
                on-demand and the data is routinely a day behind. -->
           <div class="windows" role="group" aria-label="Chart range">
             @for (w of chartWindows; track w.label) {

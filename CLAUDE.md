@@ -34,7 +34,7 @@ Behaviour worth knowing before reading the code, newest first:
 
 - **Search pages at 50 and says so; it does not raise the limit.** A common
   name has more than 200 matches (`Charizard`, `Pikachu`, `Trainer` all hit
-  the `LEAST(limit, 200)` ceiling), and until 2026-08-22 the screen showed 50
+  the `LEAST(limit, 200)` ceiling), and until recently the screen showed 50
   of them with no count and no way to reach the rest. Page size stays 50
   because **every row's thumbnail opens its own JDBC connection** - Part 31
   measured 300 concurrent mixed requests producing 50

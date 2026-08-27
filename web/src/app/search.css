@@ -82,7 +82,7 @@
    two lines and the chart is squeezed into ~350px. Below this the list
    takes the full width and the chart pins to the bottom instead (see the
    narrow-screen block at the end of this file). Keep this number in sync
-   with that media query - they are two halves of one decision. */
+   with that media query; they are two halves of one decision. */
 @media (max-width: 960px) {
   .panes {
     grid-template-columns: 1fr;
@@ -160,7 +160,7 @@
   gap: 0.3rem;
   flex-wrap: wrap;
   /* Keeps pills at their own height instead of stretching to the tallest
-     item on the line - a stretched pill with a 999px radius turns into a
+     item on the line, since a stretched pill with a 999px radius turns into a
      circle, which is how a stray margin on one badge deformed all of them. */
   align-items: center;
 }
@@ -193,7 +193,7 @@
    because that is what it is. It was a filled --warn pill until 2026-08-19,
    which made it the loudest thing in the row while usually just repeating
    the card's own name, and implied doubt about artwork that is correct.
-   --warn is reserved for a real caution - a picture that is genuinely
+   --warn is reserved for a real caution: a picture that is genuinely
    another printing's art. That reservation is now spent, but NOT here: it
    went to .art-warn-band on the detail artwork, where card_image_provenance()
    can prove the picture is borrowed. This chip still says nothing about
@@ -232,7 +232,7 @@
 .detail-img.loaded {
   opacity: 1;
 }
-/* Sits over the card's own text box - the least costly part of the art to
+/* Sits over the card's own text box, the least costly part of the art to
    cover. Fixed colours, not tokens: this floats on the artwork, not on a
    themed surface, so it must stay legible in both themes. */
 .variant-band {
@@ -254,7 +254,7 @@
   text-overflow: ellipsis;
 }
 /* Top edge, opposite .variant-band, so a card can carry both without them
-   stacking. Filled rather than outlined - unlike the quiet .tag.variant chip,
+   stacking. Filled rather than outlined, because unlike the quiet .tag.variant chip,
    this one is a genuine caution and is meant to be read before the picture
    is trusted. Fixed colours for the same reason as .variant-band: it floats
    on artwork, not on a themed surface. */
@@ -307,7 +307,7 @@
 .detail-head .detail-sub {
   flex-basis: 100%;
 }
-/* Hidden on the two-column layout - there the panel is just a column and
+/* Hidden on the two-column layout, where the panel is just a column and
    nothing is covered, so there's nothing to dismiss. Shown only in the
    pinned narrow layout below. */
 .detail-close {
@@ -415,7 +415,7 @@
 
 /* Chart range picker. Deliberately quieter than the .variant buttons above
    it: those choose which market you are looking at, which is a different
-   card's worth of decision - this only changes how much of it is drawn. */
+   card's worth of decision; this only changes how much of it is drawn. */
 .windows {
   display: flex;
   gap: 0.25rem;
@@ -466,7 +466,7 @@
 
 /* --- narrow screens only: pin the detail panel ---------------------------
    Below 960px the two columns stack, which puts the chart underneath the
-   whole result list - clicking a row then scrolls nothing into view and
+   whole result list, so clicking a row scrolls nothing into view and
    looks like nothing happened. Pinning it to the viewport bottom is the
    fix for THAT case specifically.
 
@@ -476,10 +476,10 @@
    list when there's room to put the two side by side. Here there isn't.
 
    Must match the .panes stacking breakpoint above. If the two ever
-   disagree, one width ends up with stacked columns and no pinning - which
+   disagree, one width ends up with stacked columns and no pinning, which
    is exactly the broken state this pair exists to prevent. */
 @media (max-width: 960px) {
-  /* Nothing selected means nothing to pin - don't leave an empty bar
+  /* Nothing selected means nothing to pin, so don't leave an empty bar
      stuck across the bottom of the screen. */
   .detail.empty {
     display: none;

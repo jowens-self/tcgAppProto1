@@ -9,7 +9,7 @@ import { defaultGame } from './game-default';
 type SortKey = 'set' | 'value' | 'change' | 'cards' | 'concentration';
 
 /**
- * Set overview - "what is each set worth, and how did it move."
+ * Set overview: "what is each set worth, and how did it move."
  *
  * The screen the set_value()/set_return() primitives were built for (Part
  * 14), finally exposed. Sorting and the empty-row filter are client-side on
@@ -59,7 +59,7 @@ export class Sets {
   /**
    * Sets with no priced basket have a value but no return. Hidden by
    * default because a column of blanks buries the sets that do have an
-   * answer - but they are real sets, so it is a toggle rather than a filter
+   * answer, but they are real sets, so it is a toggle rather than a filter
    * baked into the query.
    */
   protected readonly hideEmpty = signal(true);
@@ -68,8 +68,8 @@ export class Sets {
    * Replace readings that swung hard and reverted the next day with the
    * median of their neighbours. On by default (the server's default too).
    * Exposed as a toggle rather than hidden because it CHANGES REPORTED
-   * NUMBERS - on 2026-08-04 it moved EX Dragon Frontiers from -20.91% to
-   * +8.43% - and a correction you cannot switch off is a correction you
+   * NUMBERS. On 2026-08-04 it moved EX Dragon Frontiers from -20.91% to
+   * +8.43%, and a correction you cannot switch off is a correction you
    * cannot check.
    */
   protected readonly despike = signal(true);
@@ -146,7 +146,7 @@ export class Sets {
 
   /**
    * Why a row's numbers were adjusted, spelled out per row rather than left
-   * to a legend - the tooltip is where someone checks a number they don't
+   * to a legend, since the tooltip is where someone checks a number they don't
    * believe.
    */
   protected despikeTitle(r: SetOverview): string {

@@ -5,7 +5,7 @@ import { Game } from './api.models';
  *
  * "All games" is deliberately NOT the default any more (changed
  * 2026-08-19). It was, and it produced a board mixing Pokemon and One Piece
- * in one ranking - 41 Pokemon to 9 One Piece in a typical top 50 - which
+ * in one ranking (41 Pokemon to 9 One Piece in a typical top 50), which
  * compares two markets the owner thinks about separately. The option is
  * still there and still fast; it just isn't where you start.
  *

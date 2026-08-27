@@ -6,7 +6,7 @@ import { variantLabelAddsInfo } from './variant-label';
  *
  * Part 25 replaced "label every variant loudly" with this, because the label
  * is derived FROM the product name and so repeated words already on screen
- * 78.7% of the time - while wearing --warn styling that implied doubt about
+ * 78.7% of the time, while wearing --warn styling that implied doubt about
  * artwork which was perfectly correct.
  */
 describe('variantLabelAddsInfo', () => {
@@ -30,7 +30,7 @@ describe('variantLabelAddsInfo', () => {
   /**
    * The ~21% that earns its place: the label reformats rather than repeats.
    * "2025" and "(Riley McKay)" are both in the name, but "2025 World
-   * Championship" is not - it tells the reader what the card actually is.
+   * Championship" is not, since it tells the reader what the card actually is.
    */
   it('shows a label that reformats rather than repeats', () => {
     expect(

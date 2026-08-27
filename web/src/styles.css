@@ -1,4 +1,4 @@
-/* Design tokens. Light by default, dark when the OS asks for it - this is
+/* Design tokens. Light by default, dark when the OS asks for it. This is
    a local tool that gets opened at all hours, so following the system
    preference is worth the handful of extra lines. */
 :root {

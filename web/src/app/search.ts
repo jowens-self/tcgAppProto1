@@ -15,7 +15,7 @@ import { PriceChart } from './price-chart';
 import { variantLabelAddsInfo } from './variant-label';
 
 /**
- * Card / Product Search - the first screen.
+ * Card / Product Search, the first screen.
  *
  * Deliberately named "item" throughout, matching the API and the SQL
  * functions: sealed product is looked up exactly the same way a single is,
@@ -39,7 +39,7 @@ export class Search {
    * Rows per request, and the page size "Load more" advances by.
    *
    * 50 rather than the API's 200 ceiling because every row fetches its own
-   * thumbnail and every request opens its own JDBC connection - a page is
+   * thumbnail and every request opens its own JDBC connection, so a page is
    * ~50 concurrent connections against Postgres' max_connections of 100.
    * Measured 2026-08-20: 200 concurrent all succeed, 300 mixed produce 50
    * `too many clients` failures. Paging keeps each page inside that, where
@@ -49,7 +49,7 @@ export class Search {
 
   /**
    * Templates can only call class members, so the shared rule is re-exposed
-   * here rather than reimplemented - search and any future screen showing
+   * here rather than reimplemented, so search and any future screen showing
    * labels must agree on when one is worth showing.
    */
   protected readonly variantLabelAddsInfo = variantLabelAddsInfo;
@@ -62,19 +62,19 @@ export class Search {
 
   /**
    * Whether the last page came back full, which is the only evidence we have
-   * that more exist - the endpoint returns rows, not a total. A short page
-   * ends the list and the button disappears; a page that is exactly full but
-   * happens to be the last one costs one extra request to find that out,
-   * which is the honest trade for not claiming a count we were not given.
+   * that more exist, since the endpoint returns rows rather than a total.
+   * A short page ends the list and the button disappears. A page that is
+   * exactly full but happens to be the last costs one extra request to find
+   * that out, which beats claiming a count the server never gave us.
    */
   protected readonly moreAvailable = signal(false);
   protected readonly loadingMore = signal(false);
 
   /**
-   * Bumped every time a new result list is established. "Load more" captures
-   * it and drops its answer if it has moved - otherwise a page still in
-   * flight when a new search lands would append the old query's rows to the
-   * new query's list.
+   * Bumped every time a new result list is established. "Load more"
+   * captures it and drops its answer if it has moved. Otherwise a page
+   * still in flight when a new search lands would append the old query's
+   * rows to the new query's list.
    */
   private generation = 0;
 
@@ -87,10 +87,10 @@ export class Search {
   /**
    * How much of the chosen variant's history the chart plots.
    *
-   * Opens on "All" because that is what this screen has always shown and
-   * the whole series is the thing the database actually owns - 925 days of
-   * it. The shorter ranges are one click away, and the choice is sticky
-   * across cards, the way Movers keeps its own window between loads.
+   * Opens on "All" because that is what this screen has always shown, and
+   * the full series is what the database actually holds (925 days of it).
+   * The shorter ranges are one click away, and the choice is sticky across
+   * cards, the way Movers keeps its own window between loads.
    */
   protected readonly chartWindows = HISTORY_WINDOWS;
   protected readonly chartWindow = signal<HistoryWindow>(
@@ -100,7 +100,7 @@ export class Search {
 
   /**
    * Provenance of the selected card's picture, or null when we hold no image
-   * or have not heard back yet. Only 'base_art' renders anything - see the
+   * or have not heard back yet. Only 'base_art' renders anything; see the
    * band in search.html.
    */
   protected readonly provenance = signal<ImageProvenance | null>(null);
@@ -108,8 +108,8 @@ export class Search {
   /**
    * product_ids whose thumbnail 404'd. Roughly 40% of Pokemon singles have
    * no upstream image and One Piece has none at all, so this is the normal
-   * path, not error handling - we swap in a placeholder rather than leaving
-   * a broken image icon.
+   * path rather than error handling, so we swap in a placeholder instead
+   * of leaving a broken image icon.
    */
   protected readonly noImage = signal<ReadonlySet<number>>(new Set());
 
@@ -118,7 +118,7 @@ export class Search {
    * invisible until it lands: relying on (error) alone still lets the
    * browser paint its broken-image glyph for a frame or two before the
    * placeholder swaps in, which looks like a bug on every row we have no
-   * image for - and that is ~40% of them.
+   * image for, and that is about 40% of them.
    */
   protected readonly loadedImages = signal<ReadonlySet<number>>(new Set());
 
@@ -242,10 +242,10 @@ export class Search {
    * rather than a counter, so the two cannot drift apart.
    *
    * Paging is only sound because item_search() orders by
-   * (rank, length(name), name, product_id) - deterministic down to the
-   * tiebreaker. Verified against the live API: three consecutive pages of
-   * "Charizard", zero overlap, identical on a repeat call. An ORDER BY that
-   * ties would silently duplicate and skip rows here.
+   * (rank, length(name), name, product_id), which is deterministic down to
+   * the tiebreaker. Verified against the live API with three consecutive
+   * pages of "Charizard": zero overlap, identical on a repeat call. An
+   * ORDER BY that ties would silently duplicate and skip rows here.
    */
   protected loadMore(): void {
     const trimmed = this.query.trim();
@@ -297,7 +297,7 @@ export class Search {
       next: (v) => {
         this.variants.set(v);
         this.loadingDetail.set(false);
-        // Open on the most valuable variant - for a card with a $5 Normal
+        // Open on the most valuable variant. For a card with a $5 Normal
         // and a $77 Reverse Holofoil, that's overwhelmingly the one being
         // looked up.
         const best = [...v].sort(
@@ -350,20 +350,20 @@ export class Search {
   /**
    * Start date for the current range, or undefined for "All".
    *
-   * The range is anchored on this variant's own newest snapshot rather than
-   * on today - see history-window.ts for why a clock is the wrong anchor
-   * here.
+   * The range is anchored on this variant's own newest snapshot rather
+   * than on today. See history-window.ts for why a clock is the wrong
+   * anchor here.
    *
    * That anchor also makes an empty result impossible, which is worth
-   * knowing before writing a branch for one: item_variants() reports
+   * knowing before writing a branch for one. item_variants() reports
    * latestDate as MAX(snapshot_date) for this exact sub-type, so the range
    * always contains at least that day's row. The endpoint 404s on an empty
-   * history, and from this screen that can now only mean a genuine failure
-   * - which is why it still surfaces as one.
+   * history, and from this screen that can only mean a real failure, so it
+   * still surfaces as one.
    *
-   * A variant with no latest date to anchor on cannot happen here either
-   * (the buttons are built from the same list), so that fallback is simply
-   * the unwindowed request rather than a guess.
+   * A variant with no latest date can't happen here either, since the
+   * buttons are built from the same list, so that fallback is just the
+   * unwindowed request rather than a guess.
    */
   private windowFrom(subType: string): string | undefined {
     const days = this.chartWindow().days;

@@ -7,7 +7,7 @@ import { defaultGame } from './game-default';
 import { PriceChart } from './price-chart';
 
 /**
- * Movers - "what moved this week".
+ * Movers: "what moved this week".
  *
  * Defaults to the biggest decliners over 7 days within the LARGEST tracked
  * game, which is the question a seller actually opens the app with. Set
@@ -15,7 +15,7 @@ import { PriceChart } from './price-chart';
  *
  * It used to default to all games at once; that ranked Pokemon and One
  * Piece against each other in one list, which compares markets the owner
- * considers separately. "All games" is still selectable - see
+ * considers separately. "All games" is still selectable; see
  * defaultGame().
  *
  * Every default here is the SERVER's default (see item_movers()), not a
@@ -88,7 +88,7 @@ export class Movers {
       });
   }
 
-  /** Changing game invalidates the set filter - a set belongs to one game. */
+  /** Changing game invalidates the set filter, since a set belongs to one game. */
   protected onGameChange(): void {
     this.set = null;
     this.sets.set([]);
@@ -103,7 +103,7 @@ export class Movers {
 
   /**
    * A movers row already names its exact variant, so unlike the search
-   * screen there's no variant-picking step - go straight to the history.
+   * screen there's no variant-picking step, so go straight to the history.
    */
   protected select(row: Mover): void {
     this.selected.set(row);

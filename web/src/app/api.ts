@@ -16,7 +16,7 @@ import {
  * The only thing in this app that knows a server exists.
  *
  * Every method is one endpoint from the read API. Nothing here talks to
- * Postgres or to tcgcsv - that boundary is deliberate (see CLAUDE.md
+ * Postgres or to tcgcsv. That boundary is deliberate (see CLAUDE.md
  * "Architecture intent"): the mirror has a restrictive CORS policy and
  * asks that data be ingested server-side, so the browser never touches it.
  */
@@ -41,7 +41,7 @@ export class CardTrackerApi {
   ): Observable<ItemSearchResult[]> {
     let params = new HttpParams().set('q', query);
     if (opts.game != null) params = params.set('game', opts.game);
-    // Only sent when hiding sealed - the server defaults to including it.
+    // Only sent when hiding sealed; the server defaults to including it.
     if (opts.includeSealed === false) params = params.set('sealed', 'false');
     if (opts.limit != null) params = params.set('limit', opts.limit);
     if (opts.offset != null) params = params.set('offset', opts.offset);
@@ -67,7 +67,7 @@ export class CardTrackerApi {
     let params = new HttpParams();
     if (opts.game != null) params = params.set('game', opts.game);
     if (opts.days != null) params = params.set('days', opts.days);
-    // Only sent when turning it off - the server defaults it on.
+    // Only sent when turning it off; the server defaults it on.
     if (opts.despike === false) params = params.set('despike', 'false');
     return this.http.get<SetOverview[]>(`${this.base}/sets/overview`, { params });
   }
@@ -98,7 +98,7 @@ export class CardTrackerApi {
   }
 
   /**
-   * URL of a card's thumbnail on OUR server. Never a third-party URL - the
+   * URL of a card's thumbnail on our own server, never a third party. The
    * browser must not fetch images from anyone else (see CLAUDE.md). Returns
    * 404 when we have no image, which the caller renders as a placeholder.
    */
@@ -109,7 +109,7 @@ export class CardTrackerApi {
   /**
    * Whose artwork this card's thumbnail shows. Its own call rather than part
    * of item(): it costs ~90ms server-side and only the detail view needs it.
-   * 404s when we hold no image, which is ordinary - callers swallow it.
+   * 404s when we hold no image, which is ordinary, so callers swallow it.
    */
   imageProvenance(productId: number): Observable<ImageProvenance> {
     return this.http.get<ImageProvenance>(
@@ -126,7 +126,7 @@ export class CardTrackerApi {
   }
 
   /**
-   * subType is required by the server and has no default - picking one for
+   * subType is required by the server and has no default, since picking one for
    * the caller would mean guessing which market they meant. Get valid
    * values from variants().
    */

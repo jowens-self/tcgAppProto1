@@ -54,7 +54,7 @@ public final class ImageDir {
      *
      * Package-private purely so it can be tested: {@code user.dir} cannot be
      * changed once a JVM is running, so a test that could not supply its own
-     * cwd would have to reimplement this rule to check it - and a test that
+     * cwd would have to reimplement this rule to check it. A test that
      * reimplements the thing it is testing proves nothing.
      */
     static Path resolve(Path cwd, String configured) {

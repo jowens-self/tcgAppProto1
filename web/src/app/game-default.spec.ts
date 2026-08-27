@@ -9,7 +9,7 @@ const game = (categoryId: number, name: string, productCount: number): Game =>
  * Which game Movers and Sets open on.
  *
  * "All games" stopped being the default on 2026-08-19 because it produced a
- * board mixing two markets the owner thinks about separately - roughly 41
+ * board mixing two markets the owner thinks about separately, roughly 41
  * Pokemon to 9 One Piece in a typical top 50.
  */
 describe('defaultGame', () => {
@@ -46,7 +46,7 @@ describe('defaultGame', () => {
     ).toBe(1);
   });
 
-  /** Null reads as "all games" - the only sensible choice among nothing. */
+  /** Null reads as "all games", the only sensible choice among nothing. */
   it('returns null for an empty list', () => {
     expect(defaultGame([])).toBeNull();
   });
