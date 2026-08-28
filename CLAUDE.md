@@ -32,6 +32,13 @@ Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **A thumbnail costs no database connection** (`ImageFiles`, Part 38). Files
+  are named `<category_id>/<product_id>.jpg`, so the path follows from the id
+  and the endpoint never reads `card_images.file_path`. That also removed the
+  path-traversal vector rather than guarding it, since no stored string
+  reaches the path any more. The one failure mode this creates is a game
+  imported while the API is running: the category list is cached, so a miss
+  re-reads the image root once before giving up. A test pins that.
 - **Search pages at 50 and says so; it does not raise the limit.** A common
   name has more than 200 matches (`Charizard`, `Pikachu`, `Trainer` all hit
   the `LEAST(limit, 200)` ceiling), and until recently the screen showed 50
@@ -544,10 +551,13 @@ Rules it establishes, worth keeping:
   **Measured 2026-08-20, so the ceiling is no longer hypothetical:** 250
   concurrent requests are served fine; at 300 mixed requests 50 of them 500
   with `FATAL: sorry, too many clients already` against Postgres'
-  `max_connections = 100`. A realistic page (50 thumbnails at once) passes
-  comfortably and the server recovers on its own, so this is a shipping
-  blocker, not a local one. Adding a pool means adding a dependency, the
+  `max_connections = 100`. Adding a pool means adding a dependency, the
   owner's call, not a silent one.
+  **Most of that pressure is gone as of 2026-08-27**, because thumbnails no
+  longer open a connection at all (`ImageFiles`, Part 38). A page's 50
+  concurrent image requests were the bulk of it; 300 concurrent thumbnails
+  went from 200 failures to none, and 600 also pass. What still costs a
+  connection is a real query: search, variants, history, movers, sets.
 - **`high_price` is absent from every response** (owner's rule, made structural), and `PricePoint` has no
   field for it: the "store it, ignore it" rule made structural rather
   than left as something a future chart author must remember. Same for
@@ -814,12 +824,14 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   roughly a fifth of every page, where the detail view bands one card you
   chose to look at.
 - **Connection pool, when this leaves localhost, not before.** Every request
-  opens its own JDBC connection (`ApiServer.withRepo`, the single place to
-  change). Measured 2026-08-20 against the running server: 200 concurrent
-  requests all succeed; at 300 mixed, 50 fail with
+  still opens its own JDBC connection (`ApiServer.withRepo`, the single place
+  to change). Measured 2026-08-20: at 300 mixed requests 50 fail with
   `FATAL: sorry, too many clients already` against `max_connections = 100`,
-  and it recovers unattended. A realistic page is ~50 concurrent thumbnails,
-  well inside the limit, which is why this has never been felt locally.
+  and it recovers unattended.
+  **Less urgent since 2026-08-27**, because the biggest single source of
+  connections was thumbnails and they no longer open one (Part 38). Serving a
+  page's images now costs nothing, so the remaining pressure is one connection
+  per genuine query rather than one per row on screen.
   Deliberately not done yet: the fix is a new dependency (HikariCP) on a
   short list, and the moment it matters is the same moment the localhost-only
   CORS rule needs revisiting. Do both together, against a real hosting

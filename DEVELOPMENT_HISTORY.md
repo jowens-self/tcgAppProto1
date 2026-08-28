@@ -54,6 +54,7 @@ origin through that date, then continuing forward from there).
 35. [Part 35 — The damage gap catch-up cannot see](#part-35--the-damage-gap-catch-up-cannot-see)
 36. [Part 36 — A month of a card, not all of it](#part-36--a-month-of-a-card-not-all-of-it)
 37. [Part 37 — The fifty-first Charizard](#part-37--the-fifty-first-charizard)
+38. [Part 38 — Fifty connections to draw one page](#part-38--fifty-connections-to-draw-one-page)
 36. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
 37. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
 38. [What's still open](#whats-still-open)
@@ -3973,6 +3974,85 @@ There is no total, because the endpoint does not return one. A full page is
 the only evidence that more exist, so the last page costs one extra request
 to discover it is the last. That is the honest trade against inventing a
 number the server never gave us.
+
+---
+
+## Part 38 — Fifty connections to draw one page
+
+*2026-08-27.*
+
+The connection ceiling has been in the docs since Part 31 as a shipping
+blocker waiting on a dependency decision. It turned out most of it was not a
+pooling problem at all.
+
+### What a thumbnail cost
+
+`GET /api/items/{id}/image` opened a JDBC connection, ran one query to turn a
+product id into a file path, closed it, then read the file. Every request
+opens its own connection by design, and a search page renders 50 thumbnails
+at once, so drawing one page opened 50 connections to answer a question that
+never needed the database.
+
+Measured on the running server rather than argued from the code. 300
+concurrent thumbnail requests:
+
+```
+before   100 x 200,  200 x 500      api log: 200 "sorry, too many clients already"
+after    300 x 200,    0 x 500      api log: 0
+after    600 x 200,    0 x 500      api log: 0
+```
+
+The before number is worse than the one Part 31 recorded, and for a reason
+worth noting: Part 31 measured 300 *mixed* requests and saw 50 fail. 300
+requests that are all thumbnails is the harder case, and it is also the
+realistic one, because thumbnails are what a page actually fires in parallel.
+
+### The path never needed a query
+
+`ImportCardImages` names every file `<category_id>/<product_id>.jpg`. That is
+not an assumption: all 26,618 files on disk match `^[0-9]+\.jpg$`, the count
+matches the 26,618 `ok` rows exactly, and `card_images.file_path` stores
+`3/42346.jpg`. So the path follows from the id, and `ImageFiles` resolves it
+against a cached list of the image root's category directories. A hit is one
+`isRegularFile` call.
+
+The cache is the only interesting part. Category directories change only when
+a new game's images are imported, which is an offline batch job, so caching
+the list is safe. But caching it creates a failure the old per-request query
+could not have: a game imported while the API is running would 404 forever.
+So a miss re-reads the root once before giving up. Re-reading is cheap because
+the image root holds one entry per game, not one per card. That property is
+the one with a test on it, since it is the one that would rot silently.
+
+### The guard that became unnecessary
+
+`ApiContractTest` had a path-traversal test: `file_path` came from the
+database, so a row reading `../ct-secret.txt` had to be refused. The
+containment check in the handler is what refused it.
+
+That vector is now gone rather than guarded. The served path is built from an
+int and a directory the server listed itself, so no stored string reaches it
+at all. The test still asserts the outcome, because the outcome is still what
+matters, but its comment now says the mechanism changed. Deleting the test
+would have been the wrong call: it asserts a property, and the property holds
+for a better reason than it used to.
+
+The fixture needed changing too, and that is what caught the whole thing. It
+wrote `base1/4.jpg` and pointed a `card_images` row at it, which was a fair
+model of the old design and is not a model of the new one. The test failed on
+the first build. Renaming the fixture file to `3/42382.jpg` is the honest fix,
+because that is what the importer actually writes.
+
+### What this does and does not settle
+
+`QueryRepository.imagePath` had one caller and now has none, so it is deleted.
+
+The pool is still not done and is still the owner's call. What changed is the
+shape of the problem: the remaining connection cost is one per genuine query,
+which is what a connection is for, rather than one per row on screen. Serving
+a page's images is now free. That is the cheap majority of the ceiling with no
+new dependency, which leaves HikariCP and the localhost-only CORS rule to be
+decided together against a real hosting decision, exactly as CLAUDE.md said.
 
 ---
 
