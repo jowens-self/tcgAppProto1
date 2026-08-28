@@ -45,11 +45,13 @@ class ApiContractTest {
         Fixtures.prices(db, 42382, "Reverse Holofoil", "70.00", "70.00", "77.00");
 
         imageRoot = Files.createTempDirectory("ct-images-test");
-        Files.createDirectories(imageRoot.resolve("base1"));
-        Files.write(imageRoot.resolve("base1/4.jpg"), new byte[]{(byte) 0xFF, (byte) 0xD8, 1, 2, 3});
+        // ImportCardImages names every file <category_id>/<product_id>.jpg,
+        // and the endpoint resolves it from the id rather than from the row.
+        Files.createDirectories(imageRoot.resolve("3"));
+        Files.write(imageRoot.resolve("3/42382.jpg"), new byte[]{(byte) 0xFF, (byte) 0xD8, 1, 2, 3});
         db.exec("""
             INSERT INTO card_images (product_id, source_id, status, file_path, bytes)
-            VALUES (42382, 'base1-4', 'ok', 'base1/4.jpg', 5)
+            VALUES (42382, 'base1-4', 'ok', '3/42382.jpg', 5)
             """);
 
         app = ApiServer.createApp(db.url(), db.user(), db.pass(), imageRoot);
@@ -161,8 +163,11 @@ class ApiContractTest {
     }
 
     /**
-     * The path-traversal guard. file_path comes from the database, so a bad row
-     * must not be able to read outside the image directory.
+     * The stored file_path is not read at all any more, which is what removed
+     * the traversal vector rather than a check catching it: the served path is
+     * built from an int and a directory we listed ourselves. A row pointing
+     * outside the image root is simply ignored, so this still asserts the
+     * outcome that matters even though the mechanism changed.
      */
     @Test
     void aCraftedImagePathCannotEscapeTheImageRoot() throws Exception {

@@ -3,6 +3,7 @@ package com.cardtracker.api;
 import com.cardtracker.Env;
 import com.cardtracker.ImageDir;
 import com.cardtracker.db.QueryRepository;
+import com.cardtracker.images.ImageFiles;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.javalin.Javalin;
@@ -62,6 +63,8 @@ public class ApiServer {
      * exercising over real HTTP rather than by reading the handlers.
      */
     public static Javalin createApp(String url, String user, String pass, Path imageRoot) {
+        ImageFiles imageFiles = new ImageFiles(imageRoot);
+
         Javalin app = Javalin.create(config -> {
             // LocalDate must serialize as "2026-08-14", not an array of ints
             // or an epoch number. The client charts on these directly.
@@ -169,15 +172,13 @@ public class ApiServer {
         // none, so the client shows a placeholder.
         app.get("/api/items/{productId}/image", ctx -> {
             int id = pathId(ctx.pathParam("productId"));
-            String rel = withRepo(url, user, pass, repo -> repo.imagePath(id));
-            if (rel == null) throw new NotFoundResponse("No image for product " + id);
+            // Resolved on disk rather than out of card_images. This endpoint
+            // used to spend a JDBC connection translating an id into a path,
+            // which is the single biggest source of connection pressure here:
+            // one per thumbnail, 50 per search page. See ImageFiles.
+            Path file = imageFiles.find(id);
+            if (file == null) throw new NotFoundResponse("No image for product " + id);
 
-            Path file = imageRoot.resolve(rel).normalize();
-            // The path comes from our own DB, but normalize + containment check
-            // means a bad row can never read outside the image directory.
-            if (!file.startsWith(imageRoot) || !Files.isRegularFile(file)) {
-                throw new NotFoundResponse("No image file for product " + id);
-            }
             ctx.contentType("image/jpeg");
             // Immutable in practice: a card's art doesn't change, and the file
             // is only rewritten by an explicit re-import.
