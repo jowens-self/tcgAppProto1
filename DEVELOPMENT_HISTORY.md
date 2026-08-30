@@ -4024,6 +4024,19 @@ So a miss re-reads the root once before giving up. Re-reading is cheap because
 the image root holds one entry per game, not one per card. That property is
 the one with a test on it, since it is the one that would rot silently.
 
+Checked under load as well, because the first measurement only exercised
+hits, and misses are the path the re-read made more expensive. They are also
+the common path here: about 40% of Pokemon singles have no image and One
+Piece has none at all. 300 concurrent misses took 0.64s and 600 took 1.07s,
+every one a correct 404 with nothing in the log. Then the same thing on the
+live server rather than in a fixture: product 1 returned 404, creating
+`images/99/1.jpg` made it 200 with no restart, and removing the directory
+took it back to 404.
+
+A TTL or an mtime check would avoid re-listing on every miss. The numbers say
+that would be complexity for no measurable gain, so it is deliberately not
+there.
+
 ### The guard that became unnecessary
 
 `ApiContractTest` had a path-traversal test: `file_path` came from the
