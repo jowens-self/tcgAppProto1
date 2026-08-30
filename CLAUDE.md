@@ -45,11 +45,15 @@ Behaviour worth knowing before reading the code, newest first:
   truncated pull, and did, rejecting 546 of 927 days before it was fixed. The
   file's existence is the only record that a day is done, which is why a short
   day is skipped rather than written with a warning.
-- **A plist in the repo is not a scheduled job.** `com.cardtracker.daily.plist`
-  sat here from 2026-08-13 to 2026-08-30 having never been installed, and the
-  pull ran only when someone ran it; the history was eight days stale when it
-  was noticed. Both jobs now live in `~/Library/LaunchAgents`. Check with
-  `launchctl list | grep cardtracker`, not by looking at the repo.
+- **The export is scheduled; the pull is still on demand.**
+  `com.cardtracker.export` at 05:00 is the only cardtracker job in
+  `~/Library/LaunchAgents`. The 2026-08-13 decision against a pull daemon
+  stands and its trigger is still hosting, so most mornings the export finds
+  the container down, says so, and exits 0. What it buys is that a manual
+  pull reaches the archive within a day without anyone remembering to send it
+  there. **Stale data here is not evidence of a broken job** -- `App` runs gap
+  catch-up on every run, so a week without a pull is a week the next pull
+  backfills. Part 39 was written after reading exactly that as a fault.
 - **A thumbnail costs no database connection** (`ImageFiles`, Part 38). Files
   are named `<category_id>/<product_id>.jpg`, so the path follows from the id
   and the endpoint never reads `card_images.file_path`. That also removed the

@@ -43,8 +43,15 @@ psql_q() {
 }
 
 # --- preflight ----------------------------------------------------------------
-docker exec "$DB_CONTAINER" true 2>/dev/null \
-  || die "container '$DB_CONTAINER' is not running (docker compose up -d)"
+# Docker is off here more often than not: pulls are on demand by the
+# 2026-08-13 decision, so the container is up only while someone is working.
+# Nothing to export is therefore the normal morning, not a fault -- exiting
+# non-zero would write a red mark into the log every day and train everyone
+# to ignore it.
+if ! docker exec "$DB_CONTAINER" true 2>/dev/null; then
+  echo "Container '$DB_CONTAINER' is not running; nothing to export."
+  exit 0
+fi
 [ -d "$DATA_REPO/.git" ] \
   || die "no git repo at $DATA_REPO -- create it first, or set DATA_REPO"
 

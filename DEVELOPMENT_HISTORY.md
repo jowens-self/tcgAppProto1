@@ -4315,20 +4315,25 @@ Not started. Schema not yet designed.
 
 *2026-08-30.*
 
-`com.cardtracker.daily.plist` has been in the repo since 2026-08-13. It was
-never installed. It is not in `~/Library/LaunchAgents`, `launchctl list` has
-never heard of it, and neither `/tmp/cardtracker.log` nor
-`/tmp/cardtracker.err` has ever been created — which is the tell, because
-launchd creates those on the first run whether the job succeeds or not.
+The newest `snapshot_date` was 2026-08-22 and the date was 2026-08-30.
+`com.cardtracker.daily.plist` was in the repo, absent from
+`~/Library/LaunchAgents`, unknown to `launchctl`, and its two log files had
+never been created.
 
-So the daily pull has only ever run by hand. On the day this was found the
-newest `snapshot_date` was 2026-08-22 and the date was 2026-08-30: eight days
-missing, and nobody had noticed, because nothing reports on a job that was
-never scheduled.
+That reads like a job someone forgot to install, and it was read that way
+here, and it is not one. Pulls are on demand by the 2026-08-13 decision; the
+plist is a template that was built, verified, and deliberately unloaded; and
+`App` runs gap catch-up on every run, so eight days without a pull is eight
+days the next pull backfills. It is worth writing down that this is not a
+fault, because the shape of it — plist in the repo, nothing in launchd, data
+a week behind — will read as one again.
 
-### The exposure that mattered more
+The pull was installed on that misreading and unloaded again the same
+afternoon. What follows was worth doing anyway, for a different reason.
 
-The gap was the smaller problem. 41,493,861 rows across 927 days back to
+### The exposure
+
+41,493,861 rows across 927 days back to
 2024-02-08, 8,952 MB, existed in exactly one place: the `cardtracker-data`
 Docker volume on one machine. The upstream mirror serves current prices, not
 an archive. A day lost is not re-fetchable, and the backfill to 2024-02-08 —
@@ -4391,9 +4396,21 @@ and aborts. Rows come out ordered by `(product_id, sub_type_name)`, so the
 same day exported twice is byte-identical and the archive can be checked
 against the database rather than trusted.
 
-### Scheduled
+### Scheduled, but only the half that should be
 
-Both jobs are installed now. The pull at 03:15, the export at 05:00. The
-105-minute gap is what makes the settle guard meaningful instead of something
-the schedule defeats: if the pull is still writing at 05:00 the day is left
-for tomorrow, and the catch-up picks it up with no gap in the archive.
+`com.cardtracker.export` runs at 05:00. The pull stays on demand: the
+2026-08-13 reasoning has not changed — a daemon means Docker Desktop parked
+in memory for nobody — and its stated trigger is hosting, which has not
+happened yet.
+
+So the export fires each morning against a container that is usually not
+running. That is why "container not up" prints a line and exits 0 rather than
+failing: on a machine where Docker is off by design, nothing to export is the
+normal morning, and a job that logs a red mark every day is a job nobody
+reads. What the schedule buys is that a manual pull reaches the archive
+within a day without anyone having to send it there.
+
+The 05:00 slot is now vestigial in the schedule, since there is no 03:15 pull
+to follow. It still matters in the guard: a day is exportable only once
+nothing has been written to it for 30 minutes, so a pull running at 04:55 is
+left for tomorrow rather than captured half-written.
