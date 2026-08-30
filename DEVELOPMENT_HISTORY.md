@@ -4396,21 +4396,25 @@ and aborts. Rows come out ordered by `(product_id, sub_type_name)`, so the
 same day exported twice is byte-identical and the archive can be checked
 against the database rather than trusted.
 
-### Scheduled, but only the half that should be
+### Scheduled on the hours the machine is already working
 
-`com.cardtracker.export` runs at 05:00. The pull stays on demand: the
-2026-08-13 reasoning has not changed — a daemon means Docker Desktop parked
-in memory for nobody — and its stated trigger is hosting, which has not
-happened yet.
+The first attempt was a 05:00 export following the 03:15 pull, and it was
+wrong the same way the pull was. With pulls on demand the container is up
+while someone is working and down at 05:00, so a nightly export would have
+found a stopped container every morning and archived nothing, quietly and
+successfully. A nightly job guarded on "is Docker up" is a job that never
+fires.
 
-So the export fires each morning against a container that is usually not
-running. That is why "container not up" prints a line and exits 0 rather than
-failing: on a machine where Docker is off by design, nothing to export is the
-normal morning, and a job that logs a red mark every day is a job nobody
-reads. What the schedule buys is that a manual pull reaches the archive
-within a day without anyone having to send it there.
+`com.cardtracker.hourly` inverts that. Every hour it exits in about a second
+unless the container is already up; when it is, it pulls — capped at once a
+day, decided by an indexed `ingest_runs` lookup rather than by starting a JVM
+to ask — and then exports whatever has settled. It never starts Docker and
+never keeps it resident, so the 2026-08-13 reasoning is intact rather than
+overridden. What changed is only that the schedule now goes looking for the
+hours that decision already produces, instead of picking an hour and hoping.
 
-The 05:00 slot is now vestigial in the schedule, since there is no 03:15 pull
-to follow. It still matters in the guard: a day is exportable only once
-nothing has been written to it for 30 minutes, so a pull running at 04:55 is
-left for tomorrow rather than captured half-written.
+The two steps deliberately do not both complete in one run. A day pulled at
+14:00 is still being written at 14:00, and the exporter leaves a day alone
+until nothing has touched it for 30 minutes, so the 15:00 run is the one that
+archives it. Hourly is what turns that lag into something self-correcting
+rather than a day that gets skipped.

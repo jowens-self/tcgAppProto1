@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.cardtracker.hourly</string>
+
+  <!-- scripts/hourly.sh exits immediately unless the database container is
+       already up, so this is not the pull daemon the 2026-08-13 note ruled
+       out: it never starts Docker and never keeps it resident. Hourly is what
+       makes the guard usable at all -- "already running" is true during a
+       working day and false at 03:00, so a nightly job guarded this way would
+       never fire. The pull itself is still capped at once a day. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/skullllbunnies/Documents/Dev 26+/tcgAppProto1/scripts/hourly.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/skullllbunnies/Documents/Dev 26+/tcgAppProto1</string>
+
+  <!-- launchd hands a job a bare PATH; docker lives in /usr/local/bin. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>DATA_REPO</key><string>/Users/skullllbunnies/Documents/Dev 26+/cardtracker-data</string>
+  </dict>
+
+  <key>StartInterval</key><integer>3600</integer>
+
+  <key>StandardOutPath</key><string>/Users/skullllbunnies/Library/Logs/cardtracker/hourly.log</string>
+  <key>StandardErrorPath</key><string>/Users/skullllbunnies/Library/Logs/cardtracker/hourly.err</string>
+</dict>
+</plist>

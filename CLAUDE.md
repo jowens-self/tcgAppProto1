@@ -45,15 +45,20 @@ Behaviour worth knowing before reading the code, newest first:
   truncated pull, and did, rejecting 546 of 927 days before it was fixed. The
   file's existence is the only record that a day is done, which is why a short
   day is skipped rather than written with a warning.
-- **The export is scheduled; the pull is still on demand.**
-  `com.cardtracker.export` at 05:00 is the only cardtracker job in
-  `~/Library/LaunchAgents`. The 2026-08-13 decision against a pull daemon
-  stands and its trigger is still hosting, so most mornings the export finds
-  the container down, says so, and exits 0. What it buys is that a manual
-  pull reaches the archive within a day without anyone remembering to send it
-  there. **Stale data here is not evidence of a broken job** -- `App` runs gap
-  catch-up on every run, so a week without a pull is a week the next pull
-  backfills. Part 39 was written after reading exactly that as a fault.
+- **One hourly job, and it does nothing unless Docker is already up**
+  (`scripts/hourly.sh`, `com.cardtracker.hourly`, the only cardtracker job in
+  `~/Library/LaunchAgents`). It pulls — at most once a day, gated on an
+  `ingest_runs` lookup rather than on starting a JVM to ask — then exports
+  whatever has settled. This does not reopen the 2026-08-13 decision: it never
+  starts Docker and never keeps it resident, it uses the hours the container is
+  already up because someone is working. **Hourly is load-bearing.** "Already
+  running" is true during a working day and false at 03:00, so the same guard
+  on a nightly job would never fire once; an idle hour costs one
+  `docker exec true`. The pull and the export deliberately do not complete in
+  the same run — see Part 39. **Stale data here is still not evidence of a
+  broken job**: `App` runs gap catch-up on every run, so a week without a pull
+  is a week the next pull backfills. Part 39 was written after reading exactly
+  that as a fault.
 - **A thumbnail costs no database connection** (`ImageFiles`, Part 38). Files
   are named `<category_id>/<product_id>.jpg`, so the path follows from the id
   and the endpoint never reads `card_images.file_path`. That also removed the
