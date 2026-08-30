@@ -32,6 +32,24 @@ Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **The price history has a second copy, and the exporter is what decides a
+  day is finished** (`scripts/snapshot-export.sh`, Part 39). One gzipped CSV
+  per day into the `cardtracker-data` repo, one commit each, ~206 MB a year.
+  It keeps no cursor: it diffs the database's settled days against the files
+  already in the archive, so a missed week catches itself up on the next run
+  and a double run is a no-op. A day is exportable only once nothing has been
+  written to it for 30 minutes *and* its row count is within 10% of the median
+  of the ten days either side of it. **Do not "simplify" that neighbourhood
+  comparison into a global median**: the catalog grows — ~38,220 rows a day in
+  February 2024, 51,434 now — so a global median reads every 2024 day as a
+  truncated pull, and did, rejecting 546 of 927 days before it was fixed. The
+  file's existence is the only record that a day is done, which is why a short
+  day is skipped rather than written with a warning.
+- **A plist in the repo is not a scheduled job.** `com.cardtracker.daily.plist`
+  sat here from 2026-08-13 to 2026-08-30 having never been installed, and the
+  pull ran only when someone ran it; the history was eight days stale when it
+  was noticed. Both jobs now live in `~/Library/LaunchAgents`. Check with
+  `launchctl list | grep cardtracker`, not by looking at the repo.
 - **A thumbnail costs no database connection** (`ImageFiles`, Part 38). Files
   are named `<category_id>/<product_id>.jpg`, so the path follows from the id
   and the endpoint never reads `card_images.file_path`. That also removed the

@@ -4308,3 +4308,92 @@ Not started. Schema not yet designed.
   the fix is a pool and therefore a new dependency on a deliberately small
   dependency list, which is the owner's call; and the number to design
   against is now known rather than guessed.
+
+---
+
+## Part 39 — Nine hundred days in one volume
+
+*2026-08-30.*
+
+`com.cardtracker.daily.plist` has been in the repo since 2026-08-13. It was
+never installed. It is not in `~/Library/LaunchAgents`, `launchctl list` has
+never heard of it, and neither `/tmp/cardtracker.log` nor
+`/tmp/cardtracker.err` has ever been created — which is the tell, because
+launchd creates those on the first run whether the job succeeds or not.
+
+So the daily pull has only ever run by hand. On the day this was found the
+newest `snapshot_date` was 2026-08-22 and the date was 2026-08-30: eight days
+missing, and nobody had noticed, because nothing reports on a job that was
+never scheduled.
+
+### The exposure that mattered more
+
+The gap was the smaller problem. 41,493,861 rows across 927 days back to
+2024-02-08, 8,952 MB, existed in exactly one place: the `cardtracker-data`
+Docker volume on one machine. The upstream mirror serves current prices, not
+an archive. A day lost is not re-fetchable, and the backfill to 2024-02-08 —
+the thing that makes any of the history windows work — is not reproducible.
+
+`scripts/snapshot-export.sh` writes a second copy. One gzipped CSV per day
+into a separate repo, one commit per day, pushed. About 420 KB a day in 2024
+and 560 KB now, call it 206 MB a year.
+
+It keeps no state about where it left off. It asks the database which days it
+has, asks the archive which files exist, and exports the difference. A week
+of downtime catches itself up on the next run, and running it twice in a row
+does nothing the second time. Commit timestamps are whenever the export ran;
+nothing is backdated.
+
+Two guards decide whether a day is finished:
+
+- **Settle time.** A day is eligible once nothing has been written to it for
+  30 minutes. Without this an export firing mid-pull captures a partial day,
+  writes the file, and never revisits it — the file's existence is what marks
+  the day done.
+- **Row count against neighbours.** A pull that dies partway leaves a day
+  that is complete-looking but short.
+
+### The row-count check was wrong the first time
+
+The first version compared each day to the median of the last 30 days. On the
+dry run it rejected 546 of 927 days as partial pulls.
+
+They were not partial. The catalog grows. A day in February 2024 holds about
+38,220 rows and a day in August 2026 holds 51,434, so measuring a 2024 day
+against a 2026 median measures two and a half years of new products and calls
+it damage. The check was reading growth as failure.
+
+The fix is to judge a day against its own neighbourhood — the median of the
+ten days either side — rather than against today. Growth is invisible to that
+comparison because the neighbours grew too; a pull that died is not, because
+its neighbours did not die with it. Re-run: 927 of 927 accepted, nothing
+skipped.
+
+That it now accepts everything is not evidence it still catches anything, so
+the guard was tested against a synthetic series with the growth curve built
+in — 38,000 rising to 51,000 over 40 days, one day truncated to 40%, one day
+down 5%. It flags the truncated day (17,800 against a local median of 44,500)
+and leaves the 5% day alone, which is the correct pair of answers: 5% is a
+Tuesday, 60% is a failure.
+
+A short day is skipped rather than exported with a warning. Skipping leaves
+it missing, so it is picked up on a later run once it has been backfilled
+properly. Exporting it would write the file, and the file is what says the
+day is finished.
+
+### The pipe that cannot fail
+
+`psql ... | gzip -9 > out` puts gzip at the end of the pipeline, so `$?` is
+gzip's. A psql that dies halfway still leaves a well-formed, short `.csv.gz`
+and a zero exit status. The export counts the rows back out of the finished
+file and compares them to the count it queried; a mismatch deletes the file
+and aborts. Rows come out ordered by `(product_id, sub_type_name)`, so the
+same day exported twice is byte-identical and the archive can be checked
+against the database rather than trusted.
+
+### Scheduled
+
+Both jobs are installed now. The pull at 03:15, the export at 05:00. The
+105-minute gap is what makes the settle guard meaningful instead of something
+the schedule defeats: if the pull is still writing at 05:00 the day is left
+for tomorrow, and the catch-up picks it up with no gap in the archive.

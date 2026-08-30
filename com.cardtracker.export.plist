@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.cardtracker.export</string>
+
+  <!-- Runs 105 minutes after the 03:15 pull. The gap is deliberate: the
+       exporter only takes a day once nothing has been written to it for
+       SETTLE_MINUTES, so a pull still in flight is left for tomorrow rather
+       than exported half-finished. A day missed this way is picked up by the
+       next run, since the exporter diffs the database against the archive
+       instead of tracking where it left off. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/skullllbunnies/Documents/Dev 26+/tcgAppProto1/scripts/snapshot-export.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/skullllbunnies/Documents/Dev 26+/tcgAppProto1</string>
+
+  <!-- launchd hands a job a bare PATH; docker lives in /usr/local/bin. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>DATA_REPO</key><string>/Users/skullllbunnies/Documents/Dev 26+/cardtracker-data</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+
+  <key>StandardOutPath</key><string>/Users/skullllbunnies/Library/Logs/cardtracker/export.log</string>
+  <key>StandardErrorPath</key><string>/Users/skullllbunnies/Library/Logs/cardtracker/export.err</string>
+</dict>
+</plist>
