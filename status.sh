@@ -1,6 +1,6 @@
 #!/bin/sh
 # Quick "what's actually running / how far along is it" check.
-cd "/Users/skullllbunnies/Documents/Dev 26+/tcgAppProto1" || exit 1
+cd "/Users/skullllbunnies/Dev 26+/tcgAppProto1" || exit 1
 
 echo "== processes =="
 for pat in "ImportCardImages:image import" "com.cardtracker.api.ApiServer:API" "cardtracker-0.1.0.jar$:price pull" "ng serve:web dev server"; do

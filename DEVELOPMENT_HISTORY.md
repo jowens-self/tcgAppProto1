@@ -4431,3 +4431,72 @@ The two steps deliberately do not both complete in one run. A day pulled at
 until nothing has touched it for 30 minutes, so the 15:00 run is the one that
 archives it. Hourly is what turns that lag into something self-correcting
 rather than a day that gets skipped.
+
+## Part 40 — The job Part 39 described had never run
+
+Part 39 explains the reasoning behind `com.cardtracker.hourly` in some detail.
+It was written on 2026-08-30. Between then and 2026-09-04 the job did not
+succeed once.
+
+The evidence was sitting in two files the whole time. `hourly.log`, the
+stdout path, was zero bytes and had not been touched since the moment the
+plist was installed. `hourly.err` held 120 lines, all the same pair:
+
+    shell-init: error retrieving current directory: getcwd: cannot access
+    parent directories: Operation not permitted
+    bash: .../scripts/hourly.sh: Operation not permitted
+
+`launchctl list` reported exit status 126. The script was executable and ran
+correctly by hand as the same user, so the file was never the problem.
+
+### Why macOS refused
+
+The repository lived in `~/Documents`, which is one of the folders macOS
+protects behind TCC along with Desktop and Downloads. An application that
+touches a protected folder gets a dialog asking the user to allow it. A
+launchd job has nobody at the keyboard to answer that dialog, so the request
+is denied without one ever appearing. The denial is complete rather than
+partial: the job could not even stat the parent directories on the way to the
+script.
+
+### Why five days passed before anyone noticed
+
+The guard in Part 39 is the reason. Most hourly runs are supposed to do
+nothing and exit in about a second, because the container is usually down.
+A run that does nothing successfully and a run that cannot start at all leave
+the same trace in a place nobody reads. The only honest signal was the data,
+and the data was only checked when someone asked whether the app was current.
+
+Nothing was lost. tcgcsv keeps daily archives back to 2024-02-08 and the
+backfill skips days already held, so one run by hand recovered 2026-08-30
+through 2026-09-04 and brought the database to 940 days and 42,163,794 rows.
+All six days were checked against the day before them rather than trusted:
+30.2, 32.7, 31.0, 31.1, 31.2 and 30.4 percent of prices changed, against the
+28.1 percent baseline from the last day verified this way. The phantom day
+found in Part 35 was zero percent.
+
+### Moving rather than granting
+
+Two fixes were available. Full Disk Access would have worked, but the grant
+lands on `/bin/bash`, which means every script bash runs anywhere on the
+machine gains access to every protected folder, in order to fix one job. The
+repository moved to `~/Dev 26+` instead, which is outside TCC entirely and
+costs six path lines across three files and the installed plist.
+
+The database was never exposed by the move. Postgres keeps its data in the
+named volume `tcgappproto1_cardtracker-data`, not in a bind mount under the
+repository, so `docker compose down` without `-v` and `up` from the new
+location reattached the same volume. Row count before and after was
+42,163,794 both times. The compose project name comes from the directory
+basename, which did not change, so the volume kept its name and was found
+again without being told about it.
+
+After the move the job wrote to `hourly.log` for the first time in its life
+and exited 0.
+
+### The part still worth fixing
+
+A scheduled job whose failure is indistinguishable from its success needs a
+check that reads the data rather than the exit status. "Is the newest
+snapshot older than two days" would have caught this on 2026-09-01 instead of
+2026-09-04. That check does not exist yet.
