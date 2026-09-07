@@ -13,16 +13,16 @@
        never fire. The pull itself is still capped at once a day. -->
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/skullllbunnies/Dev 26+/tcgAppProto1/scripts/hourly.sh</string>
+    <string>/Users/skullllbunnies/Claude/tcgAppProto1/scripts/hourly.sh</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/skullllbunnies/Dev 26+/tcgAppProto1</string>
+  <string>/Users/skullllbunnies/Claude/tcgAppProto1</string>
 
   <!-- launchd hands a job a bare PATH; docker lives in /usr/local/bin. -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>DATA_REPO</key><string>/Users/skullllbunnies/Dev 26+/cardtracker-data</string>
+    <key>DATA_REPO</key><string>/Users/skullllbunnies/Claude/cardtracker-data</string>
   </dict>
 
   <key>StartInterval</key><integer>3600</integer>

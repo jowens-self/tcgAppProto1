@@ -8,10 +8,10 @@
   <array>
     <string>/usr/bin/java</string>
     <string>-jar</string>
-    <string>/Users/skullllbunnies/Dev 26+/tcgAppProto1/target/cardtracker-0.1.0.jar</string>
+    <string>/Users/skullllbunnies/Claude/tcgAppProto1/target/cardtracker-0.1.0.jar</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/skullllbunnies/Dev 26+/tcgAppProto1</string>
+  <string>/Users/skullllbunnies/Claude/tcgAppProto1</string>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>15</integer></dict>
   <key>StandardOutPath</key><string>/tmp/cardtracker.log</string>

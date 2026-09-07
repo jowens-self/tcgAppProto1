@@ -4500,3 +4500,27 @@ A scheduled job whose failure is indistinguishable from its success needs a
 check that reads the data rather than the exit status. "Is the newest
 snapshot older than two days" would have caught this on 2026-09-01 instead of
 2026-09-04. That check does not exist yet.
+
+### Addendum, 2026-09-07: the same move again, to its final home
+
+`~/Dev 26+` lasted three days. The projects were consolidated into `~/Claude`
+alongside DoneBoard, SongCapture and TaperOff, which until now lived in
+`~/Documents/Claude`.
+
+The first proposal was to move this repository *into* `~/Documents/Claude`,
+which is a subdirectory of the folder Part 40 is about. TCC protects
+`~/Documents` and everything beneath it, so that would have restored the
+exact failure this part documents, three days after fixing it. Subfolders do
+not escape the protection. The whole Claude folder moved up and out instead,
+which is why the other three projects are now at `~/Claude` too: none of them
+has a scheduled job today, but any of them could get one without walking into
+this.
+
+Same procedure as before and the same result. Six path lines, `down` without
+`-v` and `up` from the new location, row count 42,266,901 before and after,
+the job's stderr unchanged at 13,302 bytes, exit 0. `~/Dev 26+` was removed
+once empty.
+
+The lesson from Part 40 holds and is now cheap to state: the destination of a
+scheduled job's working tree is a load-bearing decision, not a filing
+preference.
