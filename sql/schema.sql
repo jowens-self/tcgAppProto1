@@ -538,8 +538,13 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON price_snapshots(snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_product ON price_snapshots(product_id, sub_type_name, snapshot_date DESC);
 
--- Your own holdings, loaded from a Seller Portal CSV export.
--- Columns are deliberately minimal until we see a real export file.
+-- Your own holdings. Two ways in, both owner-driven: rows entered by hand in
+-- the app, and a bulk Seller Portal CSV export. Neither has the app logging in
+-- anywhere on your behalf; see CLAUDE.md.
+--
+-- Columns stay minimal until a real export file exists to widen them against.
+-- source_file is how the two are told apart: the export's filename on an
+-- imported row, NULL on one entered by hand.
 CREATE TABLE IF NOT EXISTS inventory_snapshots (
     snapshot_date    DATE    NOT NULL,
     product_id       INTEGER,

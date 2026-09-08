@@ -377,9 +377,13 @@ own conversation.
 - **Never scrape tcgplayer.com.** Their terms prohibit crawling without
   permission. No HTML fetching, no headless browser, no "public search API"
   calls. Not for one card, not as a fallback, not behind a flag.
-- **Never automate a login to TCGPlayer or eBay.** Inventory arrives as a CSV the owner exports by
-  hand from the Seller Portal and drops in `inbox/`. That manual step is the
-  design, not a gap to close.
+- **Never automate a login to TCGPlayer or eBay.** Inventory is entered by the
+  owner, never fetched on their behalf: either a CSV they export by hand from
+  the Seller Portal and drop in `inbox/`, or rows typed straight into the app.
+  Both are the owner acting. Neither is the app holding their credentials, and
+  that distinction, not the CSV, is what this rule protects. Adding hand entry
+  does not weaken it; what stays closed is any path where the app authenticates
+  as them.
 - **All outbound traffic goes to tcgcsv.com only.** If a task seems to require
   hitting TCGplayer directly, stop and ask rather than finding a way.
 - **No product images. Not from any TCGplayer host, in any component.**
@@ -768,6 +772,12 @@ purpose. Do not guess the columns; ask for a sample export first. Whether
 it carries a SKU ID or only a product ID decides whether per-condition joins
 are possible at all.
 
+**That unknown blocks the CSV parser and nothing else.** It is not a reason
+inventory tracking cannot exist, though it was treated as one for longer than
+it should have been. Hand entry needs none of those columns: the owner picks a
+product already in `products`, says how many, in what condition, and what they
+paid. That is a complete row. Do not wait on an export to build it.
+
 Two former unknowns are settled and should not be re-litigated:
 
 - **tcgcsv field names are correct** (verified 2026-08-12 by direct curl).
@@ -863,7 +873,11 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   short list, and the moment it matters is the same moment the localhost-only
   CORS rule needs revisiting. Do both together, against a real hosting
   decision, rather than adding a dependency for load that does not exist.
-- Inventory CSV ingest, once a real export exists
+- Inventory entry by hand: pick a product, set quantity, condition and what
+  you paid. Nothing blocks this, and it does not depend on the CSV's unseen
+  columns.
+- Inventory CSV ingest beside it as a bulk import, once a real export exists.
+  One of two ways in, not the way in.
 - Inventory + price join views
 - **Community art showcase (owner's idea, 2026-08-16)**: themed voting
   prompts ("best beach vibes", "favourite darker-theme art") over card

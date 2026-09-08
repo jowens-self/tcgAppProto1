@@ -18,7 +18,10 @@ below.
   seller account.
 - **No new outbound hosts without explicit permission.** `tcgcsv.com` is
   the only one. Anything else gets asked about first, before any code.
-- **No automated login.** Your inventory comes from a CSV you export yourself.
+- **No automated login, ever.** Nothing here signs into a marketplace as you.
+  Inventory, when it lands, is yours to put in: typed in by hand, or bulk
+  imported from a CSV you exported yourself. Neither route wants your
+  credentials.
 - **Currently local-only.** One person, no auth, no hosting. That's
   where it is today, not a rule about where it can go.
 
