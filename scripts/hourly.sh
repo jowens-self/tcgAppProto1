@@ -100,16 +100,21 @@ fi
 # one day behind by design.
 STALE="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
   SELECT string_agg(g, ', ')
-  FROM (SELECT c.name || ' (' ||
-               (CURRENT_DATE - COALESCE(MAX(ps.snapshot_date), DATE '1970-01-01')) ||
-               CASE WHEN CURRENT_DATE - COALESCE(MAX(ps.snapshot_date), DATE '1970-01-01') = 1
+  FROM (SELECT c.name || ' (' || (CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01')) ||
+               CASE WHEN CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01') = 1
                     THEN ' day)' ELSE ' days)' END AS g
           FROM tracked_categories tc
           JOIN categories c ON c.category_id = tc.category_id
-          LEFT JOIN products p ON p.category_id = tc.category_id
-          LEFT JOIN price_snapshots ps ON ps.product_id = p.product_id
-         GROUP BY c.name
-        HAVING COALESCE(MAX(ps.snapshot_date), DATE '1970-01-01') < CURRENT_DATE - 2) x;" 2>/dev/null)"
+          CROSS JOIN LATERAL (
+              SELECT COALESCE(
+                  (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
+                     JOIN products p ON p.product_id = ps.product_id
+                    WHERE p.category_id = c.category_id
+                      AND ps.snapshot_date >= CURRENT_DATE - 4),
+                  (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
+                     JOIN products p ON p.product_id = ps.product_id
+                    WHERE p.category_id = c.category_id)) AS newest) f
+         WHERE COALESCE(f.newest, DATE '1970-01-01') < CURRENT_DATE - 2) x;" 2>/dev/null)"
 
 if [ -n "${STALE//[[:space:]]/}" ]; then
   say "STALE: price data has stopped arriving for $STALE"

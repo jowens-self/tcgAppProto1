@@ -5,6 +5,7 @@ import com.cardtracker.ImageDir;
 import com.cardtracker.db.HoldingsRepository;
 import com.cardtracker.db.QueryRepository;
 import com.cardtracker.images.ImageFiles;
+import com.cardtracker.model.ItemVariant;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.javalin.Javalin;
@@ -20,6 +21,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * HTTP API over the price history and the user's own holdings.
@@ -298,36 +300,39 @@ public class ApiServer {
             if (req.quantity() == null || req.quantity() < 0) {
                 throw new BadRequestResponse("quantity must be 0 or more; 0 records a sale");
             }
-            // Validate BOTH the product and the variant, because a holding
-            // recorded against a variant the card does not have is never priced
-            // and never errors - it just sits in the collection at null value
-            // forever, reading as a bug in the app rather than a typo. Base Set
-            // Nidoking, for instance, exists only as Holofoil, so an innocent
-            // "Normal" would be a silent dead row.
-            var known = withRepo(url, user, pass, repo -> {
-                if (repo.product(req.productId()) == null) return null;
-                return repo.variants(req.productId());
-            });
-            if (known == null) {
-                throw new BadRequestResponse("unknown productId " + req.productId());
-            }
-            // A product with no price history at all has nothing to check
-            // against, and owning an unpriced card is legitimate, so only
-            // enforce this when the card actually has known variants.
-            if (!known.isEmpty()
-                    && known.stream().noneMatch(v -> v.subTypeName().equals(req.subTypeName()))) {
-                throw new BadRequestResponse(
-                        "product " + req.productId() + " has no variant '" + req.subTypeName()
-                        + "'; it trades as: "
-                        + known.stream().map(v -> v.subTypeName()).collect(java.util.stream.Collectors.joining(", ")));
-            }
-            withHoldings(url, user, pass, repo -> {
-                repo.record(LOCAL_USER, req.productId(), req.subTypeName(), req.condition(),
+            // Validate, write and re-read on ONE connection. Splitting these
+            // cost three connections per save, and withRepo's own comment says
+            // a connection is the same order of cost as the query it carries.
+            ctx.status(201).json(withConn(url, user, pass, conn -> {
+                QueryRepository catalog = new QueryRepository(conn);
+
+                // Validate BOTH the product and the variant. A holding recorded
+                // against a variant the card does not have is never priced and
+                // never errors - it just sits in the collection at null value
+                // forever, reading as a bug in the app rather than a typo. Base
+                // Set Nidoking exists only as Holofoil, so an innocent "Normal"
+                // would be a silent dead row.
+                if (catalog.product(req.productId()) == null) {
+                    throw new BadRequestResponse("unknown productId " + req.productId());
+                }
+                var variants = catalog.variants(req.productId());
+                // A product with no price history has nothing to check against,
+                // and owning an unpriced card is legitimate, so only enforce
+                // this when the card actually has known variants.
+                if (!variants.isEmpty()
+                        && variants.stream().noneMatch(v -> v.subTypeName().equals(req.subTypeName()))) {
+                    throw new BadRequestResponse(
+                            "product " + req.productId() + " has no variant '" + req.subTypeName()
+                            + "'; it trades as: " + variants.stream()
+                                    .map(ItemVariant::subTypeName)
+                                    .collect(Collectors.joining(", ")));
+                }
+
+                HoldingsRepository holdings = new HoldingsRepository(conn);
+                holdings.record(LOCAL_USER, req.productId(), req.subTypeName(), req.condition(),
                         req.quantity(), req.costBasis(), req.snapshotDate());
-                return null;
-            });
-            ctx.status(201).json(withHoldings(url, user, pass,
-                    repo -> repo.current(LOCAL_USER, null)));
+                return holdings.current(LOCAL_USER, null);
+            }));
         });
 
         return app;
@@ -357,6 +362,20 @@ public class ApiServer {
                                       SqlFunction<HoldingsRepository, T> work) throws Exception {
         try (Connection conn = DriverManager.getConnection(url, user, pass)) {
             return work.apply(new HoldingsRepository(conn));
+        }
+    }
+
+    /**
+     * One connection, for a handler that needs more than one repository.
+     *
+     * The write path validates against the catalog, appends, and reads the
+     * collection back; through the single-repository helpers that is three
+     * connections for one save.
+     */
+    private static <T> T withConn(String url, String user, String pass,
+                                  SqlFunction<Connection, T> work) throws Exception {
+        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+            return work.apply(conn);
         }
     }
 
