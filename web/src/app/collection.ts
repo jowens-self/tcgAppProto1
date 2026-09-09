@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
 import { Holding, HoldingEvent, ItemSearchResult, ItemVariant } from './api.models';
+import { holdingTotals } from './holding-totals';
 
 /** Columns the table can be ordered by. */
 type SortKey = 'card' | 'qty' | 'value' | 'gain';
@@ -80,34 +81,10 @@ export class Collection {
   });
 
   /**
-   * Totals skip nulls rather than treating them as zero, and the count of
-   * what was skipped is shown beside them. A total that quietly omits your
-   * unpriced cards while looking complete is worse than one that says so.
+   * Extracted and tested in holding-totals.ts: it is the money math, and
+   * every figure on the screen comes from it.
    */
-  protected readonly totals = computed(() => {
-    const rows = this.rows();
-    let value = 0;
-    let cost = 0;
-    let unpriced = 0;
-    let uncosted = 0;
-    for (const r of rows) {
-      if (r.positionValue === null) unpriced++;
-      else value += r.positionValue;
-      if (r.costBasis === null) uncosted++;
-      else cost += r.costBasis * r.quantity;
-    }
-    return {
-      value,
-      cost,
-      // Only meaningful across rows that have both sides, so it is derived
-      // from the same subset rather than from the two totals above.
-      gain: rows.reduce((sum, r) => sum + (r.gain ?? 0), 0),
-      cards: rows.reduce((sum, r) => sum + r.quantity, 0),
-      lines: rows.length,
-      unpriced,
-      uncosted,
-    };
-  });
+  protected readonly totals = computed(() => holdingTotals(this.rows()));
 
   constructor() {
     this.load();
