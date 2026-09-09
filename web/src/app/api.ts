@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 import {
   Game,
   GameSet,
+  Holding,
+  HoldingRequest,
   ImageProvenance,
   ItemSearchResult,
   ItemVariant,
@@ -102,6 +104,32 @@ export class CardTrackerApi {
    * browser must not fetch images from anyone else (see CLAUDE.md). Returns
    * 404 when we have no image, which the caller renders as a placeholder.
    */
+  /**
+   * What you hold now, priced. `asOf` (YYYY-MM-DD) answers as of that day,
+   * moving both the holdings AND the prices back, so the total is what the
+   * collection was really worth then rather than today's cards at old prices.
+   */
+  holdings(asOf?: string): Observable<Holding[]> {
+    let params = new HttpParams();
+    if (asOf) params = params.set('asOf', asOf);
+    return this.http.get<Holding[]>(`${this.base}/holdings`, { params });
+  }
+
+  /**
+   * Record a holding, and get the whole updated collection back.
+   *
+   * This appends rather than updating: correcting a quantity writes a new
+   * row and the newest one wins, so nothing is overwritten. Returning the
+   * full list means the caller never has to merge the change in by hand and
+   * cannot drift out of step with the server.
+   *
+   * The server rejects a subTypeName the card does not have, which is the
+   * one mistake that would otherwise sit in a collection unpriced forever.
+   */
+  recordHolding(req: HoldingRequest): Observable<Holding[]> {
+    return this.http.post<Holding[]>(`${this.base}/holdings`, req);
+  }
+
   imageUrl(productId: number): string {
     return `${this.base}/items/${productId}/image`;
   }

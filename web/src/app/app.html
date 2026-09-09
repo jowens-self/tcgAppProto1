@@ -26,12 +26,23 @@
   >
     Sets
   </button>
+  <button
+    type="button"
+    class="tab"
+    [class.active]="tab() === 'collection'"
+    [attr.aria-current]="tab() === 'collection' ? 'page' : null"
+    (click)="tab.set('collection')"
+  >
+    Collection
+  </button>
 </nav>
 
 @if (tab() === 'search') {
   <app-search />
 } @else if (tab() === 'movers') {
   <app-movers />
-} @else {
+} @else if (tab() === 'sets') {
   <app-sets />
+} @else {
+  <app-collection />
 }

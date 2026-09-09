@@ -2,6 +2,7 @@ package com.cardtracker.api;
 
 import com.cardtracker.Env;
 import com.cardtracker.ImageDir;
+import com.cardtracker.db.HoldingsRepository;
 import com.cardtracker.db.QueryRepository;
 import com.cardtracker.images.ImageFiles;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -21,12 +22,17 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * Read-only HTTP API over the price history.
+ * HTTP API over the price history and the user's own holdings.
  *
  * Exists so a front end never talks to Postgres (or to tcgcsv) directly -
- * see CLAUDE.md "Architecture intent". Strictly read-only: there is no
- * endpoint here that writes, and ingestion stays in App/BackfillArchive
- * where the append-only guarantees live.
+ * see CLAUDE.md "Architecture intent".
+ *
+ * Read-only over PRICE data, and that part is not negotiable: ingestion stays
+ * in App/BackfillArchive where the append-only guarantees live, and nothing
+ * here writes price_snapshots. The one thing this API does write is a user's
+ * own holdings, which are their data rather than an observation of the market
+ * (see HoldingsRepository). That table is append-only too, so a write here
+ * still cannot destroy anything.
  *
  * Run it:
  *   java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
@@ -245,7 +251,101 @@ public class ApiServer {
             ctx.json(points);
         });
 
+        // --- holdings -------------------------------------------------
+        //
+        // The only writing endpoints. LOCAL_USER is hardcoded until sign-in
+        // exists; every query below is already scoped by user_id, so adding
+        // auth means resolving that value from a session instead of a
+        // constant, and changes nothing else here.
+
+        // What you hold now, priced. ?asOf=2026-06-01 answers as of that day,
+        // moving BOTH the holdings and the prices back, so the total is what
+        // the collection was actually worth then.
+        app.get("/api/holdings", ctx -> ctx.json(withHoldings(url, user, pass,
+                repo -> repo.current(LOCAL_USER, dateParam(ctx.queryParam("asOf"), "asOf")))));
+
+        // Every recorded event for one card, newest first. The audit trail
+        // behind a quantity: append-only only earns its cost if it is readable.
+        app.get("/api/holdings/{productId}/history", ctx -> {
+            int id = pathId(ctx.pathParam("productId"));
+            ctx.json(withHoldings(url, user, pass, repo -> repo.historyFor(LOCAL_USER, id)));
+        });
+
+        // Record a holding. This does not update anything: it appends an event,
+        // and current_holdings() reads the newest one. Quantity 0 means sold.
+        app.post("/api/holdings", ctx -> {
+            HoldingRequest req = ctx.bodyAsClass(HoldingRequest.class);
+            if (req.productId() == null) {
+                throw new BadRequestResponse("productId is required");
+            }
+            if (req.subTypeName() == null || req.subTypeName().isBlank()) {
+                throw new BadRequestResponse(
+                        "subTypeName is required - call /api/items/" + req.productId()
+                        + "/variants to list them, since Normal and Holofoil are priced separately");
+            }
+            if (req.quantity() == null || req.quantity() < 0) {
+                throw new BadRequestResponse("quantity must be 0 or more; 0 records a sale");
+            }
+            // Validate BOTH the product and the variant, because a holding
+            // recorded against a variant the card does not have is never priced
+            // and never errors - it just sits in the collection at null value
+            // forever, reading as a bug in the app rather than a typo. Base Set
+            // Nidoking, for instance, exists only as Holofoil, so an innocent
+            // "Normal" would be a silent dead row.
+            var known = withRepo(url, user, pass, repo -> {
+                if (repo.product(req.productId()) == null) return null;
+                return repo.variants(req.productId());
+            });
+            if (known == null) {
+                throw new BadRequestResponse("unknown productId " + req.productId());
+            }
+            // A product with no price history at all has nothing to check
+            // against, and owning an unpriced card is legitimate, so only
+            // enforce this when the card actually has known variants.
+            if (!known.isEmpty()
+                    && known.stream().noneMatch(v -> v.subTypeName().equals(req.subTypeName()))) {
+                throw new BadRequestResponse(
+                        "product " + req.productId() + " has no variant '" + req.subTypeName()
+                        + "'; it trades as: "
+                        + known.stream().map(v -> v.subTypeName()).collect(java.util.stream.Collectors.joining(", ")));
+            }
+            withHoldings(url, user, pass, repo -> {
+                repo.record(LOCAL_USER, req.productId(), req.subTypeName(), req.condition(),
+                        req.quantity(), req.costBasis(), req.snapshotDate());
+                return null;
+            });
+            ctx.status(201).json(withHoldings(url, user, pass,
+                    repo -> repo.current(LOCAL_USER, null)));
+        });
+
         return app;
+    }
+
+    /**
+     * Whose holdings the API reads and writes, until sign-in exists.
+     *
+     * Seeded by sql/migrations/001_users.sql. Deliberately a named constant
+     * rather than a literal 1 scattered through the handlers, so the day a
+     * session provides it there is exactly one place that stops being a
+     * constant.
+     */
+    private static final long LOCAL_USER = 1L;
+
+    /** Body of POST /api/holdings. Boxed types so "absent" is distinguishable from 0. */
+    public record HoldingRequest(
+            Integer productId,
+            String subTypeName,
+            String condition,
+            Integer quantity,
+            java.math.BigDecimal costBasis,
+            LocalDate snapshotDate) {
+    }
+
+    private static <T> T withHoldings(String url, String user, String pass,
+                                      SqlFunction<HoldingsRepository, T> work) throws Exception {
+        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+            return work.apply(new HoldingsRepository(conn));
+        }
     }
 
     /**

@@ -1,0 +1,245 @@
+<header class="head">
+  <h1>Collection</h1>
+  <p class="sub">What you own, what it&apos;s worth, and what it cost you.</p>
+</header>
+
+<!-- Add a card -->
+<section class="add" aria-label="Add a card">
+  <!-- Searches as you type, like the Search screen, so there is no submit
+       button to find and Enter is never load-bearing. -->
+  <form class="search-row" (submit)="$event.preventDefault()">
+    <input
+      type="search"
+      name="query"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="Search for a card to add…"
+      aria-label="Search for a card"
+      [value]="query"
+      (input)="onQueryChange($any($event.target).value)"
+    />
+    @if (searching()) {
+      <span class="hint">Searching…</span>
+    }
+  </form>
+
+  @if (results().length && !picked()) {
+    <ul class="results">
+      @for (r of results(); track r.productId) {
+        <li>
+          <button type="button" class="result" (click)="pick(r)">
+            <span class="r-name">{{ r.name }}</span>
+            <span class="r-meta">
+              {{ r.setName }}
+              @if (r.cardNumber) { · {{ r.cardNumber }} }
+              @if (r.variantLabel) { · {{ r.variantLabel }} }
+            </span>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (picked(); as card) {
+    <form class="entry" (submit)="$event.preventDefault(); add()">
+      <p class="chosen">
+        <strong>{{ card.name }}</strong>
+        <span class="r-meta">{{ card.setName }}@if (card.cardNumber) { · {{ card.cardNumber }} }</span>
+        <button type="button" class="link" (click)="reset()">change</button>
+      </p>
+
+      <div class="fields">
+        <label>
+          Printing
+          <!-- Never free text: a variant the card doesn't have can never be
+               priced, so it would sit in the collection at null value forever. -->
+          <select [(ngModel)]="variant" name="variant" required>
+            <option value="" disabled>Choose…</option>
+            @for (v of variants(); track v.subTypeName) {
+              <option [value]="v.subTypeName">
+                {{ v.subTypeName }} — {{ v.latestMarket | currency: 'USD' }}
+              </option>
+            }
+          </select>
+        </label>
+
+        <label>
+          Condition
+          <select [(ngModel)]="condition" name="condition">
+            @for (c of conditions; track c) {
+              <option [value]="c">{{ c }}</option>
+            }
+          </select>
+        </label>
+
+        <label>
+          Quantity
+          <input type="number" [(ngModel)]="quantity" name="quantity" min="0" step="1" />
+        </label>
+
+        <label>
+          Paid each
+          <input
+            type="number"
+            [(ngModel)]="costBasis"
+            name="costBasis"
+            min="0"
+            step="0.01"
+            placeholder="optional"
+          />
+        </label>
+
+        <button type="submit" class="primary" [disabled]="!variant || saving()">
+          {{ saving() ? 'Saving…' : 'Add to collection' }}
+        </button>
+      </div>
+    </form>
+  }
+</section>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<!-- Outside the "any rows" gate on purpose. Picking a date with no holdings
+     empties the table, and if the control lived inside the totals it would
+     disappear along with them, stranding you in the past with no way back. -->
+<section class="asof-row" aria-label="Valuation date">
+  <label class="asof">
+    Value on
+    <input type="date" [(ngModel)]="asOf" name="asOf" (ngModelChange)="load()" />
+  </label>
+  @if (asOf) {
+    <button type="button" class="link" (click)="asOf = ''; load()">back to today</button>
+  }
+</section>
+
+<!-- Totals -->
+@if (rows().length) {
+  <section class="totals" aria-label="Collection totals">
+    <div class="stat">
+      <span class="k">Value</span>
+      <span class="v">{{ totals().value | currency: 'USD' }}</span>
+    </div>
+    <div class="stat">
+      <span class="k">Cost</span>
+      <span class="v">{{ totals().cost | currency: 'USD' }}</span>
+    </div>
+    <div class="stat">
+      <span class="k">Gain</span>
+      <span class="v" [class.up]="totals().gain > 0" [class.down]="totals().gain < 0">
+        {{ totals().gain | currency: 'USD' }}
+      </span>
+    </div>
+    <div class="stat">
+      <span class="k">Cards</span>
+      <span class="v">{{ totals().cards | number }}</span>
+      <span class="k">over {{ totals().lines }} lines</span>
+    </div>
+
+  </section>
+
+  <!-- A total that silently omits rows while looking complete is worse than
+       one that says what it left out. -->
+  @if (totals().unpriced || totals().uncosted) {
+    <p class="method">
+      @if (totals().unpriced) {
+        {{ totals().unpriced }} holding{{ totals().unpriced === 1 ? '' : 's' }} had no price on
+        this date and {{ totals().unpriced === 1 ? 'is' : 'are' }} not in the value.
+      }
+      @if (totals().uncosted) {
+        {{ totals().uncosted }} {{ totals().uncosted === 1 ? 'has' : 'have' }} no purchase price
+        recorded, so {{ totals().uncosted === 1 ? 'it is' : 'they are' }} not in the cost or gain.
+      }
+    </p>
+  }
+}
+
+@if (loading()) {
+  <p class="hint">Loading…</p>
+} @else if (!rows().length) {
+  <p class="hint">
+    @if (asOf) {
+      You held nothing on {{ asOf }}.
+    } @else {
+      Nothing here yet. Search for a card above to start your collection.
+    }
+  </p>
+} @else {
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="c-card" [attr.aria-sort]="ariaSort('card')">
+            <button type="button" (click)="sortBy('card')">Card</button>
+          </th>
+          <th>Printing</th>
+          <th>Condition</th>
+          <th class="num" [attr.aria-sort]="ariaSort('qty')">
+            <button type="button" (click)="sortBy('qty')">Qty</button>
+          </th>
+          <th class="num">Paid</th>
+          <th class="num">Now</th>
+          <th class="num" [attr.aria-sort]="ariaSort('value')">
+            <button type="button" (click)="sortBy('value')">Value</button>
+          </th>
+          <th class="num" [attr.aria-sort]="ariaSort('gain')">
+            <button type="button" (click)="sortBy('gain')">Gain</button>
+          </th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of visible(); track r.productId + r.subTypeName + (r.condition ?? '')) {
+          <tr>
+            <td class="c-card">
+              <div class="card-cell">
+                <!-- Served off our own disk, never a TCGplayer host. A card
+                     with no image is ordinary, so the box stays and the
+                     broken-image glyph never appears. -->
+                <span class="thumb" aria-hidden="true">
+                  @if (hasImage(r.productId)) {
+                    <img
+                      [src]="imageUrl(r.productId)"
+                      alt=""
+                      loading="lazy"
+                      (error)="imageFailed(r.productId)"
+                    />
+                  }
+                </span>
+                <div>
+                  <!-- Null name = the product left the catalog. The holding
+                       survives unnamed rather than vanishing. -->
+                  <span class="name">{{ r.name ?? 'Product ' + r.productId }}</span>
+                  <span class="meta">
+                    {{ r.setName ?? 'no longer in catalog' }}
+                    @if (r.cardNumber) { · {{ r.cardNumber }} }
+                  </span>
+                </div>
+              </div>
+            </td>
+            <td>{{ r.subTypeName }}</td>
+            <td>{{ r.condition ?? '—' }}</td>
+            <td class="num">{{ r.quantity }}</td>
+            <td class="num">{{ r.costBasis === null ? '—' : (r.costBasis | currency: 'USD') }}</td>
+            <td class="num">
+              {{ r.marketPrice === null ? '—' : (r.marketPrice | currency: 'USD') }}
+            </td>
+            <td class="num">
+              {{ r.positionValue === null ? '—' : (r.positionValue | currency: 'USD') }}
+            </td>
+            <td class="num" [class.up]="(r.gain ?? 0) > 0" [class.down]="(r.gain ?? 0) < 0">
+              {{ r.gain === null ? '—' : (r.gain | currency: 'USD') }}
+            </td>
+            <td class="num">
+              <!-- Records a sale, doesn't delete: the history stays answerable. -->
+              <button type="button" class="link" (click)="sell(r)" [disabled]="saving()">
+                sold
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}

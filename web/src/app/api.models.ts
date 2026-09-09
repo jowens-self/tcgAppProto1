@@ -204,3 +204,44 @@ export interface ImageProvenance {
   ownerProductId: number | null;
   ownerName: string | null;
 }
+
+/**
+ * One card you own, priced, from GET /api/holdings.
+ *
+ * `gain` is null rather than 0 when costBasis is unknown: "you never said
+ * what you paid" and "you broke even" are different answers, and showing 0
+ * would report the whole market value as profit.
+ *
+ * `name` and `setName` are null when the product has since left the catalog
+ * (code cards do, routinely). The holding survives unnamed rather than
+ * silently shrinking someone's collection.
+ *
+ * `recordedOn` is when this quantity became true, not when it was typed.
+ * Holdings are stored append-only, so an edit adds a row rather than
+ * replacing one, and asking for an older date returns what was held then.
+ */
+export interface Holding {
+  productId: number;
+  name: string | null;
+  cardNumber: string | null;
+  setName: string | null;
+  game: string | null;
+  subTypeName: string;
+  condition: string | null;
+  quantity: number;
+  costBasis: number | null;
+  marketPrice: number | null;
+  positionValue: number | null;
+  gain: number | null;
+  pricedOn: string | null;
+  recordedOn: string;
+}
+
+/** Body of POST /api/holdings. quantity 0 records a sale. */
+export interface HoldingRequest {
+  productId: number;
+  subTypeName: string;
+  condition?: string | null;
+  quantity: number;
+  costBasis?: number | null;
+}
