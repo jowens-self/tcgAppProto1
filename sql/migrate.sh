@@ -97,6 +97,25 @@ if [ "$failed" -ne 0 ]; then
   exit 1
 fi
 
+# functions.sql has the same problem schema.sql does - mounted at init, run
+# once - but not the same solution. It is 18 CREATE OR REPLACE and 5
+# DROP ... IF EXISTS, with no table DDL, so re-running the whole file is
+# idempotent and always leaves the database matching the repo. That makes
+# copying function bodies into migrations unnecessary, and copying them the
+# thing most likely to drift.
+if [ "$PENDING_ONLY" -eq 0 ]; then
+  if docker exec -i "$CONTAINER" \
+       psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -q \
+       < sql/functions.sql >/dev/null 2>&1; then
+    echo "  functions reapplied from sql/functions.sql"
+  else
+    echo "  FAIL     sql/functions.sql did not apply" >&2
+    docker exec -i "$CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" \
+        -d "$DB_NAME" -q < sql/functions.sql 2>&1 | sed 's/^/           /' >&2
+    exit 1
+  fi
+fi
+
 if [ "$PENDING_ONLY" -eq 1 ]; then
   [ "$applied" -eq 0 ] && echo "nothing pending ($skipped already applied)" \
                        || echo "$applied pending, $skipped already applied"

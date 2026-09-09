@@ -571,19 +571,43 @@ SELECT setval(pg_get_serial_sequence('users', 'user_id'),
 -- Columns stay minimal until a real export file exists to widen them against.
 -- source_file is how the two are told apart: the export's filename on an
 -- imported row, NULL on one entered by hand.
+-- APPEND-ONLY, for the same reason price_snapshots is. Editing a quantity
+-- writes a new row; "what do I hold now" is the newest row per card, resolved
+-- by current_holdings() in functions.sql. Selling is a row with quantity 0, not
+-- a DELETE. That is what makes "what was my collection worth in June" answer
+-- with what you actually held in June, rather than today's holdings priced at
+-- June's prices.
 CREATE TABLE IF NOT EXISTS inventory_snapshots (
+    -- Surrogate: a holding has no natural key, since the same card in the same
+    -- condition appears once per correction.
+    id               BIGSERIAL PRIMARY KEY,
+    -- DEFAULT 1 (the local owner) is what lets everything be written against
+    -- user_id before any login exists, and keep working unchanged after.
+    user_id          BIGINT  NOT NULL DEFAULT 1
+                             REFERENCES users(user_id) ON DELETE CASCADE,
     snapshot_date    DATE    NOT NULL,
     product_id       INTEGER,
     sku_id           BIGINT,
     sub_type_name    TEXT,
     condition        TEXT,
     quantity         INTEGER NOT NULL,
+    -- your_price is the Seller Portal's column: what you are ASKING.
+    -- cost_basis is what it COST you. Separate columns because confusing the
+    -- two silently inverts every gain/loss figure in the app.
     your_price       NUMERIC(12,2),
+    cost_basis       NUMERIC(12,2),
     source_file      TEXT,
-    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT inventory_quantity_nonneg CHECK (quantity >= 0)
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_date ON inventory_snapshots(snapshot_date);
+
+-- Ordered exactly as current_holdings() reads it, so "newest row per card" is
+-- an index scan rather than a sort of the whole log.
+CREATE INDEX IF NOT EXISTS idx_inventory_current
+    ON inventory_snapshots (user_id, product_id, sub_type_name, condition,
+                            snapshot_date DESC, ingested_at DESC);
 
 -- Products deliberately excluded from ingestion and all calculations, e.g.
 -- digital code-card redemptions, which behave nothing like a physical card

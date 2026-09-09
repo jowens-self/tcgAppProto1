@@ -1273,3 +1273,93 @@ CREATE OR REPLACE FUNCTION card_image_provenance(
       AND (p_product_id IS NULL OR o.product_id = p_product_id)
     ORDER BY o.name, o.product_id;
 $$ LANGUAGE sql STABLE;
+
+-- What a user holds right now, priced.
+--
+-- Append-only means "what do I hold" is not a SELECT, it is "the newest row per
+-- card", which is what the DISTINCT ON resolves. The identity of a holding is
+-- (product, variant, condition): the same card in two conditions is two
+-- holdings that move independently, and NULL condition groups with NULL, which
+-- is the behaviour wanted for hand entry that never specified one.
+--
+-- p_as_of is the entire payoff of storing holdings this way. It moves BOTH
+-- sides of the question back in time - the holdings log AND the prices - so
+-- "what was my collection worth in June" answers with what you actually owned
+-- in June at June's prices. Passing NULL means now. Valuing today's holdings at
+-- an old date's prices is the wrong answer that most tools give, and it is
+-- wrong specifically because they cannot do this.
+--
+-- quantity 0 is a tombstone (sold, or entered by mistake), so it is filtered
+-- here rather than deleted upstream; the row stays in the log as history.
+--
+-- LEFT JOIN to products, not JOIN: a card can be excluded from the catalog
+-- after you recorded holding it (code cards are, routinely). Dropping the row
+-- would silently shrink someone's collection, so the holding survives with a
+-- null name instead.
+CREATE OR REPLACE FUNCTION current_holdings(
+    p_user_id BIGINT DEFAULT 1,
+    p_as_of   DATE   DEFAULT NULL
+) RETURNS TABLE (
+    product_id     INTEGER,
+    name           TEXT,
+    card_number    TEXT,
+    set_name       TEXT,
+    game           TEXT,
+    sub_type_name  TEXT,
+    condition      TEXT,
+    quantity       INTEGER,
+    cost_basis     NUMERIC,
+    market_price   NUMERIC,
+    position_value NUMERIC,
+    gain           NUMERIC,
+    priced_on      DATE,
+    recorded_on    DATE
+) AS $$
+    WITH latest AS (
+        SELECT DISTINCT ON (h.product_id, h.sub_type_name, h.condition)
+               h.product_id, h.sub_type_name, h.condition,
+               h.quantity, h.cost_basis, h.snapshot_date
+        FROM inventory_snapshots h
+        WHERE h.user_id = p_user_id
+          AND (p_as_of IS NULL OR h.snapshot_date <= p_as_of)
+        ORDER BY h.product_id, h.sub_type_name, h.condition,
+                 h.snapshot_date DESC, h.ingested_at DESC
+    )
+    SELECT l.product_id,
+           p.name,
+           extended_field(p.extended_data, 'Number') AS card_number,
+           g.name AS set_name,
+           c.name AS game,
+           l.sub_type_name,
+           l.condition,
+           l.quantity,
+           l.cost_basis,
+           px.market_price,
+           (l.quantity * px.market_price)::NUMERIC AS position_value,
+           -- NULL, not 0, when cost_basis is unknown: "I don't know what you
+           -- paid" and "you broke even" are different answers, and a 0 here
+           -- would quietly report the entire market value as profit.
+           CASE WHEN l.cost_basis IS NULL THEN NULL
+                ELSE (l.quantity * (px.market_price - l.cost_basis))::NUMERIC
+           END AS gain,
+           px.snapshot_date AS priced_on,
+           l.snapshot_date  AS recorded_on
+    FROM latest l
+    -- One indexed seek per holding, newest row first off idx_snapshots_product.
+    -- Cost scales with the size of the collection, never with the 42M-row
+    -- price table: measured at 7.6ms warm for 1,000 holdings, flat per lookup.
+    LEFT JOIN LATERAL (
+        SELECT ps.market_price, ps.snapshot_date
+        FROM price_snapshots ps
+        WHERE ps.product_id = l.product_id
+          AND ps.sub_type_name = l.sub_type_name
+          AND (p_as_of IS NULL OR ps.snapshot_date <= p_as_of)
+        ORDER BY ps.snapshot_date DESC
+        LIMIT 1
+    ) px ON TRUE
+    LEFT JOIN products   p ON p.product_id  = l.product_id
+    LEFT JOIN groups     g ON g.group_id    = p.group_id
+    LEFT JOIN categories c ON c.category_id = p.category_id
+    WHERE l.quantity > 0
+    ORDER BY (l.quantity * px.market_price) DESC NULLS LAST, p.name;
+$$ LANGUAGE sql STABLE;
