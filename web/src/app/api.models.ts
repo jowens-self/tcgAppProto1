@@ -265,3 +265,20 @@ export interface Health {
   staleAfterDays: number;
   games: GameFreshness[];
 }
+
+/**
+ * One recorded change to a holding, from GET /api/holdings/{id}/history.
+ *
+ * This is the audit trail append-only exists to preserve: every correction
+ * and every sale, rather than only the current state. quantity 0 is a sale.
+ * `recordedOn` is the day the change is true from; `enteredAt` is when it
+ * was typed, which is what orders two changes made on the same day.
+ */
+export interface HoldingEvent {
+  recordedOn: string;
+  subTypeName: string;
+  condition: string | null;
+  quantity: number;
+  costBasis: number | null;
+  enteredAt: string;
+}

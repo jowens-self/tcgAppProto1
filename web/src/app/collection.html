@@ -220,7 +220,14 @@
             </td>
             <td>{{ r.subTypeName }}</td>
             <td>{{ r.condition ?? '—' }}</td>
-            <td class="num">{{ r.quantity }}</td>
+            <td class="num">
+              <!-- The quantity is the thing with a history, so it is the thing
+                   you click to see it. -->
+              <button type="button" class="qty-btn" (click)="toggleHistory(r)"
+                      [attr.aria-expanded]="expanded() === r.productId">
+                {{ r.quantity }}
+              </button>
+            </td>
             <td class="num">{{ r.costBasis === null ? '—' : (r.costBasis | currency: 'USD') }}</td>
             <td class="num">
               {{ r.marketPrice === null ? '—' : (r.marketPrice | currency: 'USD') }}
@@ -238,6 +245,39 @@
               </button>
             </td>
           </tr>
+          @if (expanded() === r.productId) {
+            <tr class="history-row">
+              <td colspan="9">
+                @if (!events().length) {
+                  <span class="meta">Loading history…</span>
+                } @else {
+                  <ol class="events">
+                    @for (e of events(); track e.enteredAt) {
+                      <li>
+                        <span class="e-date">{{ e.recordedOn }}</span>
+                        <!-- 0 is a sale, not a deletion: the row it supersedes
+                             is still here, which is the whole point. -->
+                        <span class="e-what">
+                          @if (e.quantity === 0) {
+                            sold out
+                          } @else {
+                            held {{ e.quantity }}
+                          }
+                          @if (e.condition) { · {{ e.condition }} }
+                          @if (e.costBasis !== null) {
+                            · paid {{ e.costBasis | currency: 'USD' }} each
+                          }
+                        </span>
+                      </li>
+                    }
+                  </ol>
+                  <p class="meta">
+                    Nothing here was overwritten. The newest line is what you hold now.
+                  </p>
+                }
+              </td>
+            </tr>
+          }
         }
       </tbody>
     </table>

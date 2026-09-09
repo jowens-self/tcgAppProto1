@@ -6,6 +6,7 @@ import {
   GameSet,
   Health,
   Holding,
+  HoldingEvent,
   HoldingRequest,
   ImageProvenance,
   ItemSearchResult,
@@ -138,6 +139,15 @@ export class CardTrackerApi {
    */
   recordHolding(req: HoldingRequest): Observable<Holding[]> {
     return this.http.post<Holding[]>(`${this.base}/holdings`, req);
+  }
+
+  /**
+   * Every recorded change to one card's holding, newest first. The reason
+   * append-only is worth its cost: without a reader, preserved history is
+   * only a claim.
+   */
+  holdingHistory(productId: number): Observable<HoldingEvent[]> {
+    return this.http.get<HoldingEvent[]>(`${this.base}/holdings/${productId}/history`);
   }
 
   imageUrl(productId: number): string {

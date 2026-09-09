@@ -1,6 +1,7 @@
 package com.cardtracker.db;
 
 import com.cardtracker.model.Holding;
+import com.cardtracker.model.HoldingEvent;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -111,11 +112,12 @@ public final class HoldingsRepository {
     }
 
     /**
-     * Every recorded event for one card, newest first: the audit trail behind
-     * a current quantity. Exists because append-only is only worth its cost if
-     * the history it preserves can actually be read.
+     * Every recorded event for one card, newest first.
+     *
+     * Append-only is only worth its cost if the history it preserves can be
+     * read, so this is the thing that makes that true rather than theoretical.
      */
-    public List<Holding> historyFor(long userId, int productId) throws Exception {
+    public List<HoldingEvent> historyFor(long userId, int productId) throws Exception {
         String sql = """
                 SELECT h.snapshot_date, h.sub_type_name, h.condition,
                        h.quantity, h.cost_basis, h.ingested_at
@@ -123,20 +125,19 @@ public final class HoldingsRepository {
                  WHERE h.user_id = ? AND h.product_id = ?
                  ORDER BY h.snapshot_date DESC, h.ingested_at DESC
                 """;
-        List<Holding> out = new ArrayList<>();
+        List<HoldingEvent> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, userId);
             ps.setInt(2, productId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    out.add(new Holding(
-                            productId, null, null, null, null,
+                    out.add(new HoldingEvent(
+                            rs.getObject("snapshot_date", LocalDate.class),
                             rs.getString("sub_type_name"),
                             rs.getString("condition"),
                             rs.getInt("quantity"),
                             rs.getBigDecimal("cost_basis"),
-                            null, null, null, null,
-                            rs.getObject("snapshot_date", LocalDate.class)));
+                            rs.getObject("ingested_at", java.time.OffsetDateTime.class)));
                 }
             }
         }

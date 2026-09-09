@@ -3,7 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
-import { Holding, ItemSearchResult, ItemVariant } from './api.models';
+import { Holding, HoldingEvent, ItemSearchResult, ItemVariant } from './api.models';
 
 /** Columns the table can be ordered by. */
 type SortKey = 'card' | 'qty' | 'value' | 'gain';
@@ -275,6 +275,27 @@ export class Collection {
 
   protected imageFailed(productId: number): void {
     this.noImage.update((s) => new Set(s).add(productId));
+  }
+
+  // --- per-row history ---
+  //
+  // Collapsed by default and fetched on demand: most rows are never expanded,
+  // and a request per row on load would be one query per card to show
+  // something nobody asked to see.
+  protected readonly expanded = signal<number | null>(null);
+  protected readonly events = signal<HoldingEvent[]>([]);
+
+  protected toggleHistory(r: Holding): void {
+    if (this.expanded() === r.productId) {
+      this.expanded.set(null);
+      return;
+    }
+    this.expanded.set(r.productId);
+    this.events.set([]);
+    this.api.holdingHistory(r.productId).subscribe({
+      next: (e) => this.events.set(e),
+      error: () => this.error.set('Could not load that card&apos;s history.'),
+    });
   }
 
   protected imageUrl(productId: number): string {
