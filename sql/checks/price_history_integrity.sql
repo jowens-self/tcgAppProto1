@@ -108,21 +108,42 @@ SELECT 'no code cards in products',
        COUNT(*) = 0, COUNT(*)
   FROM products WHERE name LIKE 'Code Card%'
 UNION ALL
-SELECT 'no excluded product has price history',
+-- Scoped to AFTER the exclusion, not "has any rows at all".
+--
+-- A code card is discovered by name during the pull, but it can be priced
+-- before that happens: App runs the archive backfill first, and the backfill
+-- knows product ids only, so a brand new code card gets a day or two of prices
+-- in the same run that later excludes it. That residue is expected and
+-- harmless - excluded products are gone from `products`, so nothing joins to
+-- them and no aggregate sees them.
+--
+-- Asserting "no rows at all" made this permanently red every time a new code
+-- card appeared, and the only way to clear it was deleting real observations
+-- from an append-only table. The honest question is whether exclusion actually
+-- STOPPED the ingest, and a row dated after the exclusion is the thing that
+-- would prove it did not.
+SELECT 'no excluded product gained prices after exclusion',
        COUNT(*) = 0, COUNT(*)
   FROM price_snapshots ps
   JOIN excluded_products e ON e.product_id = ps.product_id
+ WHERE ps.snapshot_date > e.excluded_at::date
 UNION ALL
 -- Bounded to a recent window so this reads the date index rather than the
 -- whole table. The bound is deliberately generous: it only has to be recent,
 -- not precise, because what it is looking for is a change in behaviour.
+--
+-- Deliberately-excluded products are not orphans in the sense meant here. This
+-- looks for a product that left `products` for an UNKNOWN reason while prices
+-- kept arriving; one we removed on purpose is accounted for by the check above.
 SELECT 'no orphan product is still receiving snapshots',
        COUNT(*) = 0, COUNT(*)
   FROM (SELECT DISTINCT ps.product_id
           FROM price_snapshots ps
           LEFT JOIN products p ON p.product_id = ps.product_id
          WHERE ps.snapshot_date >= (SELECT MAX(snapshot_date) FROM price_snapshots) - 14
-           AND p.product_id IS NULL) x
+           AND p.product_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM excluded_products e
+                            WHERE e.product_id = ps.product_id)) x
 UNION ALL
 -- Every day of data must trace to a run that COMPLETED. This is the honest
 -- form of "did the pull work": it asks whether the data present was fully
