@@ -134,6 +134,18 @@
             (keydown.enter)="select(r)"
           >
             <td class="c-item">
+              <!-- Local file only; the browser never contacts TCGplayer. -->
+              <span class="thumb" aria-hidden="true">
+                @if (hasImage(r.productId)) {
+                  <img
+                    [src]="imageUrl(r.productId)"
+                    alt=""
+                    loading="lazy"
+                    (error)="imageFailed(r.productId)"
+                  />
+                }
+              </span>
+              <span class="item-text">
               <span class="name">{{ r.name }}</span>
               <span class="tags">
                 @if (r.cardNumber) {
@@ -147,6 +159,7 @@
                 }
               </span>
               <span class="set">{{ r.setName }} · {{ r.game }}</span>
+              </span>
             </td>
             <td class="c-variant">{{ r.subTypeName }}</td>
             <td class="num">{{ r.thenPrice | currency }}</td>

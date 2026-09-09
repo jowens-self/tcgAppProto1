@@ -105,6 +105,33 @@ export class Movers {
    * A movers row already names its exact variant, so unlike the search
    * screen there's no variant-picking step, so go straight to the history.
    */
+  /**
+   * Thumbnails, served off our own disk and never from a TCGplayer host.
+   *
+   * Movers was built the same day local images landed and simply never got
+   * them; there was no decision behind their absence. Cheap since Part 38,
+   * when serving an image stopped opening a database connection.
+   *
+   * Misses are ordinary rather than exceptional - roughly 40% of Pokemon
+   * singles have no counterpart upstream, and sealed product has none at all
+   * - so a failure is recorded and the <img> dropped, leaving a sized box.
+   * Letting the browser handle it would paint a broken-image glyph down a
+   * column of prices.
+   */
+  private readonly noImage = signal(new Set<number>());
+
+  protected hasImage(productId: number): boolean {
+    return !this.noImage().has(productId);
+  }
+
+  protected imageFailed(productId: number): void {
+    this.noImage.update((s) => new Set(s).add(productId));
+  }
+
+  protected imageUrl(productId: number): string {
+    return this.api.imageUrl(productId);
+  }
+
   protected select(row: Mover): void {
     this.selected.set(row);
     this.history.set([]);

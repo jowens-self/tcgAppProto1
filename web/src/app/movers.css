@@ -117,6 +117,31 @@ tr.row.active td {
 .c-item {
   min-width: 16rem;
 }
+/* Flex so the text block stays put whether or not a picture arrived. */
+.c-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+.item-text {
+  min-width: 0;
+}
+/* Fixed box, so a card with no image does not reflow the row. */
+.thumb {
+  width: 34px;
+  height: 47px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+  display: block;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .name {
   display: block;
   font-weight: 500;
