@@ -87,4 +87,39 @@ if [ "$SKIP_EXPORT" != "true" ]; then
   "$REPO_ROOT/scripts/snapshot-export.sh" || say "export: FAILED (exit $?)."
 fi
 
+# --- 3. did any of that actually work? ---------------------------------------
+#
+# Part 40: this job failed every hour for five days and nothing noticed,
+# because a launchd job that cannot reach its own repository exits without
+# writing anything - and an empty log is indistinguishable from a quiet
+# success. Checking the exit status above would not have caught it either;
+# the script never ran far enough to have one.
+#
+# So this asks the database instead. Two days rather than one, because
+# snapshot_date anchors to the mirror's dataAsOf() and a healthy system is
+# one day behind by design.
+STALE="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
+  SELECT string_agg(g, ', ')
+  FROM (SELECT c.name || ' (' ||
+               (CURRENT_DATE - COALESCE(MAX(ps.snapshot_date), DATE '1970-01-01')) ||
+               CASE WHEN CURRENT_DATE - COALESCE(MAX(ps.snapshot_date), DATE '1970-01-01') = 1
+                    THEN ' day)' ELSE ' days)' END AS g
+          FROM tracked_categories tc
+          JOIN categories c ON c.category_id = tc.category_id
+          LEFT JOIN products p ON p.category_id = tc.category_id
+          LEFT JOIN price_snapshots ps ON ps.product_id = p.product_id
+         GROUP BY c.name
+        HAVING COALESCE(MAX(ps.snapshot_date), DATE '1970-01-01') < CURRENT_DATE - 2) x;" 2>/dev/null)"
+
+if [ -n "${STALE//[[:space:]]/}" ]; then
+  say "STALE: price data has stopped arriving for $STALE"
+  # A log line alone is what failed last time, so also raise something the
+  # owner sees without opening anything. Best-effort: osascript is absent
+  # under some launchd contexts, and a missing notification must never make
+  # an otherwise fine run look failed.
+  /usr/bin/osascript -e "display notification \"Price data stale: $STALE\" with title \"CardTracker\"" 2>/dev/null || true
+else
+  say "freshness: ok."
+fi
+
 say "done."

@@ -1,5 +1,6 @@
 package com.cardtracker.db;
 
+import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ImageProvenance;
 import com.cardtracker.model.ItemSearchResult;
 import com.cardtracker.model.ItemVariant;
@@ -391,5 +392,45 @@ public class QueryRepository {
 
     private static LocalDate localDate(Date d) {
         return d == null ? null : d.toLocalDate();
+    }
+
+    /**
+     * How current each tracked game's price data is.
+     *
+     * Part 40: the scheduled pull failed silently for five days because a
+     * launchd job denied access to its own repository exits without writing
+     * anything, and an empty log looks exactly like a quiet success. The fix
+     * recorded there was a check that reads the DATA rather than the exit
+     * status, and this is what serves it to /api/health so the answer appears
+     * where someone is already looking instead of in a log nobody opens.
+     *
+     * Per category, because one game stopping while another keeps arriving is
+     * exactly what a single global MAX() would hide.
+     */
+    public List<DataFreshness> freshness() throws Exception {
+        String sql = """
+                SELECT c.category_id, c.name AS game,
+                       MAX(ps.snapshot_date) AS newest,
+                       (CURRENT_DATE - COALESCE(MAX(ps.snapshot_date),
+                                                DATE '1970-01-01'))::INT AS days_stale
+                  FROM tracked_categories tc
+                  JOIN categories c ON c.category_id = tc.category_id
+                  LEFT JOIN products p ON p.category_id = tc.category_id
+                  LEFT JOIN price_snapshots ps ON ps.product_id = p.product_id
+                 GROUP BY c.category_id, c.name
+                 ORDER BY c.name
+                """;
+        List<DataFreshness> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                out.add(new DataFreshness(
+                        rs.getInt("category_id"),
+                        rs.getString("game"),
+                        rs.getObject("newest", java.time.LocalDate.class),
+                        rs.getInt("days_stale")));
+            }
+        }
+        return out;
     }
 }

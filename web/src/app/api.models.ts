@@ -245,3 +245,23 @@ export interface HoldingRequest {
   quantity: number;
   costBasis?: number | null;
 }
+
+/** One tracked game's data currency, from GET /api/health. */
+export interface GameFreshness {
+  categoryId: number;
+  game: string;
+  newestSnapshot: string | null;
+  daysStale: number;
+}
+
+/**
+ * From GET /api/health. Health here means "is price data still arriving",
+ * not "is the server process up" - a liveness check that answers ok while
+ * the history quietly stops is the exact failure that went unnoticed for
+ * five days (DEVELOPMENT_HISTORY.md Part 40).
+ */
+export interface Health {
+  status: 'ok' | 'stale';
+  staleAfterDays: number;
+  games: GameFreshness[];
+}

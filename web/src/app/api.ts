@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import {
   Game,
   GameSet,
+  Health,
   Holding,
   HoldingRequest,
   ImageProvenance,
@@ -32,6 +33,15 @@ export class CardTrackerApi {
    * and would need revisiting alongside that rule if either ever moves.
    */
   private readonly base = 'http://localhost:7070/api';
+
+  /**
+   * Is price data still arriving? Reads the data, not the process: see
+   * Health. Used for the staleness banner, which is the only thing standing
+   * between a silent ingest failure and finding out days later.
+   */
+  health(): Observable<Health> {
+    return this.http.get<Health>(`${this.base}/health`);
+  }
 
   games(): Observable<Game[]> {
     return this.http.get<Game[]>(`${this.base}/games`);

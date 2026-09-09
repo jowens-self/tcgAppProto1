@@ -88,7 +88,19 @@ public class ApiServer {
             }));
         });
 
-        app.get("/api/health", ctx -> ctx.json(Map.of("status", "ok")));
+        // Health means "is the data still arriving", not "is this process up".
+        // Part 40: the pull failed silently for five days and the only signal
+        // was data that stopped changing, which nothing was looking at. A
+        // liveness check that answers "ok" while the history quietly stops is
+        // the exact failure that cost those days, so this reads the data.
+        app.get("/api/health", ctx -> {
+            var freshness = withRepo(url, user, pass, QueryRepository::freshness);
+            boolean stale = freshness.stream().anyMatch(com.cardtracker.model.DataFreshness::stale);
+            ctx.json(Map.of(
+                    "status", stale ? "stale" : "ok",
+                    "staleAfterDays", com.cardtracker.model.DataFreshness.STALE_AFTER_DAYS,
+                    "games", freshness));
+        });
 
         app.get("/api/games", ctx ->
                 ctx.json(withRepo(url, user, pass, QueryRepository::games)));

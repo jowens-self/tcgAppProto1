@@ -28,3 +28,15 @@
   border-color: var(--accent);
   background: var(--accent-fade);
 }
+
+/* Deliberately loud and above the tabs: Part 40's failure was silent, and the
+   app looked entirely healthy while serving data that had stopped updating. */
+.stale-banner {
+  margin: 0;
+  padding: 0.7rem 1.25rem;
+  background: var(--danger-fade);
+  color: var(--danger);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--danger);
+}

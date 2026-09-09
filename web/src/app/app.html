@@ -1,3 +1,11 @@
+@if (staleNote(); as note) {
+  <p class="stale-banner" role="status">
+    <strong>Data is stale.</strong> {{ note }}
+    The numbers below are the last ones received, not current prices. Check
+    that the hourly job is running.
+  </p>
+}
+
 <nav class="tabs" aria-label="Screens">
   <button
     type="button"
