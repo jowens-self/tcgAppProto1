@@ -5,6 +5,7 @@ import com.cardtracker.ImageDir;
 import com.cardtracker.db.HoldingsRepository;
 import com.cardtracker.db.QueryRepository;
 import com.cardtracker.images.ImageFiles;
+import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ItemVariant;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -19,7 +20,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -95,12 +98,24 @@ public class ApiServer {
         // was data that stopped changing, which nothing was looking at. A
         // liveness check that answers "ok" while the history quietly stops is
         // the exact failure that cost those days, so this reads the data.
+        //
+        // Cached for a minute because the front end asks on every page load
+        // and the answer cannot change faster than the hourly pull writes.
+        // Held per-app rather than statically so a test's server gets its own.
+        AtomicReference<Cached<List<DataFreshness>>> freshnessCache = new AtomicReference<>();
         app.get("/api/health", ctx -> {
-            var freshness = withRepo(url, user, pass, QueryRepository::freshness);
-            boolean stale = freshness.stream().anyMatch(com.cardtracker.model.DataFreshness::stale);
+            Cached<List<DataFreshness>> hit = freshnessCache.get();
+            List<DataFreshness> freshness;
+            if (hit != null && !hit.expired()) {
+                freshness = hit.value();
+            } else {
+                freshness = withRepo(url, user, pass, QueryRepository::freshness);
+                freshnessCache.set(new Cached<>(freshness, System.nanoTime()));
+            }
+            boolean stale = freshness.stream().anyMatch(DataFreshness::stale);
             ctx.json(Map.of(
                     "status", stale ? "stale" : "ok",
-                    "staleAfterDays", com.cardtracker.model.DataFreshness.STALE_AFTER_DAYS,
+                    "staleAfterDays", DataFreshness.STALE_AFTER_DAYS,
                     "games", freshness));
         });
 
@@ -347,6 +362,21 @@ public class ApiServer {
      * constant.
      */
     private static final long LOCAL_USER = 1L;
+
+    /**
+     * A value with an expiry, for answers that cost more than they change.
+     *
+     * nanoTime rather than currentTimeMillis: this measures an elapsed
+     * interval, and wall-clock time can step backwards (NTP, DST) which would
+     * pin a cache entry as permanently fresh.
+     */
+    private record Cached<T>(T value, long takenAtNanos) {
+        private static final long TTL_NANOS = 60L * 1_000_000_000L;
+
+        boolean expired() {
+            return System.nanoTime() - takenAtNanos > TTL_NANOS;
+        }
+    }
 
     /** Body of POST /api/holdings. Boxed types so "absent" is distinguishable from 0. */
     public record HoldingRequest(

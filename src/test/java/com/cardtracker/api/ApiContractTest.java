@@ -79,6 +79,36 @@ class ApiContractTest {
     }
 
     /**
+     * Health must answer "is data still arriving", not "is this process up".
+     *
+     * Part 40: the hourly pull failed every hour for five days and nothing
+     * noticed, because a job that cannot reach its own repository exits
+     * without writing anything and an empty log is indistinguishable from a
+     * quiet success. A liveness check that returns ok while the history has
+     * silently stopped is the exact shape of that failure, so it is worth a
+     * test rather than a convention.
+     *
+     * The fixtures are anchored at Fixtures.TODAY (2026-08-19) and time only
+     * moves forward, so this data is permanently more than two days old. That
+     * makes the STALE path - the one that actually matters and the one that
+     * would otherwise never be exercised - the one this asserts.
+     */
+    @Test
+    void healthReportsStaleDataRatherThanJustOk() throws Exception {
+        String body = get("/health").body();
+        assertTrue(body.contains("\"status\":\"stale\""),
+                "health must report stale when the newest snapshot is older than the "
+                + "threshold; fixtures are dated " + com.cardtracker.sql.Fixtures.TODAY
+                + " and can only get older. Got: " + body);
+        assertTrue(body.contains("newestSnapshot"),
+                "health must name the newest snapshot it has, so 'stale' is checkable "
+                + "rather than something to take on trust. Got: " + body);
+        assertTrue(body.contains("daysStale"),
+                "health must say HOW stale, since one day behind is by design and "
+                + "several is a broken job. Got: " + body);
+    }
+
+    /**
      * The structural version of "store it, ignore it". Sellers price-park, so
      * high_price is noise dressed as data, and PricePoint has no field for it
      * precisely so a future chart author cannot reach for it by accident. The
