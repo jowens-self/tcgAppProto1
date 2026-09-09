@@ -71,6 +71,74 @@ class ApiContractTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    private static HttpResponse<String> post(String path, String json) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create(base + path))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    // ------------------------------------------------------------------
+    // Holdings: the only writing endpoints.
+    // ------------------------------------------------------------------
+
+    /**
+     * A holding recorded against a variant the card does not have can never be
+     * priced. It does not error, it just sits in the collection at null value
+     * forever, which reads as a bug in the app rather than a typo in the entry.
+     * The front end prevents it by offering only real printings; this is the
+     * backstop, and it must also say what IS valid or the caller is stuck.
+     */
+    @Test
+    void aVariantTheCardDoesNotHaveIsRefusedByName() throws Exception {
+        HttpResponse<String> r = post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Nonexistent Foil","quantity":1}
+                """);
+        assertEquals(400, r.statusCode());
+        assertTrue(r.body().contains("Holofoil"),
+                "the refusal must name the variants the card does trade as, or the "
+                + "caller has no way forward. Got: " + r.body());
+    }
+
+    @Test
+    void anUnknownProductIsRefused() throws Exception {
+        assertEquals(400, post("/holdings",
+                """
+                {"productId":999999999,"subTypeName":"Holofoil","quantity":1}
+                """).statusCode());
+    }
+
+    /**
+     * Recording is append-only: a correction adds a row and the newest wins,
+     * and quantity 0 is a sale rather than a delete. The history endpoint is
+     * what makes that checkable, and it regressed once already when the SQL
+     * moved into a function and the column names changed underneath it.
+     */
+    @Test
+    void correctingAQuantityAppendsRatherThanReplaces() throws Exception {
+        assertEquals(201, post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Holofoil","quantity":2,"costBasis":5.00}
+                """).statusCode());
+        assertEquals(201, post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Holofoil","quantity":7,"costBasis":5.00}
+                """).statusCode());
+
+        String current = get("/holdings").body();
+        assertTrue(current.contains("\"quantity\":7"),
+                "the newest entry must win. Got: " + current);
+
+        String history = get("/holdings/42382/history").body();
+        assertTrue(history.contains("\"quantity\":7") && history.contains("\"quantity\":2"),
+                "both entries must survive - overwriting is the one thing append-only "
+                + "exists to prevent. Got: " + history);
+        assertTrue(history.contains("recordedOn") && history.contains("enteredAt"),
+                "history must carry the day it is true from AND when it was typed, "
+                + "since the latter orders two changes on one day. Got: " + history);
+    }
+
     // ------------------------------------------------------------------
 
     @Test

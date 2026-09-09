@@ -99,22 +99,9 @@ fi
 # snapshot_date anchors to the mirror's dataAsOf() and a healthy system is
 # one day behind by design.
 STALE="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
-  SELECT string_agg(g, ', ')
-  FROM (SELECT c.name || ' (' || (CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01')) ||
-               CASE WHEN CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01') = 1
-                    THEN ' day)' ELSE ' days)' END AS g
-          FROM tracked_categories tc
-          JOIN categories c ON c.category_id = tc.category_id
-          CROSS JOIN LATERAL (
-              SELECT COALESCE(
-                  (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
-                     JOIN products p ON p.product_id = ps.product_id
-                    WHERE p.category_id = c.category_id
-                      AND ps.snapshot_date >= CURRENT_DATE - 4),
-                  (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
-                     JOIN products p ON p.product_id = ps.product_id
-                    WHERE p.category_id = c.category_id)) AS newest) f
-         WHERE COALESCE(f.newest, DATE '1970-01-01') < CURRENT_DATE - 2) x;" 2>/dev/null)"
+  SELECT string_agg(game || ' (' || days_stale ||
+                    CASE WHEN days_stale = 1 THEN ' day)' ELSE ' days)' END, ', ')
+    FROM data_freshness() WHERE days_stale > 2;" 2>/dev/null)"
 
 if [ -n "${STALE//[[:space:]]/}" ]; then
   say "STALE: price data has stopped arriving for $STALE"

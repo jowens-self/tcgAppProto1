@@ -15,27 +15,13 @@
 --
 -- Per tracked category, not globally: one game silently stopping while another
 -- keeps arriving is the failure a global MAX() would hide completely.
--- Bounded to four days on purpose. Grouping the whole of price_snapshots by
--- category aggregates 42M rows and measured 22.5 seconds; the bounded lookup
--- reads idx_snapshots_date and takes 250ms. The unbounded fallback runs only
--- when the narrow window found nothing, i.e. only when data really has
--- stopped. Same trick item_movers() documents.
-SELECT 'price data is no more than 2 days stale: ' || c.name,
-       COALESCE(f.newest, DATE '1970-01-01') >= (CURRENT_DATE - 2) AS ok,
-       CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01') AS days_stale
-  FROM tracked_categories tc
-  JOIN categories c ON c.category_id = tc.category_id
-  CROSS JOIN LATERAL (
-      SELECT COALESCE(
-          (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
-             JOIN products p ON p.product_id = ps.product_id
-            WHERE p.category_id = c.category_id
-              AND ps.snapshot_date >= CURRENT_DATE - 4),
-          (SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
-             JOIN products p ON p.product_id = ps.product_id
-            WHERE p.category_id = c.category_id)
-      ) AS newest
-  ) f
+-- Calls data_freshness() rather than restating it. The query's shape is
+-- load-bearing (the natural formulation takes 22.5 seconds) and it has three
+-- callers, so it has one definition; see sql/functions.sql.
+SELECT 'price data is no more than 2 days stale: ' || f.game,
+       f.days_stale <= 2 AS ok,
+       f.days_stale
+  FROM data_freshness() f
 UNION ALL
 -- A pull that starts and dies leaves a 'running' row forever. Distinct from
 -- staleness: the data can still look recent while every new run is failing.

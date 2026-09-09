@@ -1363,3 +1363,76 @@ CREATE OR REPLACE FUNCTION current_holdings(
     WHERE l.quantity > 0
     ORDER BY (l.quantity * px.market_price) DESC NULLS LAST, p.name;
 $$ LANGUAGE sql STABLE;
+
+-- Is price data still arriving, per tracked game?
+--
+-- Part 40: the hourly pull failed every hour for five days and nothing
+-- noticed, because a job that cannot reach its own repository exits without
+-- writing anything and an empty log is indistinguishable from a quiet
+-- success. The answer had to come from the data rather than an exit status.
+--
+-- One definition, three callers: /api/health, sql/checks/data_freshness.sql
+-- and scripts/hourly.sh. They were briefly three copies of this query, which
+-- is the exact divergence "handlers call SQL functions" exists to prevent.
+--
+-- The SHAPE is load-bearing. Grouping price_snapshots by category aggregates
+-- all 42M rows and measured 22.5 SECONDS, on an endpoint the front end calls
+-- on every page load. Bounding the lookup to the last four days reads
+-- idx_snapshots_date instead and takes 250ms - the same trick item_movers()
+-- documents. The unbounded fallback runs ONLY when the narrow window found
+-- nothing, i.e. only when data really has stopped, which is exactly when a
+-- slower answer is the one worth having. Four days rather than two so the
+-- staleness threshold has margin either side and the number reported near
+-- the boundary is still exact.
+--
+-- Per category, not a global MAX(): one game stopping while another keeps
+-- arriving is precisely what a single maximum hides.
+CREATE OR REPLACE FUNCTION data_freshness()
+RETURNS TABLE (
+    category_id   INTEGER,
+    game          TEXT,
+    newest        DATE,
+    days_stale    INTEGER
+) AS $$
+    SELECT c.category_id, c.name, f.newest,
+           (CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01'))::INTEGER
+      FROM tracked_categories tc
+      JOIN categories c ON c.category_id = tc.category_id
+      CROSS JOIN LATERAL (
+          SELECT COALESCE(
+              (SELECT MAX(ps.snapshot_date)
+                 FROM price_snapshots ps
+                 JOIN products p ON p.product_id = ps.product_id
+                WHERE p.category_id = c.category_id
+                  AND ps.snapshot_date >= CURRENT_DATE - 4),
+              (SELECT MAX(ps.snapshot_date)
+                 FROM price_snapshots ps
+                 JOIN products p ON p.product_id = ps.product_id
+                WHERE p.category_id = c.category_id)
+          ) AS newest
+      ) f
+     ORDER BY c.name;
+$$ LANGUAGE sql STABLE;
+
+-- Every recorded change to one card's holding, newest first.
+--
+-- The audit trail append-only exists to preserve. ingested_at breaks the tie
+-- between two changes recorded on the same day, which is the same ordering
+-- current_holdings() uses to decide which one wins.
+CREATE OR REPLACE FUNCTION holding_events(
+    p_user_id    BIGINT,
+    p_product_id INTEGER
+) RETURNS TABLE (
+    recorded_on   DATE,
+    sub_type_name TEXT,
+    condition     TEXT,
+    quantity      INTEGER,
+    cost_basis    NUMERIC,
+    entered_at    TIMESTAMPTZ
+) AS $$
+    SELECT h.snapshot_date, h.sub_type_name, h.condition,
+           h.quantity, h.cost_basis, h.ingested_at
+      FROM inventory_snapshots h
+     WHERE h.user_id = p_user_id AND h.product_id = p_product_id
+     ORDER BY h.snapshot_date DESC, h.ingested_at DESC;
+$$ LANGUAGE sql STABLE;

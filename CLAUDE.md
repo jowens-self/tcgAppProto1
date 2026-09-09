@@ -547,12 +547,19 @@ ingested server-side).
 2026-08-14; see DEVELOPMENT_HISTORY.md Part 16 and README "Read API").
 Rules it establishes, worth keeping:
 
-- **It is read-only, and should stay that way.**
-  *The community showcase needs writes. "Ingestion stays separate from the
-  API" is the part actually worth keeping; "no endpoint ever writes" is
-  not a rule the owner set.* No endpoint writes.
+- **It is read-only over PRICE data, and that part should stay that way.**
   Ingestion lives in `App`/`BackfillArchive` where the append-only
-  guarantees are; an API that can write is an API that can violate them.
+  guarantees are; an API that can write prices is an API that can violate
+  them. Nothing here touches `price_snapshots`.
+  *Updated 2026-09-09.* This previously read "no endpoint ever writes",
+  already flagged in this file as a decision Claude recorded rather than one
+  the owner set. `POST /api/holdings` now exists. The distinction that
+  survives is the one that was always the real rule: a user's holdings are
+  their own data, not an observation of the market, and
+  `inventory_snapshots` is append-only too, so a write still cannot destroy
+  anything. Writes go through `HoldingsRepository`, which has no update()
+  and no delete() on purpose - correcting is a new row, selling is quantity
+  0. Do not add either.
 - **Handlers call SQL functions, not inline SQL.** Every method on
   `QueryRepository` is a thin call into `sql/functions.sql`. That keeps
   query logic verifiable directly in psql, which is how this project

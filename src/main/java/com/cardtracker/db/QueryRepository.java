@@ -407,37 +407,12 @@ public class QueryRepository {
      * Per category, because one game stopping while another keeps arriving is
      * exactly what a single global MAX() would hide.
      *
-     * The shape matters here and the obvious version is unusable. Grouping
-     * price_snapshots by category aggregates all 42M rows and measured 22.5
-     * SECONDS - on an endpoint the front end calls on every load. Bounding the
-     * lookup to the last four days reads idx_snapshots_date instead and takes
-     * 250ms, the same trick item_movers() documents. The unbounded fallback
-     * runs ONLY when the narrow window found nothing, which is to say only
-     * when data really has stopped, which is exactly when a slower answer is
-     * worth having. Four days, not two, so the threshold has margin either
-     * side of it and the number reported near the boundary is still exact.
+     * The query's shape is load-bearing and non-obvious - the natural version
+     * takes 22.5 seconds - so it lives in data_freshness() where the checks
+     * and hourly.sh call the same definition rather than copies of it.
      */
     public List<DataFreshness> freshness() throws Exception {
-        String sql = """
-                SELECT c.category_id, c.name AS game, f.newest,
-                       (CURRENT_DATE - COALESCE(f.newest, DATE '1970-01-01'))::INT AS days_stale
-                  FROM tracked_categories tc
-                  JOIN categories c ON c.category_id = tc.category_id
-                  CROSS JOIN LATERAL (
-                      SELECT COALESCE(
-                          (SELECT MAX(ps.snapshot_date)
-                             FROM price_snapshots ps
-                             JOIN products p ON p.product_id = ps.product_id
-                            WHERE p.category_id = c.category_id
-                              AND ps.snapshot_date >= CURRENT_DATE - 4),
-                          (SELECT MAX(ps.snapshot_date)
-                             FROM price_snapshots ps
-                             JOIN products p ON p.product_id = ps.product_id
-                            WHERE p.category_id = c.category_id)
-                      ) AS newest
-                  ) f
-                 ORDER BY c.name
-                """;
+        String sql = "SELECT * FROM data_freshness()";;
         List<DataFreshness> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

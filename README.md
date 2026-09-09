@@ -170,10 +170,19 @@ the same as any single card.
 
 ## Read API
 
-A read-only JSON API over the query functions above, so a front end never
-talks to Postgres (or to tcgcsv) directly. Read-only in the strict sense:
-no endpoint here writes anything, and ingestion stays in
-`App`/`BackfillArchive`.
+A JSON API over the query functions above, so a front end never talks to
+Postgres (or to tcgcsv) directly.
+
+Read-only over PRICE data, and that part is not negotiable: nothing here
+writes `price_snapshots`, and ingestion stays in `App`/`BackfillArchive`
+where the append-only guarantees live. The exception is your own holdings,
+which are your data rather than an observation of the market - and that table
+is append-only too, so a write still cannot destroy anything.
+
+`/api/health` reports whether price data is still ARRIVING, per game, rather
+than whether the process is up. A liveness check that answers "ok" while the
+history has quietly stopped is the exact failure that went unnoticed for five
+days (DEVELOPMENT_HISTORY.md Part 40).
 
 ```bash
 docker compose up -d
@@ -278,9 +287,19 @@ both that rule and the connection-per-request in `ApiServer.withRepo`.
 
 ## Front end (`web/`)
 
-Angular 22 app over the read API. Three screens: card / product search
-(find an item, see its variants and their prices, chart one's history),
-Movers, and Sets.
+Angular 22 app over the API. Four screens: card / product search (find an
+item, see its variants and their prices, chart one's history), Movers, Sets,
+and Collection.
+
+Collection is what you own, priced. Adding is search-then-pick rather than
+free text, because a holding is keyed by (product, variant) and a variant the
+card does not have can never be priced - it would sit there at null value
+forever. "Value on <date>" moves the holdings AND the prices back to that
+day, so it answers what the collection was really worth then rather than
+today's cards at old prices. Selling records a quantity of 0 instead of
+deleting, and clicking a quantity shows every change ever recorded for it.
+
+A banner appears on every screen if price data stops arriving.
 
 ```bash
 docker compose up -d                                              # Postgres

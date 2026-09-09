@@ -118,13 +118,7 @@ public final class HoldingsRepository {
      * read, so this is the thing that makes that true rather than theoretical.
      */
     public List<HoldingEvent> historyFor(long userId, int productId) throws Exception {
-        String sql = """
-                SELECT h.snapshot_date, h.sub_type_name, h.condition,
-                       h.quantity, h.cost_basis, h.ingested_at
-                  FROM inventory_snapshots h
-                 WHERE h.user_id = ? AND h.product_id = ?
-                 ORDER BY h.snapshot_date DESC, h.ingested_at DESC
-                """;
+        String sql = "SELECT * FROM holding_events(?, ?)";;
         List<HoldingEvent> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, userId);
@@ -132,12 +126,15 @@ public final class HoldingsRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     out.add(new HoldingEvent(
-                            rs.getObject("snapshot_date", LocalDate.class),
+                            // Named as holding_events() returns them, not as the
+                            // table spells them: snapshot_date/ingested_at are the
+                            // column names, recorded_on/entered_at are the contract.
+                            rs.getObject("recorded_on", LocalDate.class),
                             rs.getString("sub_type_name"),
                             rs.getString("condition"),
                             rs.getInt("quantity"),
                             rs.getBigDecimal("cost_basis"),
-                            rs.getObject("ingested_at", java.time.OffsetDateTime.class)));
+                            rs.getObject("entered_at", java.time.OffsetDateTime.class)));
                 }
             }
         }
