@@ -9,6 +9,12 @@
 --      Holofoil of the same product and they trade at different prices.
 --   3. product_id survives everywhere, so we can always build a link back to
 --      the card's page on TCGplayer.
+--
+-- This file defines a FRESH database and runs only on an empty data directory,
+-- via docker-entrypoint-initdb.d. The live database was initialised 2026-08-12
+-- and will never run it again. Any change after that point must ALSO be written
+-- as a file in sql/migrations/ and applied with sql/migrate.sh, or a new
+-- container and the running one silently diverge.
 
 CREATE TABLE IF NOT EXISTS categories (
     category_id   INTEGER PRIMARY KEY,
@@ -537,6 +543,26 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON price_snapshots(snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_product ON price_snapshots(product_id, sub_type_name, snapshot_date DESC);
+
+-- Accounts. Identity only, no credentials: how someone proves who they are is
+-- a separate decision (see sql/migrations/001_users.sql). user_id 1 is the
+-- local owner, so code can reference a real user before any login exists.
+CREATE TABLE IF NOT EXISTS users (
+    user_id      BIGSERIAL PRIMARY KEY,
+    -- Lower-cased at the boundary AND enforced here: UNIQUE alone would let
+    -- "Jo@x.com" and "jo@x.com" both in, because TEXT compares case-sensitively.
+    email        TEXT NOT NULL UNIQUE CHECK (email = lower(email)),
+    display_name TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ
+);
+
+INSERT INTO users (user_id, email, display_name)
+VALUES (1, 'owner@localhost', 'Owner')
+ON CONFLICT (email) DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('users', 'user_id'),
+              GREATEST((SELECT MAX(user_id) FROM users), 1));
 
 -- Your own holdings. Two ways in, both owner-driven: rows entered by hand in
 -- the app, and a bulk Seller Portal CSV export. Neither has the app logging in
