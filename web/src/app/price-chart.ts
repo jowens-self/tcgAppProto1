@@ -1,6 +1,7 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, signal } from '@angular/core';
 import { PricePoint } from './api.models';
+import { scrubIndex } from './chart-scrub';
 
 interface ChartPoint {
   x: number;
@@ -30,6 +31,16 @@ interface ChartPoint {
       <p class="chart-empty">Not enough history to chart.</p>
     } @else {
       <figure class="chart">
+        <!-- Pointer events, not mouse events, so a finger works the same as a
+             cursor. touch-action lets a vertical page scroll through the chart
+             while a horizontal drag scrubs it. -->
+        <div
+          class="plot"
+          (pointermove)="onPointerMove($event)"
+          (pointerdown)="onPointerMove($event)"
+          (pointerleave)="hover.set(null)"
+          (pointercancel)="hover.set(null)"
+        >
         <svg
           [attr.viewBox]="'0 0 ' + W + ' ' + H"
           preserveAspectRatio="none"
@@ -54,7 +65,32 @@ interface ChartPoint {
           <path class="area" [attr.d]="areaPath()" />
           <path class="line" [attr.d]="linePath()" />
           <circle class="dot" [attr.cx]="last().x" [attr.cy]="last().y" r="4" />
+          @if (hovered(); as h) {
+            <line
+              class="crosshair"
+              [attr.x1]="h.x"
+              [attr.x2]="h.x"
+              [attr.y1]="0"
+              [attr.y2]="H"
+            />
+            <circle class="hover-dot" [attr.cx]="h.x" [attr.cy]="h.y" r="4" />
+          }
         </svg>
+        @if (hovered(); as h) {
+          <!-- Positioned in percent rather than SVG units: the svg is stretched
+               by preserveAspectRatio="none", so its internal x does not match
+               screen pixels, but the FRACTION along the width does. -->
+          <div
+            class="readout"
+            [style.left.%]="(h.x / W) * 100"
+            [class.flip-left]="h.x / W > 0.7"
+            [class.flip-right]="h.x / W < 0.3"
+          >
+            <span class="r-price">{{ h.price | currency }}</span>
+            <span class="r-date">{{ h.date }}</span>
+          </div>
+        }
+        </div>
         <figcaption>
           <span class="lo">low {{ min() | currency }}</span>
           <span class="range">{{ first().date }} → {{ last().date }}</span>
@@ -65,6 +101,12 @@ interface ChartPoint {
   `,
   styles: `
     .chart { margin: 0; }
+    .plot {
+      position: relative;
+      /* Vertical scroll still passes through; horizontal drag scrubs. */
+      touch-action: pan-y;
+      cursor: crosshair;
+    }
     svg {
       width: 100%;
       height: 160px;
@@ -80,6 +122,40 @@ interface ChartPoint {
     }
     .area { fill: var(--accent-fade); stroke: none; }
     .dot { fill: var(--accent); }
+    .crosshair {
+      stroke: var(--muted);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+    .hover-dot {
+      fill: var(--accent);
+      stroke: var(--bg);
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+    .readout {
+      position: absolute;
+      top: -0.1rem;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.2rem 0.45rem;
+      font-size: 0.75rem;
+      line-height: 1.35;
+      white-space: nowrap;
+      pointer-events: none;
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Near an edge the label would hang off the chart, so it sits inboard. */
+    .readout.flip-left { transform: translateX(-100%); }
+    .readout.flip-right { transform: translateX(0); }
+    .r-price { font-weight: 600; }
+    .r-date { color: var(--muted); }
     .peak-line {
       stroke: var(--line);
       stroke-width: 1;
@@ -139,6 +215,33 @@ export class PriceChart {
       price: p.trendablePrice!,
     }));
   });
+
+  /**
+   * Index of the point under the pointer, or null.
+   *
+   * Costs nothing: every point is already in the browser to draw the line, so
+   * this is arithmetic on an array in memory - no request, no query, nothing
+   * fetched per hover. And because points are evenly spaced across the width
+   * (x = i / (n-1) * W), the one under the cursor is a rounding rather than a
+   * search, so it stays O(1) whether the chart holds 30 days or 900.
+   */
+  protected readonly hover = signal<number | null>(null);
+
+  protected readonly hovered = computed<ChartPoint | null>(() => {
+    const i = this.hover();
+    if (i === null) return null;
+    return this.points()[i] ?? null;
+  });
+
+  protected onPointerMove(event: PointerEvent): void {
+    const n = this.points().length;
+    if (n < 2) return;
+    // Measured against the RENDERED box, not the viewBox: the svg is stretched
+    // by preserveAspectRatio="none", so screen pixels and svg units differ.
+    // A zero-width box yields NaN, which scrubIndex rejects.
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.hover.set(scrubIndex((event.clientX - rect.left) / rect.width, n));
+  }
 
   protected readonly first = computed(() => this.points()[0]);
   protected readonly last = computed(() => this.points()[this.points().length - 1]);
