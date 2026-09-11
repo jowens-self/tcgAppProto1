@@ -1,5 +1,5 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
@@ -9,6 +9,7 @@ import {
   ItemSearchResult,
   ItemVariant,
   PricePoint,
+  ChartDatum,
 } from './api.models';
 import { HISTORY_WINDOWS, HistoryWindow, windowStart } from './history-window';
 import { PriceChart } from './price-chart';
@@ -82,6 +83,11 @@ export class Search {
   protected readonly variants = signal<ItemVariant[]>([]);
   protected readonly activeVariant = signal<string | null>(null);
   protected readonly history = signal<PricePoint[]>([]);
+
+  /** The chart takes a plain {date, value} series; this is the price view of it. */
+  protected readonly chartSeries = computed<ChartDatum[]>(() =>
+    this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice })),
+  );
   protected readonly loadingDetail = signal(false);
 
   /**

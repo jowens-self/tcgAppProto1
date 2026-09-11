@@ -3,7 +3,16 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
-import { Holding, HoldingEvent, ItemSearchResult, ItemVariant } from './api.models';
+import {
+  ChartDatum,
+  CollectionPoint,
+  Holding,
+  HoldingEvent,
+  ItemSearchResult,
+  ItemVariant,
+} from './api.models';
+import { PriceChart } from './price-chart';
+import { drawableSeries } from './collection-series';
 import { holdingTotals } from './holding-totals';
 
 /** Columns the table can be ordered by. */
@@ -25,7 +34,7 @@ type SortKey = 'card' | 'qty' | 'value' | 'gain';
  */
 @Component({
   selector: 'app-collection',
-  imports: [FormsModule, CurrencyPipe, DecimalPipe],
+  imports: [FormsModule, CurrencyPipe, DecimalPipe, PriceChart],
   templateUrl: './collection.html',
   styleUrl: './collection.css',
 })
@@ -88,6 +97,7 @@ export class Collection {
 
   constructor() {
     this.load();
+    this.loadChart();
 
     this.typed
       .pipe(
@@ -181,6 +191,9 @@ export class Collection {
           this.rows.set(all);
           this.saving.set(false);
           this.reset();
+          // The line just changed shape; leaving it stale would show a chart
+          // that disagrees with the table directly beneath it.
+          this.loadChart();
         },
         error: (e) => {
           this.saving.set(false);
@@ -206,6 +219,7 @@ export class Collection {
         next: (all) => {
           this.rows.set(all);
           this.saving.set(false);
+          this.loadChart();
         },
         error: () => {
           this.saving.set(false);
@@ -252,6 +266,58 @@ export class Collection {
 
   protected imageFailed(productId: number): void {
     this.noImage.update((s) => new Set(s).add(productId));
+  }
+
+  // --- value over time ---
+  //
+  // Loaded separately from the table, not with it. This query costs roughly
+  // ten times what the holdings list does, and blocking the numbers someone
+  // came to read on a picture they did not ask for first is the wrong trade.
+  protected readonly valueSeries = signal<CollectionPoint[]>([]);
+  protected readonly chartLoading = signal(false);
+  protected chartDays = 90;
+
+  protected readonly chartWindows = [
+    { days: 30, label: '30d' },
+    { days: 90, label: '90d' },
+    { days: 180, label: '180d' },
+    { days: 365, label: '1y' },
+  ];
+
+  /** The window from the first day anything was held; see drawableSeries(). */
+  private readonly drawn = computed(() => drawableSeries(this.valueSeries()));
+
+  /**
+   * Whether there is anything to draw. Not valueSeries().length: the server
+   * returns a row for every day in the window whether or not anything was
+   * held, so the length is always the window and says nothing about content.
+   */
+  protected readonly hasHistory = computed(() => this.drawn().length > 0);
+
+  protected readonly chartSeries = computed<ChartDatum[]>(() =>
+    this.drawn().map((p) => ({ date: p.date, value: p.value })),
+  );
+
+  /**
+   * Days where at least one held card had no price. Their value is missing
+   * from the line rather than wrong, and saying so beats letting a dip look
+   * like the market.
+   */
+  protected readonly chartGaps = computed(
+    () => this.drawn().filter((p) => p.unpriced > 0).length,
+  );
+
+  protected loadChart(): void {
+    this.chartLoading.set(true);
+    this.api.collectionValue(this.chartDays).subscribe({
+      next: (v) => {
+        this.valueSeries.set(v);
+        this.chartLoading.set(false);
+      },
+      // Silent: the table above already reports an unreachable API, and a
+      // second alarm for one cause teaches people to ignore alarms.
+      error: () => this.chartLoading.set(false),
+    });
   }
 
   // --- per-row history ---

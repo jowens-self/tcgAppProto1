@@ -282,3 +282,30 @@ export interface HoldingEvent {
   costBasis: number | null;
   enteredAt: string;
 }
+
+/**
+ * The minimum a line chart needs: a labelled point that may be missing.
+ *
+ * Deliberately not PricePoint. The chart draws price history AND collection
+ * value, which are different questions with different fields, and a chart
+ * that only understands one of them either duplicates itself or grows a
+ * second meaning for the same field name.
+ */
+export interface ChartDatum {
+  date: string;
+  value: number | null;
+}
+
+/**
+ * What the collection was worth on one day, from GET /api/holdings/value.
+ *
+ * `positions` and `unpriced` travel with the value so the screen can say what
+ * the figure leaves out. A day where several cards had no price is genuinely
+ * lower, and showing it without saying why would be the chart lying quietly.
+ */
+export interface CollectionPoint {
+  date: string;
+  value: number;
+  positions: number;
+  unpriced: number;
+}

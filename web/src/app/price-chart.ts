@@ -1,6 +1,6 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, computed, input, signal } from '@angular/core';
-import { PricePoint } from './api.models';
+import { ChartDatum } from './api.models';
 import { scrubIndex } from './chart-scrub';
 
 interface ChartPoint {
@@ -18,10 +18,10 @@ interface ChartPoint {
  * yet. If charts get richer (multiple series, brushing, tooltips on a
  * touch device), that's the point to reconsider, not before.
  *
- * Charts `trendablePrice`, which the server already resolved via the
- * documented market->mid->low fallback. Days where even that is null are
- * dropped rather than plotted as zero. A missing observation is not a
- * price of $0, and connecting across the gap is the better reading.
+ * Takes a plain {date, value} series so it can draw price history and
+ * collection value without knowing which it is. Points with a null value are
+ * dropped rather than plotted as zero: a missing observation is not a value
+ * of $0, and connecting across the gap is the better reading.
  */
 @Component({
   selector: 'price-chart',
@@ -180,21 +180,21 @@ interface ChartPoint {
   `,
 })
 export class PriceChart {
-  readonly history = input.required<PricePoint[]>();
+  readonly series = input.required<ChartDatum[]>();
 
   protected readonly W = 600;
   protected readonly H = 160;
 
-  /** Days with no usable price at all are dropped, not zeroed. */
+  /** Points with no value at all are dropped, not zeroed. */
   private readonly usable = computed(() =>
-    this.history().filter((p) => p.trendablePrice != null),
+    this.series().filter((p) => p.value != null),
   );
 
   protected readonly min = computed(() =>
-    Math.min(...this.usable().map((p) => p.trendablePrice!)),
+    Math.min(...this.usable().map((p) => p.value!)),
   );
   protected readonly max = computed(() =>
-    Math.max(...this.usable().map((p) => p.trendablePrice!)),
+    Math.max(...this.usable().map((p) => p.value!)),
   );
 
   protected readonly points = computed<ChartPoint[]>(() => {
@@ -210,9 +210,9 @@ export class PriceChart {
       y:
         hi === lo
           ? this.H / 2
-          : this.H - pad - ((p.trendablePrice! - lo) / span) * (this.H - pad * 2),
-      date: p.snapshotDate,
-      price: p.trendablePrice!,
+          : this.H - pad - ((p.value! - lo) / span) * (this.H - pad * 2),
+      date: p.date,
+      price: p.value!,
     }));
   });
 

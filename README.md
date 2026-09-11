@@ -193,7 +193,7 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | Liveness check |
+| `GET /api/health` | Whether price data is still arriving, per game - not just whether the process is up |
 | `GET /api/games` | Tracked games, for a filter dropdown |
 | `GET /api/items/search?q=` | Card / product search |
 | `GET /api/items/{id}` | One product's identity |
@@ -203,6 +203,10 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | `GET /api/games/{id}/sets` | Sets in a game, for the movers filter |
 | `GET /api/sets/overview` | Every set's value and windowed return |
 | `GET /api/items/{id}/image` | Cached card thumbnail (404 = no image) |
+| `GET /api/holdings?asOf=` | What you hold, priced; `asOf` moves holdings and prices back together |
+| `GET /api/holdings/value?days=` | Collection value per day (default 90, max 1095) |
+| `GET /api/holdings/{id}/history` | Every recorded change to one card's holding |
+| `POST /api/holdings` | Record a holding: appends, and quantity 0 is a sale |
 
 Search takes `q` (required), plus optional `game` (category id),
 `sealed=false` to hide sealed product, `limit` (default 25, capped at 200)
@@ -299,6 +303,12 @@ day, so it answers what the collection was really worth then rather than
 today's cards at old prices. Selling records a quantity of 0 instead of
 deleting, and clicking a quantity shows every change ever recorded for it.
 
+Above the table is a chart of what the collection was worth each day - what
+you actually held then, at that day's prices. Hover or drag across it to read
+any day. Its last point always equals the Value total beneath it, and a test
+holds that true, since a chart contradicting the number under it is worse
+than no chart.
+
 A banner appears on every screen if price data stops arriving.
 
 ```bash
@@ -319,7 +329,10 @@ Structure, all standalone components with signals:
 | `search.ts/.html/.css` | Search screen: query, filters, results, detail |
 | `movers.ts/.html/.css` | Movers screen: window/game/set filters, table |
 | `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration |
-| `price-chart.ts` | Hand-rolled SVG line chart, no charting library |
+| `price-chart.ts` | Hand-rolled SVG line chart, no charting library; hover or drag to read any day |
+| `collection.ts/.html/.css` | Collection screen: add cards, value chart, totals, per-card history |
+| `holding-totals.ts` | Collection totals, skipping unknown prices and costs rather than zeroing them |
+| `chart-scrub.ts` | Which chart point sits under the cursor |
 
 Layout is two columns: results left, detail right and sticky, so the
 chart stays in view while you scroll the list. The results list scrolls

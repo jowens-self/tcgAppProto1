@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Game,
+  CollectionPoint,
   GameSet,
   Health,
   Holding,
@@ -148,6 +149,19 @@ export class CardTrackerApi {
    */
   holdingHistory(productId: number): Observable<HoldingEvent[]> {
     return this.http.get<HoldingEvent[]>(`${this.base}/holdings/${productId}/history`);
+  }
+
+  /**
+   * What the collection was worth each day over the last `days`.
+   *
+   * Its own call rather than part of holdings(): this is an order of
+   * magnitude dearer (roughly 110ms for 200 cards over 90 days, ~800ms for
+   * 1000), and the table should not wait on the chart.
+   */
+  collectionValue(days: number): Observable<CollectionPoint[]> {
+    return this.http.get<CollectionPoint[]>(`${this.base}/holdings/value`, {
+      params: new HttpParams().set('days', days),
+    });
   }
 
   imageUrl(productId: number): string {

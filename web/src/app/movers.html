@@ -197,7 +197,7 @@
       </a>
     }
     @if (history().length) {
-      <price-chart [history]="history()" />
+      <price-chart [series]="chartSeries()" />
     } @else {
       <p class="hint">Loading history…</p>
     }

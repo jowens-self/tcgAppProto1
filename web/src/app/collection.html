@@ -114,6 +114,49 @@
   }
 </section>
 
+<!-- Value over time. Only worth drawing once there is something to draw.
+     rows() covers "you hold cards now" so the section appears while the chart
+     loads; hasHistory() covers "you held cards in this window", which stays
+     true after selling everything. -->
+@if (rows().length || hasHistory()) {
+  <section class="value-chart" aria-label="Collection value over time">
+    <header class="ch-head">
+      <h2>Value over time</h2>
+      <div class="ch-windows">
+        @for (w of chartWindows; track w.days) {
+          <button
+            type="button"
+            [class.on]="chartDays === w.days"
+            (click)="chartDays = w.days; loadChart()"
+          >
+            {{ w.label }}
+          </button>
+        }
+      </div>
+    </header>
+
+    @if (chartLoading()) {
+      <p class="hint">Loading…</p>
+    } @else if (chartSeries().length < 2) {
+      <p class="hint">
+        Not enough history yet - the line starts from the day you first
+        recorded something.
+      </p>
+    } @else {
+      <price-chart [series]="chartSeries()" />
+      <p class="method">
+        What you actually held on each day, at that day's prices - not today's
+        cards priced backwards.
+        @if (chartGaps()) {
+          {{ chartGaps() }} day{{ chartGaps() === 1 ? '' : 's' }} had a card with
+          no price; the last known price is carried across rather than counted
+          as zero.
+        }
+      </p>
+    }
+  </section>
+}
+
 <!-- Totals -->
 @if (rows().length) {
   <section class="totals" aria-label="Collection totals">

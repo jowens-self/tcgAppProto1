@@ -1,8 +1,10 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
-import { Game, GameSet, Mover, PricePoint } from './api.models';
+import { Game, GameSet, Mover, PricePoint,
+  ChartDatum,
+} from './api.models';
 import { defaultGame } from './game-default';
 import { PriceChart } from './price-chart';
 
@@ -40,6 +42,11 @@ export class Movers {
 
   protected readonly selected = signal<Mover | null>(null);
   protected readonly history = signal<PricePoint[]>([]);
+
+  /** The chart takes a plain {date, value} series; this is the price view of it. */
+  protected readonly chartSeries = computed<ChartDatum[]>(() =>
+    this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice })),
+  );
 
   protected game: number | null = null;
   protected set: number | null = null;

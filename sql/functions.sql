@@ -1436,3 +1436,94 @@ CREATE OR REPLACE FUNCTION holding_events(
      WHERE h.user_id = p_user_id AND h.product_id = p_product_id
      ORDER BY h.snapshot_date DESC, h.ingested_at DESC;
 $$ LANGUAGE sql STABLE;
+
+-- What a collection was worth, day by day.
+--
+-- The question append-only exists to answer. Both sides move with the date:
+-- the quantity is whatever the newest entry ON OR BEFORE that day said, and
+-- the price is the newest observation on or before it. So a card bought in
+-- June and sold in August contributes for exactly those weeks and nothing
+-- outside them. A tracker that stores only current holdings cannot draw this
+-- line - it can only price today's cards at old prices, which is a different
+-- claim and a wrong one.
+--
+-- Prices carry FORWARD rather than being dropped when a day is missing. A gap
+-- in the mirror's data is not the collection becoming worthless for a day,
+-- and plotting it as one would put a cliff in the chart that never happened.
+-- Same as_of semantics current_holdings() uses, so the last point on the
+-- chart equals the total on the screen above it.
+--
+-- market_price specifically, matching current_holdings(). Using the
+-- market->mid->low fallback here would cover more days but make the chart's
+-- final point disagree with the headline total, and a chart that contradicts
+-- the number above it is worse than one with a shorter line.
+--
+-- unpriced counts positions held that day with no price at all, so the caller
+-- can say what the figure leaves out instead of quietly understating it.
+CREATE OR REPLACE FUNCTION collection_value(
+    p_user_id BIGINT,
+    p_from    DATE,
+    p_to      DATE
+) RETURNS TABLE (
+    d         DATE,
+    value     NUMERIC,
+    positions INTEGER,
+    unpriced  INTEGER
+) AS $$
+    WITH days AS (
+        SELECT generate_series(p_from, p_to, INTERVAL '1 day')::DATE AS d
+    ),
+    -- Each entry holds until the next one for the same line supersedes it, so
+    -- a holding is an INTERVAL rather than something to look up per day. That
+    -- is the difference between work proportional to (days x lines) and work
+    -- proportional to the number of edits, which is far smaller: a collection
+    -- of 1000 cards bought once has 1000 events regardless of the window.
+    --
+    -- Ordering by ingested_at as well as the date is what makes two edits on
+    -- one day resolve the same way current_holdings() resolves them: the later
+    -- one gets an interval of zero length and drops out of the range join.
+    events AS (
+        SELECT h.product_id, h.sub_type_name, h.quantity,
+               h.snapshot_date AS valid_from,
+               LEAD(h.snapshot_date) OVER (
+                   PARTITION BY h.product_id, h.sub_type_name, h.condition
+                   ORDER BY h.snapshot_date, h.ingested_at) AS valid_to
+          FROM inventory_snapshots h
+         WHERE h.user_id = p_user_id
+    ),
+    held AS (
+        SELECT days.d, e.product_id, e.sub_type_name, e.quantity
+          FROM days
+          JOIN events e
+            ON days.d >= e.valid_from
+           AND (e.valid_to IS NULL OR days.d < e.valid_to)
+         -- Before the first entry, and after a sale, the line contributes
+         -- nothing and is dropped rather than carried as a zero row.
+         WHERE e.quantity > 0
+    )
+    SELECT days.d,
+           COALESCE(SUM(held.quantity * px.market_price), 0)::NUMERIC,
+           COUNT(held.product_id)::INTEGER,
+           COUNT(*) FILTER (WHERE held.product_id IS NOT NULL
+                              AND px.market_price IS NULL)::INTEGER
+      FROM days
+      LEFT JOIN held ON held.d = days.d
+      -- A lateral per (line, day), and deliberately so. Fetching the window's
+      -- prices in bulk and forward-filling them with a window function was
+      -- tried and is WORSE: slightly faster over 90 days (661ms vs 794ms) but
+      -- 16.9 SECONDS over 365, because partitioning and sorting 365,000 rows
+      -- costs far more than the index descents it saves. The lateral's cost
+      -- grows with the window; the window function's grows with the sort, and
+      -- the sort wins the race to unusable. Measured at 1000 lines.
+      LEFT JOIN LATERAL (
+          SELECT ps.market_price
+            FROM price_snapshots ps
+           WHERE ps.product_id = held.product_id
+             AND ps.sub_type_name = held.sub_type_name
+             AND ps.snapshot_date <= days.d
+           ORDER BY ps.snapshot_date DESC
+           LIMIT 1
+      ) px ON TRUE
+     GROUP BY days.d
+     ORDER BY days.d;
+$$ LANGUAGE sql STABLE;

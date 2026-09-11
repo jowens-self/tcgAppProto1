@@ -2,6 +2,8 @@ package com.cardtracker.api;
 
 import com.cardtracker.sql.Fixtures;
 import com.cardtracker.sql.TestDatabase;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.Javalin;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -137,6 +140,54 @@ class ApiContractTest {
         assertTrue(history.contains("recordedOn") && history.contains("enteredAt"),
                 "history must carry the day it is true from AND when it was typed, "
                 + "since the latter orders two changes on one day. Got: " + history);
+    }
+
+    /**
+     * The chart's final point must equal the total on the screen above it.
+     *
+     * collection_value() and current_holdings() are two definitions of "what
+     * this collection is worth", one per day and one for now, and nothing but
+     * this test stops them drifting. If they disagree the page shows a chart
+     * that contradicts the headline number directly above it - worse than no
+     * chart. Both deliberately use market_price with carry-forward for exactly
+     * this reason; a fallback to mid/low on either side alone would break it.
+     *
+     * Posts its own holding so the comparison is never 0 == 0, and compares
+     * whatever the database holds at that moment, so it does not depend on
+     * which other holdings tests happened to run first.
+     */
+    @Test
+    void chartEndsOnTheSameValueAsTheTotal() throws Exception {
+        assertEquals(201, post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Reverse Holofoil","quantity":3,"costBasis":50.00}
+                """).statusCode());
+
+        ObjectMapper json = new ObjectMapper();
+        HttpResponse<String> series = get("/holdings/value?days=30");
+        assertEquals(200, series.statusCode(), series.body());
+        JsonNode points = json.readTree(series.body());
+        assertEquals(30, points.size(), "one point per day in the window");
+
+        BigDecimal chartLast = points.get(points.size() - 1).get("value").decimalValue();
+        BigDecimal tableTotal = BigDecimal.ZERO;
+        for (JsonNode h : json.readTree(get("/holdings").body())) {
+            if (!h.get("positionValue").isNull()) {
+                tableTotal = tableTotal.add(h.get("positionValue").decimalValue());
+            }
+        }
+        assertTrue(tableTotal.signum() > 0, "nothing to compare - the holding did not price");
+        assertEquals(0, chartLast.compareTo(tableTotal),
+                "chart ends at " + chartLast + " but the table totals " + tableTotal);
+    }
+
+    @Test
+    void valueWindowIsBounded() throws Exception {
+        // One point is not a line.
+        assertEquals(400, get("/holdings/value?days=1").statusCode());
+        // Cost grows with the window, and past a few hundred days the extra
+        // points are sub-pixel anyway, so it refuses rather than grinding.
+        assertEquals(400, get("/holdings/value?days=2000").statusCode());
     }
 
     // ------------------------------------------------------------------

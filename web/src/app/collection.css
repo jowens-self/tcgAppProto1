@@ -361,3 +361,43 @@ tbody tr:hover td {
   flex: none;
   min-width: 6rem;
 }
+
+/* --- value over time --- */
+.value-chart {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.ch-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+.ch-head h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ch-windows {
+  display: flex;
+  gap: 0.25rem;
+}
+.ch-windows button {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+}
+.ch-windows button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}

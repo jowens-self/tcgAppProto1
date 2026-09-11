@@ -300,6 +300,28 @@ public class ApiServer {
             ctx.json(withHoldings(url, user, pass, repo -> repo.historyFor(LOCAL_USER, id)));
         });
 
+        // The collection's value day by day.
+        //   ?days=90  (default), capped because cost scales with the window
+        // Its own endpoint rather than part of /api/holdings: the table should
+        // render without waiting on a query that is an order of magnitude
+        // dearer than the one behind it.
+        app.get("/api/holdings/value", ctx -> {
+            Integer days = intParam(ctx.queryParam("days"), "days");
+            int window = days == null ? 90 : days;
+            if (window < 2) {
+                throw new BadRequestResponse("days must be at least 2 to draw a line");
+            }
+            // A line needs points, not history: past a few hundred days the
+            // extra ones are sub-pixel on a 600-unit-wide chart and cost real
+            // time to compute. Refuse rather than quietly truncate.
+            if (window > 1095) {
+                throw new BadRequestResponse("days must be 1095 or fewer");
+            }
+            LocalDate to = LocalDate.now(java.time.ZoneOffset.UTC);
+            ctx.json(withHoldings(url, user, pass,
+                    repo -> repo.valueOverTime(LOCAL_USER, to.minusDays(window - 1L), to)));
+        });
+
         // Record a holding. This does not update anything: it appends an event,
         // and current_holdings() reads the newest one. Quantity 0 means sold.
         app.post("/api/holdings", ctx -> {
