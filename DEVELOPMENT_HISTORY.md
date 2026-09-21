@@ -4524,3 +4524,69 @@ once empty.
 The lesson from Part 40 holds and is now cheap to state: the destination of a
 scheduled job's working tree is a load-bearing decision, not a filing
 preference.
+
+## Part 41 — The day the archive lost, and the reason nothing said so
+
+Part 40 ends on a rule: a run that does nothing successfully and a run that
+cannot run at all leave the same trace. On 2026-09-15 the archive made the
+same mistake one layer out, and it took six days and an unrelated review to
+notice.
+
+At 22:07:12 the exporter picked up 2026-09-15, which had just settled. It
+queried the day, gzipped it, counted the rows back out of the file and got the
+51,772 it expected. Then it died — `export: FAILED (exit 69)` — with the file
+on disk and nothing committed.
+
+Every run after that read `[ -f "$OUT" ]`, found the file, and counted the day
+as done. The count in the log went from "Already present: 950" to "Already
+present: 951" and stayed there, which is exactly what a healthy run looks
+like. `jowens-self/cardtracker-data` — the copy that justifies the whole
+exercise, because it is the one not on this Mac — was a day short from
+2026-09-15 until 2026-09-21.
+
+### Exit 69
+
+`git` here is `/usr/bin/git`, which is not git. It is the Xcode
+command-line-tools shim, and while an Xcode update leaves the licence
+unaccepted it refuses to run anything at all: one line on stderr, exit 69,
+`EX_UNAVAILABLE`. `hourly.err` holds that line exactly once, sitting between
+the 2026-09-15 and 2026-09-16 pull failures.
+
+So the sequence was: write the file, verify it, call `git add`, get refused by
+a licence gate, and exit under `set -e` with the day half-archived. The same
+gate hit EeveeWatch 47 times over the same days and silently cost it its
+pushes; that job's log only starts saying "log pushed" on 2026-09-20.
+
+### Why the freshness check did not help
+
+Part 40 added one, and it worked perfectly. It asks `data_freshness()`, which
+asks the database, and the database was never stale for a moment — the pulls
+kept landing the whole time. Six days of runs logged `freshness: ok` over a
+holed archive and were not wrong, only answering a different question.
+
+A watchdog has to ask the thing that can actually be wrong. The archive is a
+git repository, so the questions are whether anything under `data/` is
+uncommitted and whether anything committed never reached the remote. Both are
+one command and neither shows up anywhere else.
+
+### What changed
+
+The presence check now reads `git ls-files` rather than the filesystem, so a
+day counts as archived only once git has it. A file that is on disk but
+untracked is the wreckage of a run that died mid-commit: it is deleted and
+taken again from the database, which puts it back through the row-count
+verification rather than trusting it for existing. That removal sits
+immediately before the re-export, not up with the presence check, so a pass
+that is going to skip the day — `MAX_DAYS`, `LOW` — never deletes anything it
+is not about to replace.
+
+`hourly.sh` gained step 4, the archive-side check described above. Its first
+draft had the Part 40 bug in it: it sent stderr to `/dev/null`, counted the
+empty output as zero, and reported "in sync" whenever git itself failed —
+which, given that the root cause of this whole entry is a git that exits 69,
+would have been silent in the one case that matters. A failed probe now raises
+the same alarm as a dirty archive.
+
+2026-09-15 was recovered by hand and checked against `price_snapshots` before
+it was committed: byte-identical, 51,772 rows. The archive is 956 days,
+2024-02-08 through 2026-09-20, with no gaps.
