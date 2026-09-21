@@ -27,6 +27,7 @@
 #   JAR           path to the app jar (target/cardtracker-0.1.0.jar)
 #   SKIP_PULL     "true" to export only
 #   SKIP_EXPORT   "true" to pull only
+#   DATA_REPO     archive repo to check in step 4 (default ../cardtracker-data)
 
 set -euo pipefail
 
@@ -35,6 +36,7 @@ DB_CONTAINER="${DB_CONTAINER:-cardtracker-db}"
 JAR="${JAR:-$REPO_ROOT/target/cardtracker-0.1.0.jar}"
 SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_EXPORT="${SKIP_EXPORT:-false}"
+DATA_REPO="${DATA_REPO:-$(cd "$REPO_ROOT/.." && pwd)/cardtracker-data}"
 
 say() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
@@ -112,6 +114,31 @@ if [ -n "${STALE//[[:space:]]/}" ]; then
   /usr/bin/osascript -e "display notification \"Price data stale: $STALE\" with title \"CardTracker\"" 2>/dev/null || true
 else
   say "freshness: ok."
+fi
+
+# --- 4. is the ARCHIVE intact, as opposed to the database? --------------------
+#
+# Step 3 asks the database, which knows nothing about the archive repo. On
+# 2026-09-15 an export wrote a file and died before committing it: the database
+# stayed perfectly fresh, so every run for the next six days logged
+# "freshness: ok" over a repo that was quietly missing a day. Part 40's lesson
+# again, one layer out -- the check has to ask the thing that can actually be
+# wrong.
+#
+# Uncommitted files under data/ mean a run died mid-day. Unpushed commits mean
+# the off-machine copy -- the only reason this repo exists -- is behind the one
+# on this Mac. Both are cheap to ask and neither shows up anywhere else.
+if [ -d "$DATA_REPO/.git" ]; then
+  DIRTY="$(git -C "$DATA_REPO" status --porcelain -- data 2>/dev/null | wc -l | tr -d ' ')"
+  UNPUSHED="$(git -C "$DATA_REPO" log --oneline '@{u}..' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${DIRTY:-0}" -gt 0 ] || [ "${UNPUSHED:-0}" -gt 0 ]; then
+    say "ARCHIVE: $DIRTY uncommitted file(s), $UNPUSHED unpushed commit(s) in $DATA_REPO"
+    /usr/bin/osascript -e "display notification \"Archive behind: $DIRTY uncommitted, $UNPUSHED unpushed\" with title \"CardTracker\"" 2>/dev/null || true
+  else
+    say "archive: in sync."
+  fi
+else
+  say "archive: no repo at $DATA_REPO; skipping check."
 fi
 
 say "done."

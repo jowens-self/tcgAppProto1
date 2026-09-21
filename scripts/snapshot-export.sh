@@ -97,13 +97,23 @@ echo "Settled days in database: $TOTAL_SETTLED"
 
 cd "$DATA_REPO"
 
-EXPORTED=0; SKIPPED=0; PRESENT=0
+# --- what counts as archived is what git HAS, not what is on the disk ---------
+# Those two came apart on 2026-09-15: a run wrote the file, died (exit 69)
+# before committing it, and every run afterwards read the leftover as proof the
+# day was done. The repo -- the copy that is the entire point, because it is
+# the one not on this Mac -- stayed a day short for six days, and because the
+# day looked present, no log line ever said so.
+TRACKED_DAYS=" $(git ls-files -- data | sed 's|.*/||; s|\.csv\.gz$||' | tr '\n' ' ')"
+
+EXPORTED=0; SKIPPED=0; PRESENT=0; RECOVERED=0
 while read -r DAY ROWS MED FLOOR VERDICT; do
   [ -n "$DAY" ] || continue
   YEAR="${DAY%%-*}"; MONTH="$(echo "$DAY" | cut -d- -f2)"
   OUT="data/$YEAR/$MONTH/$DAY.csv.gz"
 
-  [ -f "$OUT" ] && { PRESENT=$((PRESENT + 1)); continue; }
+  case "$TRACKED_DAYS" in
+    *" $DAY "*) PRESENT=$((PRESENT + 1)); continue ;;
+  esac
 
   if [ "$MAX_DAYS" -gt 0 ] && [ "$EXPORTED" -ge "$MAX_DAYS" ]; then
     echo "Reached MAX_DAYS=$MAX_DAYS; stopping. Re-run to continue."
@@ -120,9 +130,22 @@ while read -r DAY ROWS MED FLOOR VERDICT; do
   fi
 
   if [ "$DRY_RUN" = "true" ]; then
+    [ -f "$OUT" ] && echo "  $DAY: uncommitted leftover from an earlier run."
     echo "  $DAY: would export $ROWS rows -> $OUT"
     EXPORTED=$((EXPORTED + 1))
     continue
+  fi
+
+  # On disk but not in git: the wreckage of a run that died between writing the
+  # file and committing it. Drop it and take the day again from the database,
+  # so it goes back through the row-count verification below rather than being
+  # trusted on the strength of merely existing. This sits here, immediately
+  # before the re-export, rather than up with the presence check: a leftover
+  # must never be deleted by a pass that is then going to skip the day.
+  if [ -f "$OUT" ]; then
+    echo "  $DAY: uncommitted leftover from an earlier run; re-exporting."
+    RECOVERED=$((RECOVERED + 1))
+    rm -f "$OUT"
   fi
 
   mkdir -p "$(dirname "$OUT")"
@@ -150,7 +173,7 @@ while read -r DAY ROWS MED FLOOR VERDICT; do
   EXPORTED=$((EXPORTED + 1))
 done <<< "$PLAN"
 
-echo "Already present: $PRESENT. Exported: $EXPORTED. Skipped: $SKIPPED."
+echo "Already present: $PRESENT. Exported: $EXPORTED. Skipped: $SKIPPED. Recovered: $RECOVERED."
 [ "$DRY_RUN" = "true" ] && exit 0
 [ "$EXPORTED" -eq 0 ] && exit 0
 
