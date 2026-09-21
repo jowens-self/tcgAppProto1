@@ -128,17 +128,30 @@ fi
 # Uncommitted files under data/ mean a run died mid-day. Unpushed commits mean
 # the off-machine copy -- the only reason this repo exists -- is behind the one
 # on this Mac. Both are cheap to ask and neither shows up anywhere else.
-if [ -d "$DATA_REPO/.git" ]; then
-  DIRTY="$(git -C "$DATA_REPO" status --porcelain -- data 2>/dev/null | wc -l | tr -d ' ')"
-  UNPUSHED="$(git -C "$DATA_REPO" log --oneline '@{u}..' 2>/dev/null | wc -l | tr -d ' ')"
-  if [ "${DIRTY:-0}" -gt 0 ] || [ "${UNPUSHED:-0}" -gt 0 ]; then
-    say "ARCHIVE: $DIRTY uncommitted file(s), $UNPUSHED unpushed commit(s) in $DATA_REPO"
-    /usr/bin/osascript -e "display notification \"Archive behind: $DIRTY uncommitted, $UNPUSHED unpushed\" with title \"CardTracker\"" 2>/dev/null || true
+archive_alarm() {
+  say "ARCHIVE: $1"
+  /usr/bin/osascript -e "display notification \"$1\" with title \"CardTracker\"" 2>/dev/null || true
+}
+
+if [ ! -d "$DATA_REPO/.git" ]; then
+  archive_alarm "no repo at $DATA_REPO"
+# A probe that cannot run must not be read as a pass -- that is the whole
+# mistake this step exists to stop making. git here is /usr/bin/git, the Xcode
+# command-line-tools shim, and it refuses to run at all (exit 69, one line on
+# stderr) for as long as an Xcode update leaves the licence unaccepted. That is
+# not a hypothetical: it is what broke the 2026-09-15 export in the first place.
+elif ! DIRTY="$(git -C "$DATA_REPO" status --porcelain -- data 2>&1)"; then
+  archive_alarm "cannot read the archive -- git: $(printf '%s' "$DIRTY" | head -1)"
+elif ! UNPUSHED="$(git -C "$DATA_REPO" log --oneline '@{u}..' 2>&1)"; then
+  archive_alarm "cannot compare with the remote -- git: $(printf '%s' "$UNPUSHED" | head -1)"
+else
+  N_DIRTY="$(printf '%s' "$DIRTY" | grep -c . || true)"
+  N_UNPUSHED="$(printf '%s' "$UNPUSHED" | grep -c . || true)"
+  if [ "$N_DIRTY" -gt 0 ] || [ "$N_UNPUSHED" -gt 0 ]; then
+    archive_alarm "$N_DIRTY uncommitted file(s), $N_UNPUSHED unpushed commit(s)"
   else
     say "archive: in sync."
   fi
-else
-  say "archive: no repo at $DATA_REPO; skipping check."
 fi
 
 say "done."
