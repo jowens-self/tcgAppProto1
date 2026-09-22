@@ -1,6 +1,8 @@
 # CardTracker
 
-A TCG price-history app, built by a seller and **intended to be shared**.
+A TCG price-history app, built by a seller and **intended to become a
+commercial product**. The source is not open and is not offered for use:
+see [LICENSE](LICENSE).
 Pulls daily price data from the TCGCSV mirror into Postgres, append-only,
 so you build a price history you own.
 Started Pokemon-only; which games are actually tracked is controlled by the

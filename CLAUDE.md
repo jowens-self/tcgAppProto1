@@ -1,18 +1,25 @@
 # CardTracker
 
 A TCG price-history app, built by and initially for a TCGplayer/eBay
-seller but intended to be shared. See below. Pulls daily price data
-from a third-party mirror into Postgres, append-only, to build a price
-history it controls. Answers: what's up, what's down, what's dead stock,
-what's it worth this week vs last month.
+seller but intended to become a commercial product. See below. Pulls
+daily price data from a third-party mirror into Postgres, append-only,
+to build a price history it controls. Answers: what's up, what's down,
+what's dead stock, what's it worth this week vs last month.
 Started Pokemon-only; which games are actually tracked is controlled by the
 `tracked_categories` table, not hardcoded. See "Multi-game support" below.
 
 **This is intended to ship.** Stated by the owner 2026-08-16: the app is
-meant to be shared, not just a personal tool, and features should be "universal
-enough to warrant shipping." It runs locally today because that is how far
-it has got, not because it is meant to stay there. Design for other people
-using it.
+meant to have users, not just be a personal tool, and features should be
+"universal enough to warrant shipping." It runs locally today because that is
+how far it has got, not because it is meant to stay there. Design for other
+people using it.
+
+**Shipping means a commercial product, not open source.** Confirmed by the
+owner 2026-09-22: the code was never meant to be given away, and an earlier
+"intended to be shared" in this file and the README read as though it were.
+Nothing here about users, hosting or multi-user features says anything about
+releasing the source. The repo may be shown to employers; that is reading, not
+licensing, and `LICENSE` says so.
 
 Several things written before that was clear now read as too small and will
 need revisiting: the read-only API, connection-per-request,
