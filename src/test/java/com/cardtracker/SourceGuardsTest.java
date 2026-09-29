@@ -286,6 +286,7 @@ class SourceGuardsTest {
     private static final Set<String> NOT_OUR_CODE = Set.of(
             "ClassNotFoundException",   // JDK
             "LaunchAgent",              // macOS concept
+            "LICENSE",                  // the file at the repo root
             "Postgres", "Docker", "Maven", "Angular", "Javalin", "Jackson",
             "TCGplayer", "CardTracker", "Pokemon", "Seller", "Portal");
 
