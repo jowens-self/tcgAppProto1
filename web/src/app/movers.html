@@ -29,7 +29,7 @@
     <option [ngValue]="null">
       {{ game === null ? 'All sets (pick a game first)' : 'All sets' }}
     </option>
-    @for (s of sets(); track s.groupId) {
+    @for (s of setOptions(); track s.groupId) {
       <option [ngValue]="s.groupId">{{ s.name }}</option>
     }
   </select>
@@ -76,6 +76,16 @@
     />
     Include sealed
   </label>
+
+  <label class="sealed" [title]="modernNote()">
+    <input
+      type="checkbox"
+      [ngModel]="modernOnly()"
+      (ngModelChange)="onModernChange($event)"
+      name="modernOnly"
+    />
+    Modern only
+  </label>
 </form>
 
 @if (error()) {
@@ -109,6 +119,10 @@
       window to median across, so a single odd sale can move a row here.
     }
   </p>
+
+  @if (modernOnly()) {
+    <p class="method">{{ modernNote() }}</p>
+  }
 
   <div class="table-wrap">
     <table>

@@ -221,7 +221,8 @@ public class QueryRepository {
         String sql = """
                 SELECT tc.category_id, COALESCE(c.name, tc.name) AS name,
                        (SELECT COUNT(*) FROM products p
-                         WHERE p.category_id = tc.category_id)::INT AS product_count
+                         WHERE p.category_id = tc.category_id)::INT AS product_count,
+                       tc.modern_since
                   FROM tracked_categories tc
                   LEFT JOIN categories c ON c.category_id = tc.category_id
                  ORDER BY name
@@ -231,30 +232,36 @@ public class QueryRepository {
             List<Game> out = new ArrayList<>();
             while (rs.next()) {
                 out.add(new Game(rs.getInt("category_id"), rs.getString("name"),
-                        rs.getInt("product_count")));
+                        rs.getInt("product_count"), localDate(rs.getDate("modern_since"))));
             }
             return out;
         }
     }
 
-    /** A tracked game, for filter UI. */
-    public record Game(int categoryId, String name, int productCount) {
+    /**
+     * A tracked game, for filter UI. {@code modernSince} is where its modern
+     * era starts, null when every set counts; carried so a screen can say what
+     * "modern" means without restating it.
+     */
+    public record Game(int categoryId, String name, int productCount, LocalDate modernSince) {
     }
 
     /** A set within a game, for the movers screen's set filter. */
-    public record GameSet(int groupId, String name, LocalDate publishedOn, int productCount) {
+    public record GameSet(int groupId, String name, LocalDate publishedOn, int productCount,
+                          boolean modern) {
     }
 
     /** Sets belonging to one game, newest first. */
     public List<GameSet> sets(int categoryId) throws Exception {
-        String sql = "SELECT group_id, name, published_on, product_count FROM game_sets(?)";
+        String sql = "SELECT group_id, name, published_on, product_count, is_modern FROM game_sets(?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, categoryId);
             List<GameSet> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     out.add(new GameSet(rs.getInt("group_id"), rs.getString("name"),
-                            localDate(rs.getDate("published_on")), rs.getInt("product_count")));
+                            localDate(rs.getDate("published_on")), rs.getInt("product_count"),
+                            rs.getBoolean("is_modern")));
                 }
             }
             return out;
@@ -280,7 +287,7 @@ public class QueryRepository {
                 SELECT group_id, set_name, game, published_on, n_priced, total_value,
                        n_common, total_start, total_end, pct_return,
                        top_product_id, top_name, top_sub_type, top_delta, top_share,
-                       top_url, n_despiked, despike_usd, start_date, end_date
+                       top_url, n_despiked, despike_usd, start_date, end_date, is_modern
                   FROM game_set_overview(?, ?, ?, ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -312,7 +319,8 @@ public class QueryRepository {
                             rs.getInt("n_despiked"),
                             rs.getBigDecimal("despike_usd"),
                             localDate(rs.getDate("start_date")),
-                            localDate(rs.getDate("end_date"))));
+                            localDate(rs.getDate("end_date")),
+                            rs.getBoolean("is_modern")));
                 }
             }
             return out;
@@ -324,15 +332,19 @@ public class QueryRepository {
      * in item_movers(); nulls here mean "use it" rather than "no filter", so
      * a caller that passes nothing still gets the sane default view (7 days,
      * decliners, singles, $1 floor) instead of an unfiltered firehose.
+     *
+     * modernOnly is passed by name so p_as_of, which the API never sets, can
+     * stay at its default between them.
      */
     public List<Mover> movers(Integer days, Integer categoryId, Integer groupId,
                               boolean includeSealed, java.math.BigDecimal minPrice,
-                              String direction, Integer smoothing, Integer limit)
+                              String direction, Integer smoothing, Integer limit,
+                              boolean modernOnly)
             throws Exception {
         String sql = """
                 SELECT product_id, name, card_number, rarity, set_name, game,
                        sub_type_name, is_sealed, then_price, now_price, pct_change, url
-                  FROM item_movers(?, ?, ?, ?, ?, ?, ?, ?)
+                  FROM item_movers(?, ?, ?, ?, ?, ?, ?, ?, p_modern_only => ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             setIntOrDefault(ps, 1, days, 7);
@@ -344,6 +356,7 @@ public class QueryRepository {
             ps.setString(6, direction == null ? "down" : direction);
             setIntOrDefault(ps, 7, smoothing, 3);
             setIntOrDefault(ps, 8, limit, 50);
+            ps.setBoolean(9, modernOnly);
 
             List<Mover> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {

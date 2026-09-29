@@ -9,6 +9,12 @@ export interface Game {
   categoryId: number;
   name: string;
   productCount: number;
+  /**
+   * Sets released on or after this date count as modern. Null when every
+   * set of the game does. Only used to say what "modern" means; which sets
+   * qualify always comes from the server.
+   */
+  modernSince: string | null;
 }
 
 /**
@@ -90,6 +96,8 @@ export interface GameSet {
   name: string;
   publishedOn: string | null;
   productCount: number;
+  /** Counts as modern for its game (server-side rule, modern_group_ids()). */
+  modern: boolean;
 }
 
 /**
@@ -176,6 +184,8 @@ export interface SetOverview {
   despikeUsd: number | null;
   startDate: string;
   endDate: string;
+  /** Counts as modern for its game (server-side rule, modern_group_ids()). */
+  modern: boolean;
 }
 
 /**

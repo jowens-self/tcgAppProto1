@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
 import { Game, SetOverview } from './api.models';
 import { defaultGame } from './game-default';
+import { modernRule } from './modern-rule';
 
 /** Columns the table can be ordered by. */
 type SortKey = 'set' | 'value' | 'change' | 'cards' | 'concentration';
@@ -76,10 +77,19 @@ export class Sets {
   protected readonly sortKey = signal<SortKey>('value');
   protected readonly sortAsc = signal(false);
 
+  /**
+   * Client-side like hideEmpty: every row already says whether its set is
+   * modern, so switching costs no round trip. Off by default, so the table
+   * a user already knows is where they start.
+   */
+  protected readonly modernOnly = signal(false);
+
   protected readonly visible = computed(() => {
-    const list = this.hideEmpty()
-      ? this.rows().filter((r) => r.pctReturn !== null)
-      : this.rows();
+    const hideEmpty = this.hideEmpty();
+    const modernOnly = this.modernOnly();
+    const list = this.rows().filter(
+      (r) => (!hideEmpty || r.pctReturn !== null) && (!modernOnly || r.modern),
+    );
     const key = this.sortKey();
     const dir = this.sortAsc() ? 1 : -1;
 
@@ -174,6 +184,11 @@ export class Sets {
   protected ariaSort(key: SortKey): 'ascending' | 'descending' | null {
     if (this.sortKey() !== key) return null;
     return this.sortAsc() ? 'ascending' : 'descending';
+  }
+
+  /** What "Modern only" means for the game on screen. */
+  protected modernNote(): string {
+    return modernRule(this.games(), this.game);
   }
 
   /** True when one row drives enough of the move to distrust the total. */

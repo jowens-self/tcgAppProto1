@@ -26,14 +26,18 @@ CREATE TABLE IF NOT EXISTS categories (
 -- code, on purpose: adding a card game is "INSERT a row," not a code
 -- change + rebuild + redeploy. Seeded with Pokemon (3) only, so nothing
 -- changes in behavior until another row is added deliberately.
+--
+-- modern_since: sets released on or after it count as "modern" for that game;
+-- NULL means every set does. Why Pokemon's is 2019-11-15: migration 004.
 CREATE TABLE IF NOT EXISTS tracked_categories (
-    category_id INTEGER PRIMARY KEY,
-    name        TEXT NOT NULL,
-    added_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    category_id  INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,
+    added_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    modern_since DATE
 );
 
-INSERT INTO tracked_categories (category_id, name)
-VALUES (3, 'Pokemon')
+INSERT INTO tracked_categories (category_id, name, modern_since)
+VALUES (3, 'Pokemon', DATE '2019-11-15')
 ON CONFLICT (category_id) DO NOTHING;
 
 -- Is a printing qualifier part of the card's IDENTITY, or a TREATMENT

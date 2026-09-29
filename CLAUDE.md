@@ -689,6 +689,11 @@ game is an INSERT. Currently Pokemon (3) and One Piece (68).
   game. `App` logs each category's own count as a delta.
 - **Watch the 10,000/24h ban ceiling as games are added.** One
   Pokemon-sized category is ~436 requests/day.
+- **"Modern" is per game and is data too**: `tracked_categories.modern_since`,
+  applied only through `modern_group_ids()`. Pokemon starts at Sword & Shield
+  (2019-11-15, owner's call 2026-09-29, expected to move later); NULL means
+  the whole game counts. Undated sets never count. Never compare dates to
+  decide it anywhere else, including the front end.
 
 Background and the verification behind all of this: DEVELOPMENT_HISTORY.md
 Part 15.

@@ -34,6 +34,16 @@
     Hide sets with no return
   </label>
 
+  <label class="toggle" [title]="modernNote()">
+    <input
+      type="checkbox"
+      [ngModel]="modernOnly()"
+      (ngModelChange)="modernOnly.set($event)"
+      name="modernOnly"
+    />
+    Modern only
+  </label>
+
   <!-- Exposed rather than hidden because it changes reported numbers. A
        correction you can't switch off is a correction you can't check. -->
   <label class="toggle">
@@ -66,6 +76,10 @@
     {{ window()?.from }} and {{ window()?.to }}, so a set gaining or losing
     cards mid-window can't look like a price move.
   </p>
+
+  @if (modernOnly()) {
+    <p class="method">{{ modernNote() }}</p>
+  }
 
   @if (despike() && despikedCount() > 0) {
     <p class="method fix-note">

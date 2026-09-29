@@ -33,12 +33,14 @@ public final class Fixtures {
                 (3, 'Pokemon'), (68, 'One Piece Card Game')
             ON CONFLICT (category_id) DO NOTHING;
 
-            INSERT INTO groups (group_id, category_id, name) VALUES
-                (604,  3,  'Base Set'),
-                (2282, 3,  'World Championship Decks'),
-                (1663, 3,  'Base Set (Shadowless)'),
-                (23237, 3, 'SV: Scarlet & Violet 151'),
-                (17659, 68, 'Romance Dawn');
+            -- Real release dates, which put sets on both sides of Pokemon's
+            -- modern cutoff (Sword & Shield, migration 004).
+            INSERT INTO groups (group_id, category_id, name, published_on) VALUES
+                (604,  3,  'Base Set',                 DATE '1999-01-09'),
+                (2282, 3,  'World Championship Decks', DATE '2018-07-01'),
+                (1663, 3,  'Base Set (Shadowless)',    DATE '1999-01-09'),
+                (23237, 3, 'SV: Scarlet & Violet 151', DATE '2023-09-22'),
+                (17659, 68, 'Romance Dawn',            DATE '2022-12-02');
             """);
 
         // ------------------------------------------------------------------

@@ -96,6 +96,7 @@ export class CardTrackerApi {
     game?: number | null;
     set?: number | null;
     includeSealed?: boolean;
+    modernOnly?: boolean;
     minPrice?: number;
     direction?: 'up' | 'down';
     limit?: number;
@@ -105,6 +106,7 @@ export class CardTrackerApi {
     if (opts.game != null) params = params.set('game', opts.game);
     if (opts.set != null) params = params.set('set', opts.set);
     if (opts.includeSealed) params = params.set('sealed', 'true');
+    if (opts.modernOnly) params = params.set('modern', 'true');
     if (opts.minPrice != null) params = params.set('minPrice', opts.minPrice);
     if (opts.direction) params = params.set('direction', opts.direction);
     if (opts.limit != null) params = params.set('limit', opts.limit);

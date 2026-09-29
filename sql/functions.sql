@@ -637,6 +637,25 @@ CREATE OR REPLACE FUNCTION item_history(
 $$ LANGUAGE sql STABLE;
 
 -- ---------------------------------------------------------------------------
+-- Modern sets (added 2026-09-29)
+-- ---------------------------------------------------------------------------
+
+-- The one definition of "modern", for every screen that filters on it: a set
+-- released on or after its game's tracked_categories.modern_since, or any set
+-- of a game that has no cutoff. A set with no release date is never modern,
+-- because there is no way to tell which block it belongs to; the comparison
+-- is NULL for it, and WHERE drops NULL.
+--
+-- Where the cutoff sits and why: migration 004.
+CREATE OR REPLACE FUNCTION modern_group_ids()
+RETURNS TABLE (group_id INTEGER) AS $$
+    SELECT g.group_id
+    FROM groups g
+    JOIN tracked_categories t ON t.category_id = g.category_id
+    WHERE t.modern_since IS NULL OR g.published_on >= t.modern_since;
+$$ LANGUAGE sql STABLE;
+
+-- ---------------------------------------------------------------------------
 -- Movers (v3, added 2026-08-16)
 -- ---------------------------------------------------------------------------
 
@@ -700,7 +719,15 @@ $$ LANGUAGE sql STABLE;
 -- Restricted to the basket present in both windows, like set_return, so
 -- tcgcsv covering more or fewer products between the two dates can never
 -- masquerade as a price move.
+--
+-- p_modern_only filters BEFORE the LIMIT, which is why it is a parameter and
+-- not something a caller can do to the result: cutting 50 rows and then
+-- discarding the old ones would leave a short board.
+--
+-- The 9-argument form is the signature from before p_modern_only. Dropped so
+-- an existing database does not keep it as a second, ambiguous overload.
 DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE);
+DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE, BOOLEAN);
 CREATE OR REPLACE FUNCTION item_movers(
     p_days INTEGER DEFAULT 7,
     p_category_id INTEGER DEFAULT NULL,
@@ -710,7 +737,8 @@ CREATE OR REPLACE FUNCTION item_movers(
     p_direction TEXT DEFAULT 'down',
     p_smoothing INTEGER DEFAULT 3,
     p_limit INTEGER DEFAULT 50,
-    p_as_of DATE DEFAULT NULL
+    p_as_of DATE DEFAULT NULL,
+    p_modern_only BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     product_id INTEGER,
     name TEXT,
@@ -799,6 +827,8 @@ BEGIN
           AND (p_category_id IS NULL OR pr.category_id = p_category_id)
           AND (p_group_id IS NULL OR pr.group_id = p_group_id)
           AND (p_include_sealed OR pr.is_sealed = FALSE)
+          AND (NOT COALESCE(p_modern_only, FALSE)
+               OR pr.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg))
         ORDER BY
             CASE WHEN p_direction = 'up' THEN (recent.p - prior.p) / prior.p END DESC NULLS LAST,
             CASE WHEN p_direction <> 'up' THEN (recent.p - prior.p) / prior.p END ASC NULLS LAST,
@@ -832,15 +862,22 @@ $$ LANGUAGE plpgsql STABLE;
 
 -- Sets for a game, newest first, for the movers screen's set filter.
 -- Only groups that actually have tracked products, so the dropdown can't
--- offer a set that would return nothing.
+-- offer a set that would return nothing. is_modern lets the dropdown follow
+-- the screen's modern filter without restating the rule.
+--
+-- Dropped first because adding is_modern changed the return type, which
+-- CREATE OR REPLACE cannot do.
+DROP FUNCTION IF EXISTS game_sets(INTEGER);
 CREATE OR REPLACE FUNCTION game_sets(p_category_id INTEGER)
 RETURNS TABLE (
     group_id INTEGER,
     name TEXT,
     published_on DATE,
-    product_count INTEGER
+    product_count INTEGER,
+    is_modern BOOLEAN
 ) AS $$
-    SELECT g.group_id, g.name, g.published_on::DATE, COUNT(p.product_id)::INTEGER
+    SELECT g.group_id, g.name, g.published_on, COUNT(p.product_id)::INTEGER,
+           g.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg)
     FROM groups g
     JOIN products p ON p.group_id = g.group_id
     WHERE g.category_id = p_category_id
@@ -929,8 +966,15 @@ $$ LANGUAGE sql STABLE;
 -- CREATE OR REPLACE does not replace across signatures. It creates a second
 -- OVERLOAD, leaving the old 3-argument version behind. Two candidates then
 -- make game_set_overview(NULL, 30) ambiguous and it fails to resolve at all.
--- Same guard as item_movers() above, for the same reason.
+-- Same guard as item_movers() above, for the same reason. The 7-argument
+-- drop is for the return type: is_modern was added as the last column, and
+-- CREATE OR REPLACE cannot change a return type.
+--
+-- is_modern is a column rather than a filter parameter because the screen
+-- already receives every set in one response and filters client-side; the
+-- rule itself stays in modern_group_ids().
 DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE);
+DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE, BOOLEAN, NUMERIC, NUMERIC, NUMERIC);
 CREATE OR REPLACE FUNCTION game_set_overview(
     p_category_id INTEGER DEFAULT NULL,
     p_days        INTEGER DEFAULT 30,
@@ -959,7 +1003,8 @@ CREATE OR REPLACE FUNCTION game_set_overview(
     n_despiked      INTEGER,
     despike_usd     NUMERIC,
     start_date      DATE,
-    end_date        DATE
+    end_date        DATE,
+    is_modern       BOOLEAN
 ) AS $$
 DECLARE
     v_end   DATE;
@@ -1094,7 +1139,8 @@ BEGIN
         COALESCE(spikes.n_despiked, 0),
         ROUND(COALESCE(spikes.despike_usd, 0), 2),
         v_start,
-        v_end
+        v_end,
+        g.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg)
     FROM groups g
     JOIN categories c ON c.category_id = g.category_id
     -- Inner join on val: a set with nothing priced on the end date has no

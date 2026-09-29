@@ -329,8 +329,9 @@ Structure, all standalone components with signals:
 | `api.models.ts` | TypeScript mirrors of the Java records (no `imageUrl`, see below) |
 | `api.ts` | The only file that knows a server exists |
 | `search.ts/.html/.css` | Search screen: query, filters, results, detail |
-| `movers.ts/.html/.css` | Movers screen: window/game/set filters, table |
-| `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration |
+| `movers.ts/.html/.css` | Movers screen: window/game/set/modern filters, table |
+| `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration, modern filter |
+| `modern-rule.ts` | The sentence explaining what "Modern only" means for the game on screen |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library; hover or drag to read any day |
 | `collection.ts/.html/.css` | Collection screen: add cards, value chart, totals, per-card history |
 | `holding-totals.ts` | Collection totals, skipping unknown prices and costs rather than zeroing them |
@@ -357,8 +358,18 @@ curl "localhost:7070/api/movers?days=7&game=3&direction=down"
 curl "localhost:7070/api/movers?game=3&set=23353&direction=up"
 ```
 
-Takes `days`, `game`, `set`, `sealed=true`, `minPrice`, `direction`
-(`up`/`down`), `smoothing`, `limit`.
+Takes `days`, `game`, `set`, `sealed=true`, `modern=true`, `minPrice`,
+`direction` (`up`/`down`), `smoothing`, `limit`.
+
+**`modern=true` keeps only modern sets**, filtered before the top-50 cut so
+the board stays full. Each game's cutoff is `tracked_categories.modern_since`:
+Pokemon from 2019-11-15, the start of Sword & Shield (the SWSH promos came
+three months before the first set), and every One Piece set. A set with no
+release date never counts, since it can't be placed in a block. Moving the
+cutoff is one UPDATE; the rule itself is `modern_group_ids()`.
+`/api/games` carries each game's `modernSince`, and the set lists
+(`/api/games/{id}/sets`, `/api/sets/overview`) mark each set `modern` so the
+screens filter on the server's answer instead of repeating the rule.
 
 **Rows are per (product, variant)**, unlike search which is per product.
 a mover is one specific market's move, and the sub-types of a card move

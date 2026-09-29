@@ -37,6 +37,9 @@ import java.time.LocalDate;
  * Frontiers from -20.91% to +8.43%. Show it wherever the return is shown;
  * a corrected number that doesn't say it was corrected is worse than either
  * honest alternative.
+ *
+ * {@code modern} is whether the set counts as modern for its game; the rule
+ * lives in modern_group_ids().
  */
 public record SetOverview(
         int groupId,
@@ -58,5 +61,6 @@ public record SetOverview(
         int nDespiked,
         BigDecimal despikeUsd,
         LocalDate startDate,
-        LocalDate endDate) {
+        LocalDate endDate,
+        boolean modern) {
 }

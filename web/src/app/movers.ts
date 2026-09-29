@@ -6,6 +6,7 @@ import { Game, GameSet, Mover, PricePoint,
   ChartDatum,
 } from './api.models';
 import { defaultGame } from './game-default';
+import { modernRule } from './modern-rule';
 import { PriceChart } from './price-chart';
 
 /**
@@ -55,6 +56,14 @@ export class Movers {
   protected minPrice = 1;
   protected includeSealed = false;
 
+  /**
+   * A signal, unlike the fields above, because the set dropdown follows it
+   * too. Filtered server-side for the board (it has to happen before the
+   * top-50 cut) and client-side for the dropdown, both from the server's
+   * answer, never a date comparison here.
+   */
+  protected readonly modernOnly = signal(false);
+
   constructor() {
     this.api.games().subscribe({
       next: (g) => {
@@ -79,6 +88,7 @@ export class Movers {
         game: this.game,
         set: this.set,
         includeSealed: this.includeSealed,
+        modernOnly: this.modernOnly(),
         minPrice: this.minPrice,
         direction: this.direction,
         limit: 50,
@@ -108,10 +118,28 @@ export class Movers {
     this.load();
   }
 
+  /** The set dropdown's options: only modern sets while that filter is on. */
+  protected setOptions(): GameSet[] {
+    return this.modernOnly() ? this.sets().filter((s) => s.modern) : this.sets();
+  }
+
+  /** What "Modern only" means for the game on screen. */
+  protected modernNote(): string {
+    return modernRule(this.games(), this.game);
+  }
+
   /**
-   * A movers row already names its exact variant, so unlike the search
-   * screen there's no variant-picking step, so go straight to the history.
+   * Turning modern on drops a picked set that isn't modern. Keeping it would
+   * leave an empty board for a reason nothing on screen explains.
    */
+  protected onModernChange(on: boolean): void {
+    this.modernOnly.set(on);
+    if (on && this.set !== null && !this.setOptions().some((s) => s.groupId === this.set)) {
+      this.set = null;
+    }
+    this.load();
+  }
+
   /**
    * Thumbnails, served off our own disk and never from a TCGplayer host.
    *
@@ -139,6 +167,10 @@ export class Movers {
     return this.api.imageUrl(productId);
   }
 
+  /**
+   * A movers row already names its exact variant, so unlike the search
+   * screen there's no variant-picking step, so go straight to the history.
+   */
   protected select(row: Mover): void {
     this.selected.set(row);
     this.history.set([]);
