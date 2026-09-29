@@ -40,6 +40,10 @@ import java.time.LocalDate;
  *
  * {@code modern} is whether the set counts as modern for its game; the rule
  * lives in modern_group_ids().
+ *
+ * {@code settlesOn} is set when the set itself was still new at the window
+ * start: its release plus its game's early_days. With launch pricing left out
+ * (the default) such a set usually has no change yet, and this says why.
  */
 public record SetOverview(
         int groupId,
@@ -62,5 +66,6 @@ public record SetOverview(
         BigDecimal despikeUsd,
         LocalDate startDate,
         LocalDate endDate,
-        boolean modern) {
+        boolean modern,
+        LocalDate settlesOn) {
 }

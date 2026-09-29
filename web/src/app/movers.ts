@@ -6,6 +6,14 @@ import { Game, GameSet, Mover, PricePoint,
   ChartDatum,
 } from './api.models';
 import { defaultGame } from './game-default';
+import {
+  LaunchPricingPrefs,
+  PRE_RELEASE_TITLE,
+  chartablePoints,
+  earlyPricingTitle,
+  earlyWeeks,
+  launchNote,
+} from './launch-pricing';
 import { modernRule } from './modern-rule';
 import { PriceChart } from './price-chart';
 
@@ -44,10 +52,23 @@ export class Movers {
   protected readonly selected = signal<Mover | null>(null);
   protected readonly history = signal<PricePoint[]>([]);
 
-  /** The chart takes a plain {date, value} series; this is the price view of it. */
-  protected readonly chartSeries = computed<ChartDatum[]>(() =>
-    this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice })),
+  /**
+   * Whether launch pricing counts. Shared with every screen, so the chart
+   * below the board follows the same boxes as the board itself.
+   */
+  protected readonly launch = inject(LaunchPricingPrefs);
+  protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
+
+  /** The price view of the history, less any launch pricing that's unticked. */
+  private readonly chartView = computed(() =>
+    chartablePoints<ChartDatum>(
+      this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice, phase: p.phase })),
+      this.launch.includePreRelease(),
+      this.launch.includeEarly(),
+    ),
   );
+  protected readonly chartSeries = computed(() => this.chartView().points);
+  protected readonly chartOnlyLaunch = computed(() => this.chartView().onlyLaunch);
 
   protected game: number | null = null;
   protected set: number | null = null;
@@ -89,6 +110,8 @@ export class Movers {
         set: this.set,
         includeSealed: this.includeSealed,
         modernOnly: this.modernOnly(),
+        includePreRelease: this.launch.includePreRelease(),
+        includeEarly: this.launch.includeEarly(),
         minPrice: this.minPrice,
         direction: this.direction,
         limit: 50,
@@ -126,6 +149,20 @@ export class Movers {
   /** What "Modern only" means for the game on screen. */
   protected modernNote(): string {
     return modernRule(this.games(), this.game);
+  }
+
+  protected earlyTitle(): string {
+    return earlyPricingTitle(earlyWeeks(this.games(), this.game));
+  }
+
+  /** What the launch-pricing boxes are leaving off the board, or ''. */
+  protected launchNote(): string {
+    return launchNote(
+      this.launch.includePreRelease(),
+      this.launch.includeEarly(),
+      earlyWeeks(this.games(), this.game),
+      'the board',
+    );
   }
 
   /**

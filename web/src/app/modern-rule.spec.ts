@@ -2,8 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { Game } from './api.models';
 import { modernRule } from './modern-rule';
 
-const pokemon: Game = { categoryId: 3, name: 'Pokemon', productCount: 31_581, modernSince: '2019-11-15' };
-const onePiece: Game = { categoryId: 68, name: 'One Piece Card Game', productCount: 7_676, modernSince: null };
+const pokemon: Game = {
+  categoryId: 3,
+  name: 'Pokemon',
+  productCount: 31_581,
+  modernSince: '2019-11-15',
+  earlyDays: 56,
+};
+const onePiece: Game = {
+  categoryId: 68,
+  name: 'One Piece Card Game',
+  productCount: 7_676,
+  modernSince: null,
+  earlyDays: 56,
+};
 
 /** The sentence under the "Modern only" box, which has to match the server's rule. */
 describe('modernRule', () => {

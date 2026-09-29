@@ -251,7 +251,7 @@
           @if (history().length) {
             @let ret = totalReturn();
             <div class="ret-row">
-              <span class="ret-label">Since {{ history()[0].snapshotDate }}</span>
+              <span class="ret-label">Since {{ shownFrom() }}</span>
               @if (ret !== null) {
                 <span class="ret" [class.up]="ret >= 0" [class.down]="ret < 0">
                   {{ ret >= 0 ? '+' : '' }}{{ ret | number: '1.2-2' }}%
@@ -259,6 +259,36 @@
               }
             </div>
             <price-chart [series]="chartSeries()" />
+            @if (chartOnlyLaunch()) {
+              <p class="hint">
+                This card hasn't settled yet, so everything here is launch pricing.
+                It's shown anyway rather than an empty chart.
+              </p>
+            }
+            <!-- Same setting as Movers and Sets. Only offered for a card that
+                 has launch pricing, so most charts don't carry dead controls. -->
+            @if (hasLaunch()) {
+              <div class="launch-toggles">
+                <label [title]="preReleaseTitle">
+                  <input
+                    type="checkbox"
+                    [ngModel]="launch.includePreRelease()"
+                    (ngModelChange)="launch.includePreRelease.set($event)"
+                    name="includePreRelease"
+                  />
+                  Include pre-release
+                </label>
+                <label [title]="earlyTitle()">
+                  <input
+                    type="checkbox"
+                    [ngModel]="launch.includeEarly()"
+                    (ngModelChange)="launch.includeEarly.set($event)"
+                    name="includeEarly"
+                  />
+                  Include early pricing
+                </label>
+              </div>
+            }
           } @else {
             <p class="hint">Loading history…</p>
           }

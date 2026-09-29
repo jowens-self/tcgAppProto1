@@ -44,6 +44,28 @@
     Modern only
   </label>
 
+  <!-- Launch pricing starts unticked: both parts are mostly noise. Shared
+       with the other screens. -->
+  <label class="toggle" [title]="preReleaseTitle">
+    <input
+      type="checkbox"
+      [ngModel]="launch.includePreRelease()"
+      (ngModelChange)="launch.includePreRelease.set($event); load()"
+      name="includePreRelease"
+    />
+    Include pre-release
+  </label>
+
+  <label class="toggle" [title]="earlyTitle()">
+    <input
+      type="checkbox"
+      [ngModel]="launch.includeEarly()"
+      (ngModelChange)="launch.includeEarly.set($event); load()"
+      name="includeEarly"
+    />
+    Include early pricing
+  </label>
+
   <!-- Exposed rather than hidden because it changes reported numbers. A
        correction you can't switch off is a correction you can't check. -->
   <label class="toggle">
@@ -79,6 +101,19 @@
 
   @if (modernOnly()) {
     <p class="method">{{ modernNote() }}</p>
+  }
+
+  @if (launchNote(); as note) {
+    <p class="method">
+      {{ note }}
+      @if (hiddenNewCount() > 0) {
+        {{ hiddenNewCount() }}
+        {{ hiddenNewCount() === 1 ? 'new set is' : 'new sets are' }} hidden until
+        {{ hiddenNewCount() === 1 ? 'it has' : 'they have' }} something settled to
+        compare. Untick "Hide sets with no return" to see
+        {{ hiddenNewCount() === 1 ? 'it' : 'them' }}.
+      }
+    </p>
   }
 
   @if (despike() && despikedCount() > 0) {
@@ -144,11 +179,9 @@
                   class="sub-note"
                   [title]="
                     notInBasket(r) +
-                    ' priced on ' +
-                    r.endDate +
-                    ' but not on ' +
+                    ' count toward value but not toward change: they were not priced on ' +
                     r.startDate +
-                    ', so they count toward value but not toward change'
+                    ', or their price then was still pre-release or early pricing'
                   "
                 >
                   +{{ notInBasket(r) }} new
@@ -159,7 +192,9 @@
             <td class="num">{{ r.totalValue | currency }}</td>
 
             <td class="num">
-              @if (r.pctReturn === null) {
+              @if (r.pctReturn === null && r.settlesOn) {
+                <span class="settling" [title]="settlingTitle(r)">{{ settlingLabel(r) }}</span>
+              } @else if (r.pctReturn === null) {
                 <span class="none" title="No cards priced on both dates">—</span>
               } @else {
                 <span

@@ -25,11 +25,16 @@
 -- working, not a regression. Passing FALSE keeps this check testing the
 -- aggregation logic, which is what it exists for.
 --
+-- LAUNCH PRICING IS INCLUDED here for the same reason: set_return() knows
+-- nothing about pre-release or early prices, so with them left out the two
+-- disagree on every new set, by design (migration 005).
+--
 -- Background: DEVELOPMENT_HISTORY.md Parts 23 and 24.
 WITH ov AS (
   SELECT group_id, set_name, n_priced, total_value, n_common,
          total_start, total_end, pct_return, start_date, end_date
-  FROM game_set_overview(3, 30, NULL, FALSE)  -- despiking OFF, see below
+  FROM game_set_overview(3, 30, NULL, FALSE,  -- despiking OFF, see above
+                         p_include_prerelease => TRUE, p_include_early => TRUE)
   ORDER BY total_value DESC NULLS LAST
   LIMIT 20
 ),

@@ -12,6 +12,14 @@ import {
   ChartDatum,
 } from './api.models';
 import { HISTORY_WINDOWS, HistoryWindow, windowStart } from './history-window';
+import {
+  LaunchPricingPrefs,
+  PRE_RELEASE_TITLE,
+  chartablePoints,
+  earlyPricingTitle,
+  earlyWeeks,
+  hasLaunchPricing,
+} from './launch-pricing';
 import { PriceChart } from './price-chart';
 import { variantLabelAddsInfo } from './variant-label';
 
@@ -84,10 +92,26 @@ export class Search {
   protected readonly activeVariant = signal<string | null>(null);
   protected readonly history = signal<PricePoint[]>([]);
 
-  /** The chart takes a plain {date, value} series; this is the price view of it. */
-  protected readonly chartSeries = computed<ChartDatum[]>(() =>
-    this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice })),
+  /**
+   * Whether launch pricing is drawn. The same setting Movers and Sets use, so
+   * a card looks the same here as it does under the board.
+   */
+  protected readonly launch = inject(LaunchPricingPrefs);
+  protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
+
+  /** The price view of the history, less any launch pricing that's unticked. */
+  private readonly chartView = computed(() =>
+    chartablePoints<ChartDatum>(
+      this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice, phase: p.phase })),
+      this.launch.includePreRelease(),
+      this.launch.includeEarly(),
+    ),
   );
+  protected readonly chartSeries = computed(() => this.chartView().points);
+  protected readonly chartOnlyLaunch = computed(() => this.chartView().onlyLaunch);
+
+  /** The boxes only appear for a card that has launch pricing to show or hide. */
+  protected readonly hasLaunch = computed(() => hasLaunchPricing(this.history()));
   protected readonly loadingDetail = signal(false);
 
   /**
@@ -385,14 +409,33 @@ export class Search {
     this.activeVariant.set(null);
   }
 
-  /** Percent change across the loaded series, or null if unusable. */
+  /**
+   * Percent change across what the chart draws, or null if unusable. The
+   * drawn series, not the loaded one, so an unticked preorder price can't
+   * set the starting point of a number shown right above the chart. None at
+   * all for a card that hasn't settled: its chart is drawn anyway, but a
+   * change measured from a preorder price is exactly the number the unticked
+   * boxes are there to keep out.
+   */
   protected totalReturn(): number | null {
-    const pts = this.history().filter((p) => p.trendablePrice != null);
+    if (this.chartOnlyLaunch()) return null;
+    const pts = this.chartSeries().filter((p) => p.value != null);
     if (pts.length < 2) return null;
-    const start = pts[0].trendablePrice!;
-    const end = pts[pts.length - 1].trendablePrice!;
+    const start = pts[0].value!;
+    const end = pts[pts.length - 1].value!;
     // Matches the server rule: no percent change off a zero/negative start.
     if (start <= 0) return null;
     return ((end - start) / start) * 100;
+  }
+
+  /** First day the chart draws, for the "Since" label over it. */
+  protected shownFrom(): string | null {
+    return this.chartSeries()[0]?.date ?? null;
+  }
+
+  /** Early pricing's length for the selected card's own game. */
+  protected earlyTitle(): string {
+    const game = this.games().find((g) => g.name === this.selected()?.game);
+    return earlyPricingTitle(earlyWeeks(this.games(), game?.categoryId ?? null));
   }
 }

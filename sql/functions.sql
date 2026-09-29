@@ -598,6 +598,94 @@ CREATE OR REPLACE FUNCTION item_variants(
     ORDER BY v.stn;
 $$ LANGUAGE sql STABLE;
 
+-- ---------------------------------------------------------------------------
+-- Launch pricing (added 2026-09-29)
+-- ---------------------------------------------------------------------------
+
+-- A card's release date, for telling its pre-release and early prices from
+-- settled ones. Normally its set's date, with two exceptions:
+--
+--   * First priced more than 30 days after its set came out: a card added to
+--     a long-running group later, like a new promo in a promo group dated
+--     when the line began (the 30th Celebration promos sit in the Mega
+--     Evolution promo group, dated 2025). Its first price is the best release
+--     date there is. The same goes for any card in an undated group.
+--   * Priced since before our history begins: released long ago, nothing to
+--     filter, so NULL.
+--
+-- Only lateness is bounded, never earliness: preorder prices can start months
+-- ahead (some 30th Celebration cards were priced from June for a September
+-- release), and they are still that set's launch.
+CREATE OR REPLACE FUNCTION card_release(p_set_released DATE, p_first_priced DATE,
+                                        p_history_start DATE)
+RETURNS DATE AS $$
+    SELECT CASE
+        WHEN p_set_released IS NOT NULL AND p_first_priced <= p_set_released + 30
+            THEN p_set_released
+        WHEN p_first_priced > p_history_start
+            THEN p_first_priced
+    END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Which part of a card's life a price on p_on comes from:
+--   'pre_release'  before release: preorders, thin and hyped
+--   'early'        the first p_early_days after release, while it settles
+--   NULL           settled, or a card with no known release
+-- What each looks like in the data, and why 56 days: migration 005.
+CREATE OR REPLACE FUNCTION price_phase(p_on DATE, p_release DATE, p_early_days INTEGER)
+RETURNS TEXT AS $$
+    SELECT CASE
+        WHEN p_release IS NULL THEN NULL
+        WHEN p_on < p_release THEN 'pre_release'
+        WHEN p_on < p_release + p_early_days THEN 'early'
+    END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Every card (product + variant) whose price on p_on is launch pricing the
+-- caller asked to leave out. Movers and Sets both read this, so they can
+-- never disagree about what counts.
+--
+-- Runs on every Movers and Sets request, so it narrows before it decides. A
+-- card can only be launch pricing on p_on if its release is within
+-- early_days of p_on or later, and its release is either its set's date or
+-- its own first price. So the candidates are cards in a recent set, plus
+-- cards first priced recently, and only those few thousand get a phase.
+-- Working out a phase for all ~53k cards cost ~190ms a request, measured.
+-- The candidates are MATERIALIZED so release is a plain column when
+-- price_phase() reads it, which lets that inline too instead of running as a
+-- function call per row.
+CREATE OR REPLACE FUNCTION launch_noise(p_on DATE, p_include_prerelease BOOLEAN,
+                                        p_include_early BOOLEAN)
+RETURNS TABLE (product_id INTEGER, sub_type_name TEXT) AS $$
+    WITH candidates AS (
+        SELECT f.product_id, f.sub_type_name, f.first_date
+        FROM groups g
+        JOIN tracked_categories t ON t.category_id = g.category_id
+        JOIN products p ON p.group_id = g.group_id
+        JOIN card_first_priced f ON f.product_id = p.product_id
+        WHERE g.published_on > p_on - t.early_days
+        UNION
+        SELECT f.product_id, f.sub_type_name, f.first_date
+        FROM card_first_priced f
+        WHERE f.first_date > p_on - (SELECT MAX(early_days) FROM tracked_categories)
+    ),
+    card AS MATERIALIZED (
+        SELECT c.product_id, c.sub_type_name, t.early_days,
+               card_release(g.published_on, c.first_date,
+                            (SELECT MIN(x.snapshot_date) FROM price_snapshots x)) AS released
+        FROM candidates c
+        JOIN products p ON p.product_id = c.product_id
+        JOIN groups g ON g.group_id = p.group_id
+        JOIN tracked_categories t ON t.category_id = p.category_id
+    )
+    SELECT c.product_id, c.sub_type_name
+    FROM card c
+    WHERE (price_phase(p_on, c.released, c.early_days) = 'pre_release'
+           AND NOT COALESCE(p_include_prerelease, FALSE))
+       OR (price_phase(p_on, c.released, c.early_days) = 'early'
+           AND NOT COALESCE(p_include_early, FALSE));
+$$ LANGUAGE sql STABLE;
+
 -- Price time series for one product+variant, for charting.
 --
 -- high_price is deliberately NOT returned. Sellers price-park (list at
@@ -611,7 +699,15 @@ $$ LANGUAGE sql STABLE;
 -- PriceSnapshot.trendablePrice) precomputed, so a chart doesn't have to
 -- re-derive the fallback rule, and can't get it wrong.
 --
+-- phase marks each day as pre-release, early or settled (price_phase()), so a
+-- chart can shade or hide launch pricing. Nothing is filtered here; the
+-- caller chooses.
+--
 -- NULL dates mean "no bound": both NULL gives the item's full history.
+--
+-- Dropped first because phase changed the return type, which CREATE OR
+-- REPLACE cannot do.
+DROP FUNCTION IF EXISTS item_history(INTEGER, TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION item_history(
     p_product_id INTEGER,
     p_sub_type_name TEXT,
@@ -623,12 +719,26 @@ CREATE OR REPLACE FUNCTION item_history(
     low_price NUMERIC,
     mid_price NUMERIC,
     direct_low_price NUMERIC,
-    trendable_price NUMERIC
+    trendable_price NUMERIC,
+    phase TEXT
 ) AS $$
+    WITH card AS (
+        SELECT card_release(g.published_on, f.first_date,
+                            (SELECT MIN(x.snapshot_date) FROM price_snapshots x)) AS released,
+               t.early_days
+        FROM products p
+        JOIN groups g ON g.group_id = p.group_id
+        JOIN tracked_categories t ON t.category_id = p.category_id
+        JOIN card_first_priced f ON f.product_id = p.product_id
+                                AND f.sub_type_name = p_sub_type_name
+        WHERE p.product_id = p_product_id
+    )
     SELECT ps.snapshot_date, ps.market_price, ps.low_price, ps.mid_price,
            ps.direct_low_price,
-           COALESCE(ps.market_price, ps.mid_price, ps.low_price)
+           COALESCE(ps.market_price, ps.mid_price, ps.low_price),
+           price_phase(ps.snapshot_date, card.released, card.early_days)
     FROM price_snapshots ps
+    LEFT JOIN card ON TRUE
     WHERE ps.product_id = p_product_id
       AND ps.sub_type_name = p_sub_type_name
       AND (p_start_date IS NULL OR ps.snapshot_date >= p_start_date)
@@ -724,8 +834,17 @@ $$ LANGUAGE sql STABLE;
 -- not something a caller can do to the result: cutting 50 rows and then
 -- discarding the old ones would leave a short board.
 --
--- The 9-argument form is the signature from before p_modern_only. Dropped so
--- an existing database does not keep it as a second, ambiguous overload.
+-- Launch pricing (p_include_prerelease, p_include_early) is left out by
+-- default, for the same before-the-LIMIT reason. A card whose "then" price
+-- was a preorder or still settling (launch_noise()) is not on the board:
+-- on 2026-09-29, 28 of the 50 biggest modern drops were cards that did not
+-- exist ten weeks earlier, sliding the way every new set does. Only the
+-- "then" end is checked, because "now" is later and can't be earlier in a
+-- card's life.
+--
+-- The 9- and 10-argument forms are signatures from before p_modern_only and
+-- the launch flags. Dropped so an existing database does not keep them as
+-- second, ambiguous overloads.
 DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE);
 DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE, BOOLEAN);
 CREATE OR REPLACE FUNCTION item_movers(
@@ -738,7 +857,9 @@ CREATE OR REPLACE FUNCTION item_movers(
     p_smoothing INTEGER DEFAULT 3,
     p_limit INTEGER DEFAULT 50,
     p_as_of DATE DEFAULT NULL,
-    p_modern_only BOOLEAN DEFAULT FALSE
+    p_modern_only BOOLEAN DEFAULT FALSE,
+    p_include_prerelease BOOLEAN DEFAULT FALSE,
+    p_include_early BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     product_id INTEGER,
     name TEXT,
@@ -829,6 +950,9 @@ BEGIN
           AND (p_include_sealed OR pr.is_sealed = FALSE)
           AND (NOT COALESCE(p_modern_only, FALSE)
                OR pr.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg))
+          AND (prior.product_id, prior.sub_type_name) NOT IN (
+              SELECT ln.product_id, ln.sub_type_name
+              FROM launch_noise(v_prior_from, p_include_prerelease, p_include_early) ln)
         ORDER BY
             CASE WHEN p_direction = 'up' THEN (recent.p - prior.p) / prior.p END DESC NULLS LAST,
             CASE WHEN p_direction <> 'up' THEN (recent.p - prior.p) / prior.p END ASC NULLS LAST,
@@ -973,6 +1097,17 @@ $$ LANGUAGE sql STABLE;
 -- is_modern is a column rather than a filter parameter because the screen
 -- already receives every set in one response and filters client-side; the
 -- rule itself stays in modern_group_ids().
+--
+-- LAUNCH PRICING (p_include_prerelease, p_include_early), left out of the
+-- CHANGE by default: a card whose start-of-window price was a preorder or
+-- still settling (launch_noise()) is dropped from the return basket. Value
+-- is untouched, since what a set is worth today is a real number either way.
+-- The case that prompted it: ME: 30th Celebration read -97.47% over 30 days
+-- on a basket of 5 cards, every one of them a pre-release price.
+--
+-- settles_on is the set's own release + its game's early_days, when that is
+-- after the window start, so the screen can say why a new set has no change
+-- yet. NULL for settled and undated sets.
 DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE);
 DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE, BOOLEAN, NUMERIC, NUMERIC, NUMERIC);
 CREATE OR REPLACE FUNCTION game_set_overview(
@@ -982,7 +1117,9 @@ CREATE OR REPLACE FUNCTION game_set_overview(
     p_despike     BOOLEAN DEFAULT TRUE,
     p_despike_min_usd   NUMERIC DEFAULT 10,
     p_despike_tolerance NUMERIC DEFAULT 1.05,
-    p_despike_deviation NUMERIC DEFAULT 1.25
+    p_despike_deviation NUMERIC DEFAULT 1.25,
+    p_include_prerelease BOOLEAN DEFAULT FALSE,
+    p_include_early      BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     group_id        INTEGER,
     set_name        TEXT,
@@ -1004,7 +1141,8 @@ CREATE OR REPLACE FUNCTION game_set_overview(
     despike_usd     NUMERIC,
     start_date      DATE,
     end_date        DATE,
-    is_modern       BOOLEAN
+    is_modern       BOOLEAN,
+    settles_on      DATE
 ) AS $$
 DECLARE
     v_end   DATE;
@@ -1092,13 +1230,17 @@ BEGIN
         FROM priced pd WHERE pd.is_spike
         GROUP BY 1
     ),
-    -- set_return()'s basket: priced on both days.
+    -- set_return()'s basket: priced on both days, less launch pricing at the
+    -- start unless asked for (see the header).
     moves AS (
         SELECT nr.gid, nr.pid, nr.stn,
                tr.price AS start_price, nr.price AS end_price,
                (nr.price - tr.price) AS delta
         FROM then_rows tr
         JOIN now_rows nr ON nr.pid = tr.pid AND nr.stn = tr.stn
+        WHERE (tr.pid, tr.stn) NOT IN (
+            SELECT ln.product_id, ln.sub_type_name
+            FROM launch_noise(v_start, p_include_prerelease, p_include_early) ln)
     ),
     ret AS (
         SELECT m.gid, COUNT(*)::INTEGER AS n_common,
@@ -1140,9 +1282,12 @@ BEGIN
         ROUND(COALESCE(spikes.despike_usd, 0), 2),
         v_start,
         v_end,
-        g.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg)
+        g.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg),
+        CASE WHEN g.published_on + t.early_days > v_start
+             THEN g.published_on + t.early_days END
     FROM groups g
     JOIN categories c ON c.category_id = g.category_id
+    LEFT JOIN tracked_categories t ON t.category_id = g.category_id
     -- Inner join on val: a set with nothing priced on the end date has no
     -- value and no return, so it is absent rather than a row of nulls.
     JOIN val ON val.gid = g.group_id

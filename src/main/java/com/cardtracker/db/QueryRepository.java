@@ -4,6 +4,7 @@ import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ImageProvenance;
 import com.cardtracker.model.ItemSearchResult;
 import com.cardtracker.model.ItemVariant;
+import com.cardtracker.model.LaunchPricing;
 import com.cardtracker.model.Mover;
 import com.cardtracker.model.PricePoint;
 import com.cardtracker.model.SetOverview;
@@ -145,7 +146,7 @@ public class QueryRepository {
     public List<PricePoint> history(int productId, String subTypeName,
                                     LocalDate from, LocalDate to) throws Exception {
         String sql = "SELECT snapshot_date, market_price, low_price, mid_price, "
-                + "direct_low_price, trendable_price FROM item_history(?, ?, ?, ?)";
+                + "direct_low_price, trendable_price, phase FROM item_history(?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, productId);
             ps.setString(2, subTypeName);
@@ -161,7 +162,8 @@ public class QueryRepository {
                             rs.getBigDecimal("low_price"),
                             rs.getBigDecimal("mid_price"),
                             rs.getBigDecimal("direct_low_price"),
-                            rs.getBigDecimal("trendable_price")));
+                            rs.getBigDecimal("trendable_price"),
+                            rs.getString("phase")));
                 }
             }
             return out;
@@ -222,7 +224,7 @@ public class QueryRepository {
                 SELECT tc.category_id, COALESCE(c.name, tc.name) AS name,
                        (SELECT COUNT(*) FROM products p
                          WHERE p.category_id = tc.category_id)::INT AS product_count,
-                       tc.modern_since
+                       tc.modern_since, tc.early_days
                   FROM tracked_categories tc
                   LEFT JOIN categories c ON c.category_id = tc.category_id
                  ORDER BY name
@@ -232,7 +234,8 @@ public class QueryRepository {
             List<Game> out = new ArrayList<>();
             while (rs.next()) {
                 out.add(new Game(rs.getInt("category_id"), rs.getString("name"),
-                        rs.getInt("product_count"), localDate(rs.getDate("modern_since"))));
+                        rs.getInt("product_count"), localDate(rs.getDate("modern_since")),
+                        rs.getInt("early_days")));
             }
             return out;
         }
@@ -240,10 +243,12 @@ public class QueryRepository {
 
     /**
      * A tracked game, for filter UI. {@code modernSince} is where its modern
-     * era starts, null when every set counts; carried so a screen can say what
-     * "modern" means without restating it.
+     * era starts, null when every set counts; {@code earlyDays} is how long a
+     * new card's prices count as early pricing. Both are carried so a screen
+     * can say what its filters mean without restating the rules.
      */
-    public record Game(int categoryId, String name, int productCount, LocalDate modernSince) {
+    public record Game(int categoryId, String name, int productCount, LocalDate modernSince,
+                       int earlyDays) {
     }
 
     /** A set within a game, for the movers screen's set filter. */
@@ -279,22 +284,27 @@ public class QueryRepository {
      * categoryId null = every tracked game. despike replaces readings that
      * swung hard and reverted the next day with the median of their
      * neighbours; see game_set_overview(). Pass false for a raw two-point
-     * comparison matching set_return().
+     * comparison matching set_return(). launch says whether pre-release and
+     * early prices count toward the change (value always counts them).
      */
     public List<SetOverview> setOverview(Integer categoryId, Integer days, LocalDate asOf,
-                                        boolean despike) throws Exception {
+                                        boolean despike, LaunchPricing launch) throws Exception {
         String sql = """
                 SELECT group_id, set_name, game, published_on, n_priced, total_value,
                        n_common, total_start, total_end, pct_return,
                        top_product_id, top_name, top_sub_type, top_delta, top_share,
-                       top_url, n_despiked, despike_usd, start_date, end_date, is_modern
-                  FROM game_set_overview(?, ?, ?, ?)
+                       top_url, n_despiked, despike_usd, start_date, end_date, is_modern,
+                       settles_on
+                  FROM game_set_overview(?, ?, ?, ?,
+                       p_include_prerelease => ?, p_include_early => ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             if (categoryId == null) ps.setNull(1, Types.INTEGER); else ps.setInt(1, categoryId);
             setIntOrDefault(ps, 2, days, 30);
             setDate(ps, 3, asOf);
             ps.setBoolean(4, despike);
+            ps.setBoolean(5, launch.includePreRelease());
+            ps.setBoolean(6, launch.includeEarly());
 
             List<SetOverview> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
@@ -320,7 +330,8 @@ public class QueryRepository {
                             rs.getBigDecimal("despike_usd"),
                             localDate(rs.getDate("start_date")),
                             localDate(rs.getDate("end_date")),
-                            rs.getBoolean("is_modern")));
+                            rs.getBoolean("is_modern"),
+                            localDate(rs.getDate("settles_on"))));
                 }
             }
             return out;
@@ -333,18 +344,19 @@ public class QueryRepository {
      * a caller that passes nothing still gets the sane default view (7 days,
      * decliners, singles, $1 floor) instead of an unfiltered firehose.
      *
-     * modernOnly is passed by name so p_as_of, which the API never sets, can
-     * stay at its default between them.
+     * modernOnly and launch are passed by name so p_as_of, which the API never
+     * sets, can stay at its default between them.
      */
     public List<Mover> movers(Integer days, Integer categoryId, Integer groupId,
                               boolean includeSealed, java.math.BigDecimal minPrice,
                               String direction, Integer smoothing, Integer limit,
-                              boolean modernOnly)
+                              boolean modernOnly, LaunchPricing launch)
             throws Exception {
         String sql = """
                 SELECT product_id, name, card_number, rarity, set_name, game,
                        sub_type_name, is_sealed, then_price, now_price, pct_change, url
-                  FROM item_movers(?, ?, ?, ?, ?, ?, ?, ?, p_modern_only => ?)
+                  FROM item_movers(?, ?, ?, ?, ?, ?, ?, ?, p_modern_only => ?,
+                       p_include_prerelease => ?, p_include_early => ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             setIntOrDefault(ps, 1, days, 7);
@@ -357,6 +369,8 @@ public class QueryRepository {
             setIntOrDefault(ps, 7, smoothing, 3);
             setIntOrDefault(ps, 8, limit, 50);
             ps.setBoolean(9, modernOnly);
+            ps.setBoolean(10, launch.includePreRelease());
+            ps.setBoolean(11, launch.includeEarly());
 
             List<Mover> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {

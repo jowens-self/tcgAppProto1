@@ -15,6 +15,9 @@ import java.time.LocalDate;
  *
  * trendablePrice is the documented market->mid->low fallback precomputed, so
  * a caller charting this data cannot get the fallback rule wrong.
+ *
+ * phase is "pre_release", "early" or null (settled), from price_phase(), so a
+ * chart can shade or hide launch pricing without knowing the rule.
  */
 public record PricePoint(
         LocalDate snapshotDate,
@@ -22,5 +25,6 @@ public record PricePoint(
         BigDecimal lowPrice,
         BigDecimal midPrice,
         BigDecimal directLowPrice,
-        BigDecimal trendablePrice) {
+        BigDecimal trendablePrice,
+        String phase) {
 }

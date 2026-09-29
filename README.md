@@ -287,6 +287,23 @@ curl "localhost:7070/api/items/534919/history?subType=Holofoil&from=2026-08-11"
 price-parking note above. `trendablePrice` is the documented
 market→mid→low fallback, precomputed so a chart can't apply it wrong.
 
+Each point also carries a `phase`: `"pre_release"`, `"early"` or `null`.
+This is **launch pricing**, and it's mostly noise. Measured across 14 Pokemon
+and 15 One Piece main sets released since spring 2024:
+- **Before release:** preorder prices sit at about 3x where a card settles.
+- **Release day:** still 1.5–2x.
+- **After release:** Pokemon loses about a quarter in week one and 4–7% a week
+  for the rest of the month.
+- **By week 8:** both games are flat.
+
+`"early"` is a card's first `earlyDays` (per game, 56 by default) after
+release. A card's release is its set's date. The exception is a card first
+priced more than 30 days after that, like a new promo filed under a
+long-running promo group; its release is then its own first price. The rules
+live in `card_release()` and `price_phase()`. Each card's first price is kept
+in `card_first_priced` by a trigger, because looking it up per request cost
+4.3s.
+
 CORS is scoped to `http://localhost:4200` (the Angular dev server). The
 API binds locally and is meant to stay there; if it ever moves, revisit
 both that rule and the connection-per-request in `ApiServer.withRepo`.
@@ -332,6 +349,7 @@ Structure, all standalone components with signals:
 | `movers.ts/.html/.css` | Movers screen: window/game/set/modern filters, table |
 | `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration, modern filter |
 | `modern-rule.ts` | The sentence explaining what "Modern only" means for the game on screen |
+| `launch-pricing.ts` | The shared launch-pricing checkboxes, and which chart points they keep |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library; hover or drag to read any day |
 | `collection.ts/.html/.css` | Collection screen: add cards, value chart, totals, per-card history |
 | `holding-totals.ts` | Collection totals, skipping unknown prices and costs rather than zeroing them |
@@ -346,6 +364,18 @@ The chart plots `trendablePrice` (the fallback the server already applied)
 and drops days with no price rather than plotting them as zero. A missing
 observation isn't a price of $0.
 
+**Launch pricing** has two checkboxes: "Include pre-release" and "Include
+early pricing". Both start unticked, because both are mostly noise.
+- **Where they appear:** on Movers and Sets, and on a Search chart when that
+  card has launch pricing.
+- **One setting for the whole app,** remembered in the browser.
+- **Unticked:** that part is left out of the Movers board, of a set's change,
+  and of charts.
+- **Ticked:** it comes back, drawn over a shaded band so it still reads as
+  launch pricing.
+- **A card that hasn't settled** is charted anyway, with a note saying
+  everything shown is launch pricing, rather than showing an empty chart.
+
 ### Movers
 
 `GET /api/movers`. All parameters optional, because the defaults that
@@ -358,8 +388,14 @@ curl "localhost:7070/api/movers?days=7&game=3&direction=down"
 curl "localhost:7070/api/movers?game=3&set=23353&direction=up"
 ```
 
-Takes `days`, `game`, `set`, `sealed=true`, `modern=true`, `minPrice`,
-`direction` (`up`/`down`), `smoothing`, `limit`.
+Takes `days`, `game`, `set`, `sealed=true`, `modern=true`, `prerelease=true`,
+`early=true`, `minPrice`, `direction` (`up`/`down`), `smoothing`, `limit`.
+
+**Launch pricing is left off the board unless `prerelease=true` /
+`early=true` is passed.** A card whose price at the "then" end was a preorder
+or still settling is not on the board. On 2026-09-29, 28 of the 50 biggest
+modern drops were cards that didn't exist ten weeks earlier, sliding the way
+every new set does. Filtered before the top-50 cut, like modern.
 
 **`modern=true` keeps only modern sets**, filtered before the top-50 cut so
 the board stays full. Each game's cutoff is `tracked_categories.modern_since`:
@@ -420,7 +456,18 @@ curl "localhost:7070/api/sets/overview?game=3&days=30"
 curl "localhost:7070/api/sets/overview?game=3&days=30&despike=false"   # raw
 ```
 
-Takes `game`, `days` (default 30), `asOf` and `despike` (default on).
+Takes `game`, `days` (default 30), `asOf`, `despike` (default on), and
+`prerelease=true` / `early=true`.
+
+**Launch pricing is left out of a set's change by default**, though never
+out of its value, since what a set is worth today is real either way.
+- **What happens:** a card whose price at the window's start was a preorder
+  or still settling is dropped from the comparison.
+- **Why:** ME: 30th Celebration read -97.47% over 30 days on a basket of 5
+  cards, all of them preorder prices.
+- **`settlesOn`** is set when the set itself was still new at the window
+  start. It lets the screen say "New · settles 2026-11-11" instead of showing
+  a blank.
 
 Backed by `game_set_overview()`, which computes `set_value()` and
 `set_return()` set-wide in one pass. There are 302 tracked groups, so

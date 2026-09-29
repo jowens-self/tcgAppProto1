@@ -694,6 +694,16 @@ game is an INSERT. Currently Pokemon (3) and One Piece (68).
   (2019-11-15, owner's call 2026-09-29, expected to move later); NULL means
   the whole game counts. Undated sets never count. Never compare dates to
   decide it anywhere else, including the front end.
+- **Launch pricing (pre-release and early) is left out of trends by default**
+  (owner's call 2026-09-29: "mostly noise"). A price's phase comes only from
+  `price_phase()` over `card_release()`, and trend screens get the cards to
+  drop only from `launch_noise()`. `early_days` is per game in
+  `tracked_categories` (56, measured: new sets are flat by week 8). The
+  inputs come from `card_first_priced`, which is DERIVED, kept by a trigger
+  on price_snapshots, and never a source of truth. The trigger only ever
+  moves a first date earlier and never writes to price_snapshots. Values are
+  never filtered, only trends: what a card or set is worth today is real
+  money either way. The why, with numbers: sql/migrations/005.
 
 Background and the verification behind all of this: DEVELOPMENT_HISTORY.md
 Part 15.

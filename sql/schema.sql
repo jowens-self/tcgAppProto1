@@ -29,11 +29,14 @@ CREATE TABLE IF NOT EXISTS categories (
 --
 -- modern_since: sets released on or after it count as "modern" for that game;
 -- NULL means every set does. Why Pokemon's is 2019-11-15: migration 004.
+-- early_days: how long after release a card's prices are still settling
+-- ("early pricing"). Why 56: migration 005.
 CREATE TABLE IF NOT EXISTS tracked_categories (
     category_id  INTEGER PRIMARY KEY,
     name         TEXT NOT NULL,
     added_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    modern_since DATE
+    modern_since DATE,
+    early_days   INTEGER NOT NULL DEFAULT 56 CHECK (early_days >= 0)
 );
 
 INSERT INTO tracked_categories (category_id, name, modern_since)
@@ -547,6 +550,39 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON price_snapshots(snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_product ON price_snapshots(product_id, sub_type_name, snapshot_date DESC);
+
+-- When each card (product + variant) was first priced, kept by the trigger
+-- below. Derived from price_snapshots, never a source of truth: it exists so
+-- telling pre-release and early prices apart costs a join rather than an
+-- index seek per card (4.3s per screen, measured). Why, and why a trigger:
+-- migration 005.
+CREATE TABLE IF NOT EXISTS card_first_priced (
+    product_id    INTEGER NOT NULL,
+    sub_type_name TEXT    NOT NULL,
+    first_date    DATE    NOT NULL,
+    PRIMARY KEY (product_id, sub_type_name)
+);
+
+-- Statement-level, so a COPY of a whole day is one upsert. Only ever moves a
+-- date earlier, so replaying old days is harmless. Writes nothing to
+-- price_snapshots.
+CREATE OR REPLACE FUNCTION note_first_priced() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO card_first_priced (product_id, sub_type_name, first_date)
+    SELECT i.product_id, i.sub_type_name, MIN(i.snapshot_date)
+    FROM inserted i
+    GROUP BY 1, 2
+    ON CONFLICT (product_id, sub_type_name) DO UPDATE
+        SET first_date = EXCLUDED.first_date
+        WHERE EXCLUDED.first_date < card_first_priced.first_date;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER price_snapshots_first_priced
+    AFTER INSERT ON price_snapshots
+    REFERENCING NEW TABLE AS inserted
+    FOR EACH STATEMENT EXECUTE FUNCTION note_first_priced();
 
 -- Accounts. Identity only, no credentials: how someone proves who they are is
 -- a separate decision (see sql/migrations/001_users.sql). user_id 1 is the

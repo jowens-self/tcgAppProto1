@@ -4,6 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
 import { Game, SetOverview } from './api.models';
 import { defaultGame } from './game-default';
+import {
+  LaunchPricingPrefs,
+  PRE_RELEASE_TITLE,
+  earlyPricingTitle,
+  earlyWeeks,
+  launchNote,
+} from './launch-pricing';
 import { modernRule } from './modern-rule';
 
 /** Columns the table can be ordered by. */
@@ -84,6 +91,26 @@ export class Sets {
    */
   protected readonly modernOnly = signal(false);
 
+  /**
+   * Whether launch pricing counts toward a set's change. Server-side, unlike
+   * modern, because it changes which cards are in the comparison. Shared
+   * with the other screens.
+   */
+  protected readonly launch = inject(LaunchPricingPrefs);
+  protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
+
+  /**
+   * New sets with nothing settled to compare yet, hidden by "Hide sets with
+   * no return". Counted so the screen can say they're hidden, not gone.
+   */
+  protected readonly hiddenNewCount = computed(() => {
+    if (!this.hideEmpty()) return 0;
+    const modernOnly = this.modernOnly();
+    return this.rows().filter(
+      (r) => r.pctReturn === null && r.settlesOn !== null && (!modernOnly || r.modern),
+    ).length;
+  });
+
   protected readonly visible = computed(() => {
     const hideEmpty = this.hideEmpty();
     const modernOnly = this.modernOnly();
@@ -141,7 +168,13 @@ export class Sets {
     this.loading.set(true);
     this.error.set(null);
     this.api
-      .setOverview({ game: this.game, days: this.days, despike: this.despike() })
+      .setOverview({
+        game: this.game,
+        days: this.days,
+        despike: this.despike(),
+        includePreRelease: this.launch.includePreRelease(),
+        includeEarly: this.launch.includeEarly(),
+      })
       .subscribe({
         next: (r) => {
           this.rows.set(r);
@@ -189,6 +222,35 @@ export class Sets {
   /** What "Modern only" means for the game on screen. */
   protected modernNote(): string {
     return modernRule(this.games(), this.game);
+  }
+
+  protected earlyTitle(): string {
+    return earlyPricingTitle(earlyWeeks(this.games(), this.game));
+  }
+
+  /** What the launch-pricing boxes are leaving out of each set's change, or ''. */
+  protected launchNote(): string {
+    return launchNote(
+      this.launch.includePreRelease(),
+      this.launch.includeEarly(),
+      earlyWeeks(this.games(), this.game),
+      "a set's change",
+    );
+  }
+
+  /** A new set's change cell: still settling, or settled after the window began. */
+  protected settlingLabel(r: SetOverview): string {
+    return r.settlesOn! > r.endDate ? `New · settles ${r.settlesOn}` : `Settled ${r.settlesOn}`;
+  }
+
+  protected settlingTitle(r: SetOverview): string {
+    const released = r.publishedOn ? `Released ${r.publishedOn}. ` : '';
+    return r.settlesOn! > r.endDate
+      ? `${released}Its prices are still settling, and pre-release and early pricing ` +
+          `aren't counted, so there's no change to show until ${r.settlesOn}. ` +
+          `Tick the boxes above to include them.`
+      : `${released}On ${r.startDate}, the start of this window, its prices were still ` +
+          `settling, so there's nothing settled to compare. A shorter window will show a change.`;
   }
 
   /** True when one row drives enough of the move to distrust the total. */

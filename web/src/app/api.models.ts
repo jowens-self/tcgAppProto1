@@ -15,7 +15,16 @@ export interface Game {
    * qualify always comes from the server.
    */
   modernSince: string | null;
+  /** How many days after release a card's prices count as early pricing. */
+  earlyDays: number;
 }
+
+/**
+ * Which part of a card's life a price comes from: before release, or its
+ * first weeks while it settles. A settled price has no phase (null). Decided
+ * server-side by price_phase(); never worked out from dates here.
+ */
+export type PricePhase = 'pre_release' | 'early';
 
 /**
  * One search hit. This is a product, not a (product, variant) pair: a card
@@ -88,6 +97,7 @@ export interface PricePoint {
   midPrice: number | null;
   directLowPrice: number | null;
   trendablePrice: number | null;
+  phase: PricePhase | null;
 }
 
 /** A set within a game, for the movers set filter. */
@@ -186,6 +196,12 @@ export interface SetOverview {
   endDate: string;
   /** Counts as modern for its game (server-side rule, modern_group_ids()). */
   modern: boolean;
+  /**
+   * When the set itself was still new at the window start: its release plus
+   * its game's early days. With launch pricing left out, such a set usually
+   * has no change yet, and this is why. Null for settled or undated sets.
+   */
+  settlesOn: string | null;
 }
 
 /**
@@ -304,6 +320,8 @@ export interface HoldingEvent {
 export interface ChartDatum {
   date: string;
   value: number | null;
+  /** Price history only: drawn over a shaded band so launch pricing reads as such. */
+  phase?: PricePhase | null;
 }
 
 /**

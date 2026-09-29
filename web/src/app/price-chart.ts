@@ -1,14 +1,28 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, computed, input, signal } from '@angular/core';
-import { ChartDatum } from './api.models';
+import { ChartDatum, PricePhase } from './api.models';
 import { scrubIndex } from './chart-scrub';
+import { phaseRuns } from './launch-pricing';
 
 interface ChartPoint {
   x: number;
   y: number;
   date: string;
   price: number;
+  phase: PricePhase | null;
 }
+
+/** A shaded stretch behind the line, in SVG units. */
+interface Band {
+  x: number;
+  w: number;
+  phase: PricePhase;
+}
+
+const PHASE_LABEL: Record<PricePhase, string> = {
+  pre_release: 'pre-release',
+  early: 'early pricing',
+};
 
 /**
  * Hand-rolled SVG line chart for one variant's price history.
@@ -22,6 +36,10 @@ interface ChartPoint {
  * collection value without knowing which it is. Points with a null value are
  * dropped rather than plotted as zero: a missing observation is not a value
  * of $0, and connecting across the gap is the better reading.
+ *
+ * A point may carry a launch phase (pre-release, or early pricing while a new
+ * card settles). Those stretches are drawn over a shaded band, so when a
+ * caller does include them they still read as launch pricing, not as trend.
  */
 @Component({
   selector: 'price-chart',
@@ -55,6 +73,16 @@ interface ChartPoint {
                real one is on the variant button above the chart, and a
                dashed line claiming to be it while sitting at a one-month
                peak would be the more confident of the two lies. -->
+          @for (b of bands(); track b.x) {
+            <rect
+              class="band"
+              [class.pre]="b.phase === 'pre_release'"
+              [attr.x]="b.x"
+              [attr.width]="b.w"
+              y="0"
+              [attr.height]="H"
+            />
+          }
           <line
             class="peak-line"
             [attr.x1]="0"
@@ -88,6 +116,9 @@ interface ChartPoint {
           >
             <span class="r-price">{{ h.price | currency }}</span>
             <span class="r-date">{{ h.date }}</span>
+            @if (h.phase) {
+              <span class="r-phase">{{ phaseLabel[h.phase] }}</span>
+            }
           </div>
         }
         </div>
@@ -96,6 +127,16 @@ interface ChartPoint {
           <span class="range">{{ first().date }} → {{ last().date }}</span>
           <span class="hi">high {{ max() | currency }}</span>
         </figcaption>
+        @if (bands().length) {
+          <p class="legend">
+            @if (hasPhase('pre_release')) {
+              <span class="key"><i class="swatch pre"></i>pre-release</span>
+            }
+            @if (hasPhase('early')) {
+              <span class="key"><i class="swatch"></i>early pricing</span>
+            }
+          </p>
+        }
       </figure>
     }
   `,
@@ -156,6 +197,26 @@ interface ChartPoint {
     .readout.flip-right { transform: translateX(0); }
     .r-price { font-weight: 600; }
     .r-date { color: var(--muted); }
+    .r-phase { color: var(--warn); }
+    /* Launch pricing: a tint behind the line, darker before release. */
+    .band { fill: var(--warn); opacity: 0.08; }
+    .band.pre { opacity: 0.16; }
+    .legend {
+      display: flex;
+      gap: 0.9rem;
+      margin: 0.35rem 0 0;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .key { display: inline-flex; align-items: center; gap: 0.3rem; }
+    .swatch {
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 2px;
+      background: var(--warn);
+      opacity: 0.25;
+    }
+    .swatch.pre { opacity: 0.45; }
     .peak-line {
       stroke: var(--line);
       stroke-width: 1;
@@ -180,7 +241,7 @@ interface ChartPoint {
   `,
 })
 export class PriceChart {
-  readonly series = input.required<ChartDatum[]>();
+  readonly series = input.required<readonly ChartDatum[]>();
 
   protected readonly W = 600;
   protected readonly H = 160;
@@ -213,8 +274,30 @@ export class PriceChart {
           : this.H - pad - ((p.value! - lo) / span) * (this.H - pad * 2),
       date: p.date,
       price: p.value!,
+      phase: p.phase ?? null,
     }));
   });
+
+  protected readonly phaseLabel = PHASE_LABEL;
+
+  /**
+   * One shaded rect per run of launch-phase points, reaching half a step
+   * either side of its first and last point so neighbouring runs meet.
+   */
+  protected readonly bands = computed<Band[]>(() => {
+    const pts = this.points();
+    if (pts.length < 2) return [];
+    const half = this.W / (pts.length - 1) / 2;
+    return phaseRuns(pts.map((p) => p.phase)).map((r) => {
+      const x = Math.max(0, pts[r.from].x - half);
+      const end = Math.min(this.W, pts[r.to].x + half);
+      return { x, w: end - x, phase: r.phase };
+    });
+  });
+
+  protected hasPhase(phase: PricePhase): boolean {
+    return this.bands().some((b) => b.phase === phase);
+  }
 
   /**
    * Index of the point under the pointer, or null.

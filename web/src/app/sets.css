@@ -169,6 +169,12 @@ tbody tr:hover td {
 .none {
   color: var(--muted);
 }
+/* A new set with nothing settled to compare yet: a note, not a number. */
+.settling {
+  color: var(--warn);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
 
 .c-top {
   min-width: 17rem;

@@ -7,10 +7,12 @@ import com.cardtracker.db.QueryRepository;
 import com.cardtracker.images.ImageFiles;
 import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ItemVariant;
+import com.cardtracker.model.LaunchPricing;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.javalin.Javalin;
 import io.javalin.http.BadRequestResponse;
+import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 import io.javalin.json.JavalinJackson;
 
@@ -135,6 +137,9 @@ public class ApiServer {
         // despike defaults ON: a price that swings hard and is back the next
         // day is an upstream error, and the median of its neighbours is used
         // instead. Pass despike=false for the raw two-point comparison.
+        //
+        // prerelease=true / early=true count launch pricing toward the change;
+        // both are left out by default (see launchPricing()).
         app.get("/api/sets/overview", ctx -> {
             Integer days = intParam(ctx.queryParam("days"), "days");
             if (days != null && days < 1) {
@@ -144,16 +149,17 @@ public class ApiServer {
                     intParam(ctx.queryParam("game"), "game"),
                     days,
                     dateParam(ctx.queryParam("asOf"), "asOf"),
-                    !"false".equalsIgnoreCase(ctx.queryParam("despike")))));
+                    !"false".equalsIgnoreCase(ctx.queryParam("despike")),
+                    launchPricing(ctx))));
         });
 
         // Biggest movers over a window.
         //   ?days=7&game=3&set=23353&sealed=false&minPrice=1&direction=down
-        //   &smoothing=3&limit=50&modern=true
+        //   &smoothing=3&limit=50&modern=true&prerelease=true&early=true
         // Every parameter is optional: the defaults (7 days, decliners,
-        // singles, $1 floor, 3-day median smoothing, every era) are the
-        // screen's default view and live in item_movers() so psql callers get
-        // them too.
+        // singles, $1 floor, 3-day median smoothing, every era, settled prices
+        // only) are the screen's default view and live in item_movers() so
+        // psql callers get them too.
         app.get("/api/movers", ctx -> {
             String dir = ctx.queryParam("direction");
             if (dir != null && !dir.equals("up") && !dir.equals("down")) {
@@ -178,7 +184,8 @@ public class ApiServer {
                     dir,
                     smoothing,
                     intParam(ctx.queryParam("limit"), "limit"),
-                    "true".equalsIgnoreCase(ctx.queryParam("modern")))));
+                    "true".equalsIgnoreCase(ctx.queryParam("modern")),
+                    launchPricing(ctx))));
         });
 
         // Card / product search. q is required; everything else optional.
@@ -463,6 +470,17 @@ public class ApiServer {
         } catch (NumberFormatException e) {
             throw new BadRequestResponse("productId must be an integer, got '" + raw + "'");
         }
+    }
+
+    /**
+     * ?prerelease=true and ?early=true count launch pricing on a trend screen.
+     * Absent means left out, which is the point: pre-release and early prices
+     * are mostly noise, so only a caller who asks gets them.
+     */
+    private static LaunchPricing launchPricing(Context ctx) {
+        return new LaunchPricing(
+                "true".equalsIgnoreCase(ctx.queryParam("prerelease")),
+                "true".equalsIgnoreCase(ctx.queryParam("early")));
     }
 
     private static Integer intParam(String raw, String name) {

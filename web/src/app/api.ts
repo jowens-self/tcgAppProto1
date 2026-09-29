@@ -76,13 +76,20 @@ export class CardTrackerApi {
    * false for the raw two-point comparison.
    */
   setOverview(
-    opts: { game?: number | null; days?: number; despike?: boolean } = {},
+    opts: {
+      game?: number | null;
+      days?: number;
+      despike?: boolean;
+      includePreRelease?: boolean;
+      includeEarly?: boolean;
+    } = {},
   ): Observable<SetOverview[]> {
     let params = new HttpParams();
     if (opts.game != null) params = params.set('game', opts.game);
     if (opts.days != null) params = params.set('days', opts.days);
     // Only sent when turning it off; the server defaults it on.
     if (opts.despike === false) params = params.set('despike', 'false');
+    params = withLaunchPricing(params, opts);
     return this.http.get<SetOverview[]>(`${this.base}/sets/overview`, { params });
   }
 
@@ -97,6 +104,8 @@ export class CardTrackerApi {
     set?: number | null;
     includeSealed?: boolean;
     modernOnly?: boolean;
+    includePreRelease?: boolean;
+    includeEarly?: boolean;
     minPrice?: number;
     direction?: 'up' | 'down';
     limit?: number;
@@ -110,6 +119,7 @@ export class CardTrackerApi {
     if (opts.minPrice != null) params = params.set('minPrice', opts.minPrice);
     if (opts.direction) params = params.set('direction', opts.direction);
     if (opts.limit != null) params = params.set('limit', opts.limit);
+    params = withLaunchPricing(params, opts);
     return this.http.get<Mover[]>(`${this.base}/movers`, { params });
   }
 
@@ -205,4 +215,17 @@ export class CardTrackerApi {
     if (to) params = params.set('to', to);
     return this.http.get<PricePoint[]>(`${this.base}/items/${productId}/history`, { params });
   }
+}
+
+/**
+ * Launch pricing is left out server-side unless asked for, so each flag is
+ * sent only when it turns something ON, the same way sealed is.
+ */
+function withLaunchPricing(
+  params: HttpParams,
+  opts: { includePreRelease?: boolean; includeEarly?: boolean },
+): HttpParams {
+  if (opts.includePreRelease) params = params.set('prerelease', 'true');
+  if (opts.includeEarly) params = params.set('early', 'true');
+  return params;
 }

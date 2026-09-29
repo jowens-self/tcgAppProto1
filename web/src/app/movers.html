@@ -86,6 +86,28 @@
     />
     Modern only
   </label>
+
+  <!-- Launch pricing starts unticked: both parts are mostly noise. Shared
+       with the other screens and the chart below. -->
+  <label class="sealed" [title]="preReleaseTitle">
+    <input
+      type="checkbox"
+      [ngModel]="launch.includePreRelease()"
+      (ngModelChange)="launch.includePreRelease.set($event); load()"
+      name="includePreRelease"
+    />
+    Include pre-release
+  </label>
+
+  <label class="sealed" [title]="earlyTitle()">
+    <input
+      type="checkbox"
+      [ngModel]="launch.includeEarly()"
+      (ngModelChange)="launch.includeEarly.set($event); load()"
+      name="includeEarly"
+    />
+    Include early pricing
+  </label>
 </form>
 
 @if (error()) {
@@ -122,6 +144,10 @@
 
   @if (modernOnly()) {
     <p class="method">{{ modernNote() }}</p>
+  }
+
+  @if (launchNote(); as note) {
+    <p class="method">{{ note }}</p>
   }
 
   <div class="table-wrap">
@@ -212,6 +238,12 @@
     }
     @if (history().length) {
       <price-chart [series]="chartSeries()" />
+      @if (chartOnlyLaunch()) {
+        <p class="hint">
+          This card hasn't settled yet, so everything here is launch pricing. It's
+          shown anyway rather than an empty chart.
+        </p>
+      }
     } @else {
       <p class="hint">Loading history…</p>
     }
