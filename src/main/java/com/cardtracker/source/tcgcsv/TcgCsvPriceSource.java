@@ -15,6 +15,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -85,7 +87,7 @@ public class TcgCsvPriceSource implements PriceSource {
                     n.path("name").asText(null),
                     n.path("abbreviation").asText(null),
                     n.path("isSupplemental").asBoolean(false),
-                    n.path("publishedOn").asText(null),
+                    releaseDate(n.path("publishedOn").asText(null)),
                     n.path("modifiedOn").asText(null)));
         }
         return out;
@@ -203,6 +205,32 @@ public class TcgCsvPriceSource implements PriceSource {
                     "Could not read the mirror's last-updated timestamp from \"" + trimmed
                     + "\". Refusing to date a pull from the local clock instead - that is"
                     + " what wrote a duplicate day on 2026-08-20.", e);
+        }
+    }
+
+    /**
+     * A set's release date, or null when the catalog does not have one.
+     *
+     * Real release dates arrive at midnight ("2020-02-07T00:00:00"). About
+     * twenty catch-all and promo groups (Miscellaneous Cards & Products, the
+     * POP Series, Burger King Promos) have no date upstream and arrive stamped
+     * with the moment the mirror built the file instead, for example
+     * "2026-09-28T20:00:06.3524870". Stored as-is, that read as a set released
+     * today, every day, and sorted those groups above every real new set.
+     *
+     * Unlike {@link #parseLastUpdated}, this never throws. A release date is
+     * only shown and sorted on, so an unreadable one should cost that set its
+     * date, not stop the price pull.
+     *
+     * Package-private so it can be tested without a request.
+     */
+    static LocalDate releaseDate(String publishedOn) {
+        if (publishedOn == null) return null;
+        try {
+            LocalDateTime at = LocalDateTime.parse(publishedOn.strip().replaceFirst("Z$", ""));
+            return at.toLocalTime().equals(LocalTime.MIDNIGHT) ? at.toLocalDate() : null;
+        } catch (DateTimeParseException e) {
+            return null;
         }
     }
 

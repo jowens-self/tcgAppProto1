@@ -490,7 +490,7 @@ CREATE TABLE IF NOT EXISTS groups (
     name            TEXT NOT NULL,
     abbreviation    TEXT,
     is_supplemental BOOLEAN,
-    published_on    TIMESTAMPTZ,
+    published_on    DATE,          -- release date; NULL when the catalog has none (migration 003)
     modified_on     TIMESTAMPTZ
 );
 

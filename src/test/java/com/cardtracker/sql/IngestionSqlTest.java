@@ -1,6 +1,7 @@
 package com.cardtracker.sql;
 
 import com.cardtracker.db.PriceRepository;
+import com.cardtracker.model.Group;
 import com.cardtracker.model.PriceSnapshot;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -123,5 +124,21 @@ class IngestionSqlTest {
         assertEquals("3", db.scalar(
                 "SELECT category_id::TEXT FROM excluded_products WHERE product_id = 555001"),
                 "category is recorded so the quirk stays scoped to the game it came from");
+    }
+
+    /**
+     * A pull where the catalog sends no date (see
+     * TcgCsvPriceSource.releaseDate) must not erase one we already hold, and
+     * the date must come back as the same calendar day it went in.
+     */
+    @Test
+    void aSetKeepsItsReleaseDateWhenTheCatalogStopsSendingIt() throws Exception {
+        repo.upsertGroup(new Group(990001, 3, "SWSH01: Sword & Shield Base Set", "SWSH01", false,
+                LocalDate.of(2020, 2, 7), null));
+        repo.upsertGroup(new Group(990001, 3, "SWSH01: Sword & Shield Base Set", "SWSH01", false,
+                null, null));
+
+        assertEquals("2020-02-07", db.scalar(
+                "SELECT published_on::TEXT FROM groups WHERE group_id = 990001"));
     }
 }

@@ -104,6 +104,8 @@ public class PriceRepository {
         }
     }
 
+    // COALESCE on the release date: if the catalog stops sending a date we
+    // already hold, keep ours rather than forget it.
     private static final String UPSERT_GROUP = """
             INSERT INTO groups
                 (group_id, category_id, name, abbreviation, is_supplemental, published_on, modified_on)
@@ -111,7 +113,8 @@ public class PriceRepository {
             ON CONFLICT (group_id) DO UPDATE
                 SET name = EXCLUDED.name, abbreviation = EXCLUDED.abbreviation,
                     is_supplemental = EXCLUDED.is_supplemental,
-                    published_on = EXCLUDED.published_on, modified_on = EXCLUDED.modified_on
+                    published_on = COALESCE(EXCLUDED.published_on, groups.published_on),
+                    modified_on = EXCLUDED.modified_on
             """;
 
     public void upsertGroup(Group g) throws Exception {
@@ -121,7 +124,7 @@ public class PriceRepository {
             ps.setString(3, g.name());
             ps.setString(4, g.abbreviation());
             ps.setBoolean(5, g.isSupplemental());
-            setTimestamp(ps, 6, g.publishedOn());
+            ps.setObject(6, g.publishedOn(), Types.DATE);
             setTimestamp(ps, 7, g.modifiedOn());
             ps.executeUpdate();
         }
