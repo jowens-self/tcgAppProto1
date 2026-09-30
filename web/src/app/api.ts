@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Game,
+  GameRules,
   CollectionPoint,
   GameSet,
   Health,
@@ -15,6 +16,7 @@ import {
   Mover,
   PricePoint,
   SetOverview,
+  UserSettings,
 } from './api.models';
 
 /**
@@ -170,6 +172,20 @@ export class CardTrackerApi {
    * magnitude dearer (roughly 110ms for 200 cards over 90 days, ~800ms for
    * 1000), and the table should not wait on the chart.
    */
+  /** The user's preferences; the defaults if they have never saved any. */
+  settings(): Observable<UserSettings> {
+    return this.http.get<UserSettings>(`${this.base}/settings`);
+  }
+
+  saveSettings(settings: UserSettings): Observable<UserSettings> {
+    return this.http.put<UserSettings>(`${this.base}/settings`, settings);
+  }
+
+  /** Sets a game's rules and answers with the game as /games describes it. */
+  saveGameRules(categoryId: number, rules: GameRules): Observable<Game> {
+    return this.http.put<Game>(`${this.base}/games/${categoryId}/rules`, rules);
+  }
+
   collectionValue(days: number): Observable<CollectionPoint[]> {
     return this.http.get<CollectionPoint[]>(`${this.base}/holdings/value`, {
       params: new HttpParams().set('days', days),

@@ -171,7 +171,7 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/health` | Whether price data is still arriving, per game - not just whether the process is up |
-| `GET /api/games` | Tracked games, for a filter dropdown |
+| `GET /api/games` | Tracked games, with each one's rules and how many sets count as modern |
 | `GET /api/items/search?q=` | Card / product search |
 | `GET /api/items/{id}` | One product's identity |
 | `GET /api/items/{id}/variants` | Its variants, with current price + all-time high |
@@ -181,9 +181,12 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | `GET /api/sets/overview` | Every set's value and windowed return |
 | `GET /api/items/{id}/image` | Cached card thumbnail (404 = no image) |
 | `GET /api/holdings?asOf=` | What you hold, priced; `asOf` moves holdings and prices back together |
-| `GET /api/holdings/value?days=` | Collection value per day (default 90, max 1095) |
+| `GET /api/holdings/value?days=` | Collection value and what was paid, per day (default 90, max 1095) |
 | `GET /api/holdings/{id}/history` | Every recorded change to one card's holding |
 | `POST /api/holdings` | Record a holding: appends, and quantity 0 is a sale |
+| `GET /api/settings` | Your preferences (the defaults until you save any) |
+| `PUT /api/settings` | Save them; all three fields required |
+| `PUT /api/games/{id}/rules` | A game's modern cutoff and early-pricing days; answers with the new set counts |
 
 Search takes `q` (required), plus optional `game` (category id),
 `sealed=false` to hide sealed product, `limit` (default 25, capped at 200)
@@ -285,9 +288,25 @@ both that rule and the connection-per-request in `ApiServer.withRepo`.
 
 ## Front end (`web/`)
 
-Angular 22 app over the API. Four screens: card / product search (find an
+Angular 22 app over the API. Five screens: card / product search (find an
 item, see its variants and their prices, chart one's history), Movers, Sets,
-and Collection.
+Collection, and Settings.
+
+A card opens in the same view everywhere: Search's side panel, and on Movers
+right under the row you clicked, with the move that put it on the board.
+
+**Settings** holds two kinds of thing, saved differently on purpose.
+- **Your preferences** save the moment they change and live on the server
+  per user (`user_settings`), so they survive cleared browser data. They are:
+  - "Show what you paid", a dashed line under the collection's value;
+  - the two launch-pricing boxes, which are the same setting as the boxes on
+    Movers and Sets.
+- **Game rules** take an explicit Save, because they change what every
+  trend screen counts:
+  - where "modern" starts, picked from the game's sets by release date;
+  - how many weeks early pricing lasts.
+  The answer says how many sets the new cutoff takes in, counted by the
+  server's own rule.
 
 Collection is what you own, priced. Adding is search-then-pick rather than
 free text, because a holding is keyed by (product, variant) and a variant the
@@ -325,7 +344,11 @@ Structure, all standalone components with signals:
 | `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration, modern filter |
 | `modern-rule.ts` | The sentence explaining what "Modern only" means for the game on screen |
 | `launch-pricing.ts` | The shared launch-pricing checkboxes, and which chart points they keep |
-| `price-chart.ts` | Hand-rolled SVG line chart, no charting library; hover or drag to read any day |
+| `price-chart.ts` | Hand-rolled SVG line chart, no charting library; hover or drag to read any day; optional dashed second line |
+| `card-detail.ts/.html/.css` | The one card view: picture, variants, range, chart; used by Search and Movers |
+| `settings.ts/.html/.css` | Settings screen: preferences and game rules |
+| `user-prefs.ts` | Your preferences as signals, loaded before the app draws, saved on change |
+| `modern-cutoff.ts` | A game's release dates as "modern starts with" choices |
 | `collection.ts/.html/.css` | Collection screen: add cards, value chart, totals, per-card history |
 | `holding-totals.ts` | Collection totals, skipping unknown prices and costs rather than zeroing them |
 | `chart-scrub.ts` | Which chart point sits under the cursor |
@@ -343,7 +366,8 @@ observation isn't a price of $0.
 early pricing". Both start unticked, because both are mostly noise.
 - **Where they appear:** on Movers and Sets, and on a Search chart when that
   card has launch pricing.
-- **One setting for the whole app,** remembered in the browser.
+- **One setting for the whole app,** saved with your settings on the server,
+  and also on the Settings screen.
 - **Unticked:** that part is left out of the Movers board, of a set's change,
   and of charts.
 - **Ticked:** it comes back, drawn over a shaded band so it still reads as

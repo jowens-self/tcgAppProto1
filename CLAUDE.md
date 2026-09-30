@@ -40,6 +40,12 @@ below).
 
 Behaviour worth knowing before reading the code, newest first:
 
+- **Settings are two things, stored apart on purpose.** Preferences (the
+  "what you paid" chart line, the launch-pricing boxes) are per user in
+  `user_settings`, saved on change and loaded before the app draws
+  (`UserPrefs`). Game rules (`modern_since`, `early_days`) are per game in
+  `tracked_categories` and shared, because they define what the data means.
+  Preferences are updated in place, unlike holdings: they are not history.
 - **Launch pricing is left out of trends by default** (Part 46; migration
   005 has the numbers). Prices from before a card's release, and from its first
   `early_days` after it, are mostly noise: preorders sit at ~3x where a card

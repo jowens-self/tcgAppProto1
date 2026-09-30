@@ -81,6 +81,13 @@ class ApiContractTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    private static HttpResponse<String> put(String path, String json) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create(base + path))
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(json)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     // ------------------------------------------------------------------
     // Holdings: the only writing endpoints.
     // ------------------------------------------------------------------
@@ -188,6 +195,133 @@ class ApiContractTest {
         // Cost grows with the window, and past a few hundred days the extra
         // points are sub-pixel anyway, so it refuses rather than grinding.
         assertEquals(400, get("/holdings/value?days=2000").statusCode());
+    }
+
+    /**
+     * The "what you paid" line ends on the Cost total, for the same reason the
+     * value line ends on the Value total. The table counts quantity x cost for
+     * holdings with a cost and leaves the rest out; the chart must do the same
+     * or the two lines on one screen tell different stories.
+     *
+     * Adds a holding with NO cost, so the comparison would catch a chart that
+     * counted it as free, or a table that stopped skipping it.
+     */
+    @Test
+    void chartCostEndsOnTheCostTotal() throws Exception {
+        assertEquals(201, post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Holofoil","condition":"Lightly Played","quantity":4,"costBasis":12.50}
+                """).statusCode());
+        assertEquals(201, post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Holofoil","condition":"Damaged","quantity":1}
+                """).statusCode());
+
+        ObjectMapper json = new ObjectMapper();
+        JsonNode points = json.readTree(get("/holdings/value?days=30").body());
+        JsonNode last = points.get(points.size() - 1);
+
+        BigDecimal tableCost = BigDecimal.ZERO;
+        int tableUncosted = 0;
+        for (JsonNode h : json.readTree(get("/holdings").body())) {
+            if (h.get("costBasis").isNull()) {
+                tableUncosted++;
+            } else {
+                tableCost = tableCost.add(
+                        h.get("costBasis").decimalValue().multiply(BigDecimal.valueOf(h.get("quantity").asInt())));
+            }
+        }
+        assertTrue(tableCost.signum() > 0, "nothing to compare - no holding had a cost");
+        assertEquals(0, last.get("cost").decimalValue().compareTo(tableCost),
+                "chart's paid line ends at " + last.get("cost") + " but the table's cost is " + tableCost);
+        assertEquals(tableUncosted, last.get("uncosted").asInt(),
+                "the chart must count the same uncosted holdings the table leaves out");
+        assertTrue(tableUncosted > 0, "the uncosted holding should be counted, not priced at $0");
+    }
+
+    // ------------------------------------------------------------------
+    // Settings
+    // ------------------------------------------------------------------
+
+    /** No row yet means the defaults; a save round-trips; the next read sees it. */
+    @Test
+    void settingsStartAtTheDefaultsAndSave() throws Exception {
+        try {
+            assertEquals("""
+                    {"showCostLine":false,"includePreRelease":false,"includeEarly":false}""",
+                    get("/settings").body());
+
+            HttpResponse<String> saved = put("/settings",
+                    """
+                    {"showCostLine":true,"includePreRelease":false,"includeEarly":true}
+                    """);
+            assertEquals(200, saved.statusCode(), saved.body());
+            assertEquals("""
+                    {"showCostLine":true,"includePreRelease":false,"includeEarly":true}""",
+                    get("/settings").body());
+        } finally {
+            put("/settings", """
+                    {"showCostLine":false,"includePreRelease":false,"includeEarly":false}
+                    """);
+        }
+    }
+
+    /** A missing field would have to be guessed, and a guess changes a preference. */
+    @Test
+    void aPartialSettingsBodyIsRefused() throws Exception {
+        assertEquals(400, put("/settings", """
+                {"showCostLine":true}
+                """).statusCode());
+        assertEquals(400, put("/settings", "not json").statusCode(),
+                "an unreadable body is the caller's mistake, so a 400, not a 500");
+    }
+
+    /**
+     * Moving a game's modern cutoff changes what counts, and the answer comes
+     * from the same rule every screen uses. The fixtures' Pokemon sets are
+     * dated 1999, 1999, 2018 and 2023, so the Sword & Shield cutoff takes in
+     * one of them and no cutoff takes in all four.
+     */
+    @Test
+    void gameRulesChangeWhatCountsAsModern() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        try {
+            JsonNode everything = json.readTree(put("/games/3/rules",
+                    """
+                    {"modernSince":null,"earlyDays":70}
+                    """).body());
+            assertTrue(everything.get("modernSince").isNull());
+            assertEquals(70, everything.get("earlyDays").asInt());
+            assertEquals(everything.get("setCount").asInt(), everything.get("modernSetCount").asInt(),
+                    "with no cutoff, every set is modern");
+
+            JsonNode swsh = json.readTree(put("/games/3/rules",
+                    """
+                    {"modernSince":"2019-11-15","earlyDays":56}
+                    """).body());
+            assertEquals("2019-11-15", swsh.get("modernSince").asText());
+            assertEquals(1, swsh.get("modernSetCount").asInt(), "only 151 (2023) is after 2019-11-15");
+        } finally {
+            put("/games/3/rules", """
+                    {"modernSince":"2019-11-15","earlyDays":56}
+                    """);
+        }
+    }
+
+    @Test
+    void badGameRulesAreRefused() throws Exception {
+        assertEquals(400, put("/games/3/rules", """
+                {"modernSince":"2019-11-15","earlyDays":-1}
+                """).statusCode(), "a negative early period");
+        assertEquals(400, put("/games/3/rules", """
+                {"modernSince":"2019-11-15"}
+                """).statusCode(), "no early period at all");
+        assertEquals(400, put("/games/3/rules", """
+                {"modernSince":"not a date","earlyDays":56}
+                """).statusCode(), "a date that isn't one");
+        assertEquals(404, put("/games/999/rules", """
+                {"modernSince":null,"earlyDays":56}
+                """).statusCode(), "a game that isn't tracked");
     }
 
     // ------------------------------------------------------------------

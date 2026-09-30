@@ -5,12 +5,12 @@ import { CardTrackerApi } from './api';
 import { Game, SetOverview } from './api.models';
 import { defaultGame } from './game-default';
 import {
-  LaunchPricingPrefs,
   PRE_RELEASE_TITLE,
   earlyPricingTitle,
   earlyWeeks,
   launchNote,
 } from './launch-pricing';
+import { UserPrefs } from './user-prefs';
 import { modernRule } from './modern-rule';
 
 /** Columns the table can be ordered by. */
@@ -96,7 +96,7 @@ export class Sets {
    * modern, because it changes which cards are in the comparison. Shared
    * with the other screens.
    */
-  protected readonly launch = inject(LaunchPricingPrefs);
+  protected readonly launch = inject(UserPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
 
   /**

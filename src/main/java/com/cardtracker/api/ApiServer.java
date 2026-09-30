@@ -4,10 +4,12 @@ import com.cardtracker.Env;
 import com.cardtracker.ImageDir;
 import com.cardtracker.db.HoldingsRepository;
 import com.cardtracker.db.QueryRepository;
+import com.cardtracker.db.SettingsRepository;
 import com.cardtracker.images.ImageFiles;
 import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ItemVariant;
 import com.cardtracker.model.LaunchPricing;
+import com.cardtracker.model.UserSettings;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.javalin.Javalin;
@@ -381,7 +383,75 @@ public class ApiServer {
             }));
         });
 
+        // --- settings -------------------------------------------------
+        //
+        // What the Settings screen reads and writes. Preferences are per user
+        // (LOCAL_USER until sign-in exists). Game rules are per game and
+        // shared, because they define what the data means rather than how
+        // one person likes to see it.
+
+        app.get("/api/settings", ctx -> ctx.json(withConn(url, user, pass,
+                conn -> new SettingsRepository(conn).get(LOCAL_USER))));
+
+        // Every field is required. A partial body would mean guessing the
+        // rest, and a guessed preference is a changed preference.
+        app.put("/api/settings", ctx -> {
+            SettingsRequest req = body(ctx, SettingsRequest.class);
+            if (req.showCostLine() == null || req.includePreRelease() == null
+                    || req.includeEarly() == null) {
+                throw new BadRequestResponse(
+                        "showCostLine, includePreRelease and includeEarly are all required");
+            }
+            ctx.json(withConn(url, user, pass, conn -> new SettingsRepository(conn).save(LOCAL_USER,
+                    new UserSettings(req.showCostLine(), req.includePreRelease(), req.includeEarly()))));
+        });
+
+        // One game's rules: where "modern" starts (null means every set) and
+        // how many days after release a card's prices count as early. Answers
+        // with the game as /api/games describes it, including how many sets
+        // the new cutoff takes in, counted by the same rule every screen uses.
+        app.put("/api/games/{categoryId}/rules", ctx -> {
+            int id = pathId(ctx.pathParam("categoryId"));
+            GameRulesRequest req = body(ctx, GameRulesRequest.class);
+            if (req.earlyDays() == null || req.earlyDays() < 0 || req.earlyDays() > 365) {
+                throw new BadRequestResponse("earlyDays must be between 0 and 365");
+            }
+            ctx.json(withConn(url, user, pass, conn -> {
+                if (!new SettingsRepository(conn).saveGameRules(id, req.modernSince(), req.earlyDays())) {
+                    throw new NotFoundResponse("Game " + id + " is not tracked");
+                }
+                return new QueryRepository(conn).games().stream()
+                        .filter(g -> g.categoryId() == id)
+                        .findFirst()
+                        .orElseThrow();
+            }));
+        });
+
         return app;
+    }
+
+    /** Body of PUT /api/settings. Boxed so a missing field can be told from false. */
+    public record SettingsRequest(Boolean showCostLine, Boolean includePreRelease,
+                                  Boolean includeEarly) {
+    }
+
+    /** Body of PUT /api/games/{id}/rules. modernSince null means every set is modern. */
+    public record GameRulesRequest(LocalDate modernSince, Integer earlyDays) {
+    }
+
+    /**
+     * A request body, or a 400 saying it couldn't be read. Without this a
+     * malformed date or a string where a number belongs surfaces as a 500,
+     * which blames the server for the caller's typo.
+     */
+    private static <T> T body(Context ctx, Class<T> type) {
+        try {
+            return ctx.bodyAsClass(type);
+        } catch (Exception e) {
+            // Exception, not RuntimeException: Javalin is Kotlin, and Jackson's
+            // parse errors are checked exceptions it can throw undeclared.
+            throw new BadRequestResponse("Could not read the request body: " + e.getMessage());
+        }
     }
 
     /**

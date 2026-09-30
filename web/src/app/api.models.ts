@@ -17,6 +17,27 @@ export interface Game {
   modernSince: string | null;
   /** How many days after release a card's prices count as early pricing. */
   earlyDays: number;
+  /** Sets in the game, and how many the modern rule takes in (counted server-side). */
+  setCount: number;
+  modernSetCount: number;
+}
+
+/**
+ * One user's preferences, from GET /api/settings. Saved on the server rather
+ * than in the browser, so they survive cleared site data and follow the user.
+ */
+export interface UserSettings {
+  /** Draw what was paid under the collection's value line. */
+  showCostLine: boolean;
+  /** The launch-pricing boxes on Movers, Sets and card charts. */
+  includePreRelease: boolean;
+  includeEarly: boolean;
+}
+
+/** Body of PUT /api/games/{id}/rules. modernSince null means every set is modern. */
+export interface GameRules {
+  modernSince: string | null;
+  earlyDays: number;
 }
 
 /**
@@ -336,4 +357,8 @@ export interface CollectionPoint {
   value: number;
   positions: number;
   unpriced: number;
+  /** What was paid for the cards held that day; cards with no cost are left out. */
+  cost: number;
+  /** Holdings that day with no purchase price, so absent from cost. */
+  uncosted: number;
 }

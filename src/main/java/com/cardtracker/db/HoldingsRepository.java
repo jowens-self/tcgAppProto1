@@ -168,7 +168,9 @@ public final class HoldingsRepository {
                             rs.getObject("d", LocalDate.class),
                             rs.getBigDecimal("value"),
                             rs.getInt("positions"),
-                            rs.getInt("unpriced")));
+                            rs.getInt("unpriced"),
+                            rs.getBigDecimal("cost"),
+                            rs.getInt("uncosted")));
                 }
             }
         }

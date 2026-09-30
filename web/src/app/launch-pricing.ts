@@ -1,46 +1,4 @@
-import { Injectable, effect, signal } from '@angular/core';
 import { Game, PricePhase } from './api.models';
-
-/**
- * Whether trend views count launch pricing: prices from before a card's
- * release, and from its first weeks while it settles. Both are mostly noise
- * (a week before release, cards sit at about 3x where they settle), so both
- * start unticked.
- *
- * One setting for the whole app rather than one per screen: it answers "do I
- * want to see launch pricing", which doesn't change between Movers and a
- * chart. Remembered in this browser only, as a convenience; if storage is
- * unavailable the app just starts from the defaults.
- */
-@Injectable({ providedIn: 'root' })
-export class LaunchPricingPrefs {
-  readonly includePreRelease = signal(load(PRE_RELEASE_KEY));
-  readonly includeEarly = signal(load(EARLY_KEY));
-
-  constructor() {
-    effect(() => save(PRE_RELEASE_KEY, this.includePreRelease()));
-    effect(() => save(EARLY_KEY, this.includeEarly()));
-  }
-}
-
-const PRE_RELEASE_KEY = 'cardtracker.includePreRelease';
-const EARLY_KEY = 'cardtracker.includeEarly';
-
-function load(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function save(key: string, value: boolean): void {
-  try {
-    localStorage.setItem(key, String(value));
-  } catch {
-    // Private window or blocked storage: the setting lasts this visit only.
-  }
-}
 
 /**
  * The points a chart should draw, given which launch pricing is ticked.

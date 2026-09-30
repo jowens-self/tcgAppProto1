@@ -40,6 +40,10 @@ const PHASE_LABEL: Record<PricePhase, string> = {
  * A point may carry a launch phase (pre-release, or early pricing while a new
  * card settles). Those stretches are drawn over a shaded band, so when a
  * caller does include them they still read as launch pricing, not as trend.
+ *
+ * An optional `compare` series (the collection's "what you paid") is drawn as
+ * a dashed line on the same scale, matched to the main series by date, and
+ * named in the readout and a legend.
  */
 @Component({
   selector: 'price-chart',
@@ -91,6 +95,9 @@ const PHASE_LABEL: Record<PricePhase, string> = {
             [attr.y2]="peakY()"
           />
           <path class="area" [attr.d]="areaPath()" />
+          @if (comparePath()) {
+            <path class="compare-line" [attr.d]="comparePath()" />
+          }
           <path class="line" [attr.d]="linePath()" />
           <circle class="dot" [attr.cx]="last().x" [attr.cy]="last().y" r="4" />
           @if (hovered(); as h) {
@@ -114,7 +121,15 @@ const PHASE_LABEL: Record<PricePhase, string> = {
             [class.flip-left]="h.x / W > 0.7"
             [class.flip-right]="h.x / W < 0.3"
           >
-            <span class="r-price">{{ h.price | currency }}</span>
+            @if (hasCompare()) {
+              @let paid = compareOn(h.date);
+              <span class="r-price">{{ label() }} {{ h.price | currency }}</span>
+              @if (paid !== null) {
+                <span class="r-compare">{{ compareLabel() }} {{ paid | currency }}</span>
+              }
+            } @else {
+              <span class="r-price">{{ h.price | currency }}</span>
+            }
             <span class="r-date">{{ h.date }}</span>
             @if (h.phase) {
               <span class="r-phase">{{ phaseLabel[h.phase] }}</span>
@@ -127,6 +142,12 @@ const PHASE_LABEL: Record<PricePhase, string> = {
           <span class="range">{{ first().date }} → {{ last().date }}</span>
           <span class="hi">high {{ max() | currency }}</span>
         </figcaption>
+        @if (hasCompare()) {
+          <p class="legend">
+            <span class="key"><i class="line-key"></i>{{ label() }}</span>
+            <span class="key"><i class="line-key dashed"></i>{{ compareLabel() }}</span>
+          </p>
+        }
         @if (bands().length) {
           <p class="legend">
             @if (hasPhase('pre_release')) {
@@ -198,6 +219,19 @@ const PHASE_LABEL: Record<PricePhase, string> = {
     .r-price { font-weight: 600; }
     .r-date { color: var(--muted); }
     .r-phase { color: var(--warn); }
+    .r-compare { color: var(--muted); }
+    .compare-line {
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1.5;
+      stroke-dasharray: 5 4;
+      vector-effect: non-scaling-stroke;
+    }
+    .line-key {
+      width: 1.1rem;
+      border-top: 2px solid var(--accent);
+    }
+    .line-key.dashed { border-top: 2px dashed var(--muted); }
     /* Launch pricing: a tint behind the line, darker before release. */
     .band { fill: var(--warn); opacity: 0.08; }
     .band.pre { opacity: 0.16; }
@@ -242,6 +276,11 @@ const PHASE_LABEL: Record<PricePhase, string> = {
 })
 export class PriceChart {
   readonly series = input.required<readonly ChartDatum[]>();
+  /** A second line on the same scale, matched by date. */
+  readonly compare = input<readonly ChartDatum[] | null>(null);
+  /** Names for the two lines, shown only when there are two. */
+  readonly label = input('');
+  readonly compareLabel = input('');
 
   protected readonly W = 600;
   protected readonly H = 160;
@@ -258,24 +297,60 @@ export class PriceChart {
     Math.max(...this.usable().map((p) => p.value!)),
   );
 
+  /** The compare series by date, for the few days both series have. */
+  private readonly compareByDate = computed(() => {
+    const map = new Map<string, number>();
+    for (const p of this.compare() ?? []) if (p.value != null) map.set(p.date, p.value);
+    return map;
+  });
+
+  protected readonly hasCompare = computed(() => this.compareByDate().size > 0);
+
+  /**
+   * The vertical scale, which must fit both lines when there are two. The
+   * caption's low and high stay the main series' own, because that's what
+   * they are labelled as.
+   */
+  private readonly scale = computed(() => {
+    const values = this.usable().map((p) => p.value!);
+    for (const v of this.compareByDate().values()) values.push(v);
+    return { lo: Math.min(...values), hi: Math.max(...values) };
+  });
+
+  private y(value: number): number {
+    const { lo, hi } = this.scale();
+    const pad = 8;
+    // A dead-flat series would divide by zero; render it mid-height.
+    return hi === lo ? this.H / 2 : this.H - pad - ((value - lo) / (hi - lo)) * (this.H - pad * 2);
+  }
+
+  protected compareOn(date: string): number | null {
+    return this.compareByDate().get(date) ?? null;
+  }
+
   protected readonly points = computed<ChartPoint[]>(() => {
     const pts = this.usable();
     if (pts.length < 2) return [];
-    const lo = this.min();
-    const hi = this.max();
-    // A dead-flat series would divide by zero; render it mid-height.
-    const span = hi - lo || 1;
-    const pad = 8;
     return pts.map((p, i) => ({
       x: (i / (pts.length - 1)) * this.W,
-      y:
-        hi === lo
-          ? this.H / 2
-          : this.H - pad - ((p.value! - lo) / span) * (this.H - pad * 2),
+      y: this.y(p.value!),
       date: p.date,
       price: p.value!,
       phase: p.phase ?? null,
     }));
+  });
+
+  /** The compare line, drawn only through days the main series also has. */
+  protected readonly comparePath = computed(() => {
+    const byDate = this.compareByDate();
+    if (!byDate.size) return '';
+    const segs: string[] = [];
+    for (const p of this.points()) {
+      const v = byDate.get(p.date);
+      if (v === undefined) continue;
+      segs.push(`${segs.length ? 'L' : 'M'}${p.x.toFixed(2)},${this.y(v).toFixed(2)}`);
+    }
+    return segs.length > 1 ? segs.join(' ') : '';
   });
 
   protected readonly phaseLabel = PHASE_LABEL;

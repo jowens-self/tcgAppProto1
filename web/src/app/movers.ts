@@ -7,12 +7,12 @@ import { CardDetail, CardMove } from './card-detail';
 import { defaultGame } from './game-default';
 import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
 import {
-  LaunchPricingPrefs,
   PRE_RELEASE_TITLE,
   earlyPricingTitle,
   earlyWeeks,
   launchNote,
 } from './launch-pricing';
+import { UserPrefs } from './user-prefs';
 import { modernRule } from './modern-rule';
 
 /**
@@ -61,7 +61,7 @@ export class Movers {
   );
 
   /** Whether launch pricing counts. Shared with every screen and the open card. */
-  protected readonly launch = inject(LaunchPricingPrefs);
+  protected readonly launch = inject(UserPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
 
   protected game: number | null = null;

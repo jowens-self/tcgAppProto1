@@ -15,13 +15,13 @@ import { CardTrackerApi } from './api';
 import { ChartDatum, Game, ImageProvenance, ItemVariant, PricePoint } from './api.models';
 import { HISTORY_WINDOWS, HistoryWindow, windowStart } from './history-window';
 import {
-  LaunchPricingPrefs,
   PRE_RELEASE_TITLE,
   chartablePoints,
   earlyPricingTitle,
   earlyWeeks,
   hasLaunchPricing,
 } from './launch-pricing';
+import { UserPrefs } from './user-prefs';
 import { PriceChart } from './price-chart';
 import { variantLabelAddsInfo } from './variant-label';
 
@@ -87,7 +87,7 @@ export class CardDetail {
 
   protected readonly chartWindows = HISTORY_WINDOWS;
   protected readonly variantLabelAddsInfo = variantLabelAddsInfo;
-  protected readonly launch = inject(LaunchPricingPrefs);
+  protected readonly launch = inject(UserPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
 
   protected readonly variants = signal<ItemVariant[]>([]);

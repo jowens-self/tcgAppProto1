@@ -3,7 +3,7 @@ import { CollectionPoint } from './api.models';
 import { drawableSeries } from './collection-series';
 
 const pt = (date: string, value: number, positions: number, unpriced = 0): CollectionPoint =>
-  ({ date, value, positions, unpriced });
+  ({ date, value, positions, unpriced, cost: 0, uncosted: 0 });
 
 describe('drawableSeries', () => {
   it('draws nothing for an empty series', () => {

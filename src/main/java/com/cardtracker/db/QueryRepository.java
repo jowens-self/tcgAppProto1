@@ -224,7 +224,12 @@ public class QueryRepository {
                 SELECT tc.category_id, COALESCE(c.name, tc.name) AS name,
                        (SELECT COUNT(*) FROM products p
                          WHERE p.category_id = tc.category_id)::INT AS product_count,
-                       tc.modern_since, tc.early_days
+                       tc.modern_since, tc.early_days,
+                       (SELECT COUNT(*) FROM groups g
+                         WHERE g.category_id = tc.category_id)::INT AS set_count,
+                       (SELECT COUNT(*) FROM groups g
+                          JOIN modern_group_ids() m ON m.group_id = g.group_id
+                         WHERE g.category_id = tc.category_id)::INT AS modern_set_count
                   FROM tracked_categories tc
                   LEFT JOIN categories c ON c.category_id = tc.category_id
                  ORDER BY name
@@ -235,7 +240,8 @@ public class QueryRepository {
             while (rs.next()) {
                 out.add(new Game(rs.getInt("category_id"), rs.getString("name"),
                         rs.getInt("product_count"), localDate(rs.getDate("modern_since")),
-                        rs.getInt("early_days")));
+                        rs.getInt("early_days"), rs.getInt("set_count"),
+                        rs.getInt("modern_set_count")));
             }
             return out;
         }
@@ -245,10 +251,12 @@ public class QueryRepository {
      * A tracked game, for filter UI. {@code modernSince} is where its modern
      * era starts, null when every set counts; {@code earlyDays} is how long a
      * new card's prices count as early pricing. Both are carried so a screen
-     * can say what its filters mean without restating the rules.
+     * can say what its filters mean without restating the rules, and
+     * {@code modernSetCount} of {@code setCount} is what the modern rule
+     * currently takes in, counted by modern_group_ids() itself.
      */
     public record Game(int categoryId, String name, int productCount, LocalDate modernSince,
-                       int earlyDays) {
+                       int earlyDays, int setCount, int modernSetCount) {
     }
 
     /** A set within a game, for the movers screen's set filter. */

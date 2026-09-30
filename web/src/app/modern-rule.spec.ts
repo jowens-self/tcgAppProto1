@@ -8,6 +8,8 @@ const pokemon: Game = {
   productCount: 31_581,
   modernSince: '2019-11-15',
   earlyDays: 56,
+  setCount: 0,
+  modernSetCount: 0,
 };
 const onePiece: Game = {
   categoryId: 68,
@@ -15,6 +17,8 @@ const onePiece: Game = {
   productCount: 7_676,
   modernSince: null,
   earlyDays: 56,
+  setCount: 0,
+  modernSetCount: 0,
 };
 
 /** The sentence under the "Modern only" box, which has to match the server's rule. */

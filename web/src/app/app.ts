@@ -5,11 +5,12 @@ import { Collection } from './collection';
 import { Movers } from './movers';
 import { Search } from './search';
 import { Sets } from './sets';
+import { Settings } from './settings';
 
-type Tab = 'search' | 'movers' | 'sets' | 'collection';
+type Tab = 'search' | 'movers' | 'sets' | 'collection' | 'settings';
 
 /**
- * Four screens, switched by a signal rather than the router. Nothing needs a
+ * Five screens, switched by a signal rather than the router. Nothing needs a
  * deep link yet, so wiring up @angular/router would be ceremony. Revisit when
  * a screen does need its own URL, for sharing a link or for browser
  * back/forward. Collection makes that closer than it was: it is the first
@@ -18,7 +19,7 @@ type Tab = 'search' | 'movers' | 'sets' | 'collection';
  */
 @Component({
   selector: 'app-root',
-  imports: [Search, Movers, Sets, Collection],
+  imports: [Search, Movers, Sets, Collection, Settings],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

@@ -1651,6 +1651,16 @@ $$ LANGUAGE sql STABLE;
 --
 -- unpriced counts positions held that day with no price at all, so the caller
 -- can say what the figure leaves out instead of quietly understating it.
+--
+-- cost is what was paid for the cards held that day (quantity x cost_basis,
+-- from the same entry the quantity came from), for the Settings option that
+-- draws it under the value line. uncosted counts positions with no purchase
+-- price, which are absent from cost rather than counted as free, the same
+-- rule holding-totals.ts applies to the total. The last point's cost equals
+-- the Cost total on the screen, for the same reason its value does.
+--
+-- Dropped first because cost and uncosted changed the return type.
+DROP FUNCTION IF EXISTS collection_value(BIGINT, DATE, DATE);
 CREATE OR REPLACE FUNCTION collection_value(
     p_user_id BIGINT,
     p_from    DATE,
@@ -1659,7 +1669,9 @@ CREATE OR REPLACE FUNCTION collection_value(
     d         DATE,
     value     NUMERIC,
     positions INTEGER,
-    unpriced  INTEGER
+    unpriced  INTEGER,
+    cost      NUMERIC,
+    uncosted  INTEGER
 ) AS $$
     WITH days AS (
         SELECT generate_series(p_from, p_to, INTERVAL '1 day')::DATE AS d
@@ -1674,7 +1686,7 @@ CREATE OR REPLACE FUNCTION collection_value(
     -- one day resolve the same way current_holdings() resolves them: the later
     -- one gets an interval of zero length and drops out of the range join.
     events AS (
-        SELECT h.product_id, h.sub_type_name, h.quantity,
+        SELECT h.product_id, h.sub_type_name, h.quantity, h.cost_basis,
                h.snapshot_date AS valid_from,
                LEAD(h.snapshot_date) OVER (
                    PARTITION BY h.product_id, h.sub_type_name, h.condition
@@ -1683,7 +1695,7 @@ CREATE OR REPLACE FUNCTION collection_value(
          WHERE h.user_id = p_user_id
     ),
     held AS (
-        SELECT days.d, e.product_id, e.sub_type_name, e.quantity
+        SELECT days.d, e.product_id, e.sub_type_name, e.quantity, e.cost_basis
           FROM days
           JOIN events e
             ON days.d >= e.valid_from
@@ -1696,7 +1708,10 @@ CREATE OR REPLACE FUNCTION collection_value(
            COALESCE(SUM(held.quantity * px.market_price), 0)::NUMERIC,
            COUNT(held.product_id)::INTEGER,
            COUNT(*) FILTER (WHERE held.product_id IS NOT NULL
-                              AND px.market_price IS NULL)::INTEGER
+                              AND px.market_price IS NULL)::INTEGER,
+           COALESCE(SUM(held.quantity * held.cost_basis), 0)::NUMERIC,
+           COUNT(*) FILTER (WHERE held.product_id IS NOT NULL
+                              AND held.cost_basis IS NULL)::INTEGER
       FROM days
       LEFT JOIN held ON held.d = days.d
       -- A lateral per (line, day), and deliberately so. Fetching the window's

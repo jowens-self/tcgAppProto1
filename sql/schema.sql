@@ -604,6 +604,17 @@ ON CONFLICT (email) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('users', 'user_id'),
               GREATEST((SELECT MAX(user_id) FROM users), 1));
 
+-- One row of preferences per user, created on first save; no row means the
+-- defaults. Updated in place: preferences are not history. Game rules are
+-- per game in tracked_categories, not here. Why: migration 006.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id            BIGINT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    show_cost_line     BOOLEAN NOT NULL DEFAULT FALSE,
+    include_prerelease BOOLEAN NOT NULL DEFAULT FALSE,
+    include_early      BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Your own holdings. Two ways in, both owner-driven: rows entered by hand in
 -- the app, and a bulk Seller Portal CSV export. Neither has the app logging in
 -- anywhere on your behalf; see CLAUDE.md.

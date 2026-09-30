@@ -28,6 +28,10 @@
   border-color: var(--accent);
   background: var(--accent-fade);
 }
+/* Set apart at the far end: a place you visit, not one of the views. */
+.settings-tab {
+  margin-left: auto;
+}
 
 /* Deliberately loud and above the tabs: Part 40's failure was silent, and the
    app looked entirely healthy while serving data that had stopped updating. */

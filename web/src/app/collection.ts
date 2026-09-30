@@ -14,6 +14,7 @@ import {
 import { PriceChart } from './price-chart';
 import { drawableSeries } from './collection-series';
 import { holdingTotals } from './holding-totals';
+import { UserPrefs } from './user-prefs';
 
 /** Columns the table can be ordered by. */
 type SortKey = 'card' | 'qty' | 'value' | 'gain';
@@ -297,6 +298,24 @@ export class Collection {
   protected readonly chartSeries = computed<ChartDatum[]>(() =>
     this.drawn().map((p) => ({ date: p.date, value: p.value })),
   );
+
+  /**
+   * What was paid for the cards held each day, drawn under the value when
+   * that's switched on in Settings. Null when it's off, which draws nothing.
+   */
+  private readonly prefs = inject(UserPrefs);
+  protected readonly costSeries = computed<ChartDatum[] | null>(() =>
+    this.prefs.showCostLine()
+      ? this.drawn().map((p) => ({ date: p.date, value: p.cost }))
+      : null,
+  );
+
+  /**
+   * Holdings on the chart's last day with no purchase price. They're in the
+   * value line and not the paid one, so the gap between the two overstates
+   * the gain by their value, and the note under the chart says so.
+   */
+  protected readonly uncostedNow = computed(() => this.drawn().at(-1)?.uncosted ?? 0);
 
   /**
    * Days where at least one held card had no price. Their value is missing

@@ -43,6 +43,15 @@
   >
     Collection
   </button>
+  <button
+    type="button"
+    class="tab settings-tab"
+    [class.active]="tab() === 'settings'"
+    [attr.aria-current]="tab() === 'settings' ? 'page' : null"
+    (click)="tab.set('settings')"
+  >
+    Settings
+  </button>
 </nav>
 
 @if (tab() === 'search') {
@@ -51,6 +60,8 @@
   <app-movers />
 } @else if (tab() === 'sets') {
   <app-sets />
-} @else {
+} @else if (tab() === 'collection') {
   <app-collection />
+} @else {
+  <app-settings />
 }

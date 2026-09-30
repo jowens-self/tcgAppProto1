@@ -143,10 +143,20 @@
         recorded something.
       </p>
     } @else {
-      <price-chart [series]="chartSeries()" />
+      <price-chart
+        [series]="chartSeries()"
+        [compare]="costSeries()"
+        label="Value"
+        compareLabel="Paid"
+      />
       <p class="method">
         What you actually held on each day, at that day's prices - not today's
         cards priced backwards.
+        @if (costSeries() && uncostedNow()) {
+          {{ uncostedNow() }} holding{{ uncostedNow() === 1 ? ' has' : 's have' }} no
+          purchase price, so {{ uncostedNow() === 1 ? "it's" : "they're" }} in the value
+          line but not the paid one.
+        }
         @if (chartGaps()) {
           {{ chartGaps() }} day{{ chartGaps() === 1 ? '' : 's' }} had a card with
           no price; the last known price is carried across rather than counted
