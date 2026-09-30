@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
 import { Game } from './api.models';
-import { PRE_RELEASE_TITLE, earlyPricingTitle } from './launch-pricing';
+import { FLIPPING_TITLE, PRE_RELEASE_TITLE, earlyPricingTitle } from './launch-pricing';
 import { CutoffYear, cutoffYears, isListedCutoff } from './modern-cutoff';
 import { UserPrefs } from './user-prefs';
 
@@ -48,6 +48,7 @@ export class Settings {
   private readonly api = inject(CardTrackerApi);
   protected readonly prefs = inject(UserPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
+  protected readonly flippingTitle = FLIPPING_TITLE;
 
   protected readonly panels = signal<GamePanel[]>([]);
   protected readonly error = signal<string | null>(null);

@@ -8,9 +8,11 @@ import { CardThumb } from './card-thumb';
 import { defaultGame } from './game-default';
 import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
 import {
+  FLIPPING_TITLE,
   PRE_RELEASE_TITLE,
   earlyPricingTitle,
   earlyWeeks,
+  flippingNote,
   launchNote,
 } from './launch-pricing';
 import { UserPrefs } from './user-prefs';
@@ -65,6 +67,7 @@ export class Movers {
   /** Whether launch pricing counts. Shared with every screen and the open card. */
   protected readonly launch = inject(UserPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
+  protected readonly flippingTitle = FLIPPING_TITLE;
 
   protected game: number | null = null;
   protected set: number | null = null;
@@ -117,6 +120,7 @@ export class Movers {
         modernOnly: this.modernOnly(),
         includePreRelease: this.launch.includePreRelease(),
         includeEarly: this.launch.includeEarly(),
+        includeFlipping: this.launch.includeFlipping(),
         minPrice: this.minPrice,
         direction: this.direction,
         limit: 50,
@@ -168,6 +172,10 @@ export class Movers {
       earlyWeeks(this.games(), this.game),
       'the board',
     );
+  }
+
+  protected flippingNote(): string {
+    return flippingNote(this.launch.includeFlipping(), 'the board');
   }
 
   /**

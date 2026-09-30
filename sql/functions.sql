@@ -599,6 +599,11 @@ $$ LANGUAGE plpgsql STABLE;
 -- is deliberately raw market_price with no fallback, so "no market price
 -- recorded that day" reads as NULL instead of quietly substituting a
 -- different, less reliable number.
+--
+-- flip_* are set when the variant's price keeps flipping between two levels
+-- (price_flips), so the card view can say so. NULL otherwise. Dropped first
+-- because they changed the return type.
+DROP FUNCTION IF EXISTS item_variants(INTEGER);
 CREATE OR REPLACE FUNCTION item_variants(
     p_product_id INTEGER
 ) RETURNS TABLE (
@@ -606,7 +611,10 @@ CREATE OR REPLACE FUNCTION item_variants(
     first_date DATE,
     latest_date DATE,
     latest_market NUMERIC,
-    all_time_high NUMERIC
+    all_time_high NUMERIC,
+    flip_low NUMERIC,
+    flip_high NUMERIC,
+    flip_reversals INTEGER
 ) AS $$
     WITH variants AS (
         SELECT ps.sub_type_name AS stn,
@@ -617,12 +625,15 @@ CREATE OR REPLACE FUNCTION item_variants(
         WHERE ps.product_id = p_product_id
         GROUP BY ps.sub_type_name
     )
-    SELECT v.stn, v.first_date, v.latest_date, ps.market_price, v.ath
+    SELECT v.stn, v.first_date, v.latest_date, ps.market_price, v.ath,
+           pf.level_low, pf.level_high, pf.reversals
     FROM variants v
     JOIN price_snapshots ps
       ON ps.product_id = p_product_id
      AND ps.sub_type_name = v.stn
      AND ps.snapshot_date = v.latest_date
+    LEFT JOIN price_flips pf
+      ON pf.product_id = p_product_id AND pf.sub_type_name = v.stn
     ORDER BY v.stn;
 $$ LANGUAGE sql STABLE;
 
@@ -713,6 +724,101 @@ RETURNS TABLE (product_id INTEGER, sub_type_name TEXT) AS $$
        OR (price_phase(p_on, c.released, c.early_days) = 'early'
            AND NOT COALESCE(p_include_early, FALSE));
 $$ LANGUAGE sql STABLE;
+
+-- ---------------------------------------------------------------------------
+-- Flipping prices (added 2026-09-30)
+-- ---------------------------------------------------------------------------
+
+-- Rebuilds price_flips: every card (product + variant) whose market price
+-- keeps flipping between two far-apart levels. On thin markets TCGplayer's
+-- market price moves only when a copy sells, and when copies sell at very
+-- different prices the reading jumps between them and sits at each for days
+-- or weeks. What prompted it, and the numbers: migration 007.
+--
+-- The rule, over the last 180 days of market prices:
+--   * a JUMP is a day-over-day change of 2x or more, either way;
+--   * the days between jumps are one LEVEL, priced at their median;
+--   * a REVERSAL is a return to within 25% of a level held for at least two
+--     days, after at least two days away. A single day, at either level, is
+--     a one-day error, which the Sets screen already despikes;
+--   * two or more reversals flags the card.
+-- A real move steps once and stays, so it never reverses. The Disclosures
+-- screen states these numbers to users (web/src/app/disclosures.html): change
+-- both together.
+--
+-- Returns how many cards are flagged, or NULL when the table already covers
+-- the newest day, so the hourly job can call it every run and pay for a
+-- rebuild (~10s) only once a day. An empty table always rebuilds, which costs
+-- nothing on an empty database.
+--
+-- DELETE and INSERT rather than TRUNCATE, in the caller's transaction:
+-- TRUNCATE would block every screen reading the table for the length of the
+-- rebuild, while this lets them read the old rows until it commits.
+CREATE OR REPLACE FUNCTION refresh_price_flips()
+RETURNS INTEGER AS $$
+DECLARE
+    v_end  DATE := (SELECT MAX(snapshot_date) FROM price_snapshots);
+    v_from DATE;
+    v_n    INTEGER;
+BEGIN
+    IF v_end IS NULL THEN
+        DELETE FROM price_flips;
+        RETURN 0;
+    END IF;
+    IF EXISTS (SELECT 1 FROM price_flips WHERE computed_through = v_end) THEN
+        RETURN NULL;
+    END IF;
+    -- A scalar bound, for idx_snapshots_date (see item_movers()).
+    v_from := v_end - 180;
+
+    DELETE FROM price_flips;
+    INSERT INTO price_flips (product_id, sub_type_name, level_low, level_high,
+                             reversals, computed_through)
+    WITH w AS (
+        SELECT ps.product_id, ps.sub_type_name, ps.snapshot_date AS d,
+               ps.market_price AS p,
+               LAG(ps.market_price) OVER (PARTITION BY ps.product_id, ps.sub_type_name
+                                          ORDER BY ps.snapshot_date) AS prev
+        FROM price_snapshots ps
+        WHERE ps.snapshot_date BETWEEN v_from AND v_end
+          AND ps.market_price IS NOT NULL
+    ),
+    numbered AS (
+        SELECT w.*,
+               SUM(CASE WHEN w.prev > 0 AND w.p > 0
+                         AND GREATEST(w.p, w.prev) / LEAST(w.p, w.prev) >= 2
+                        THEN 1 ELSE 0 END)
+                   OVER (PARTITION BY w.product_id, w.sub_type_name ORDER BY w.d) AS lvl
+        FROM w
+    ),
+    levels AS (
+        SELECT n.product_id, n.sub_type_name, n.lvl, COUNT(*) AS days,
+               percentile_disc(0.5) WITHIN GROUP (ORDER BY n.p) AS price
+        FROM numbered n
+        GROUP BY 1, 2, 3
+    ),
+    seq AS (
+        SELECT l.*,
+               LEAD(l.days) OVER c AS away_days,
+               LEAD(l.price, 2) OVER c AS back_price
+        FROM levels l
+        WINDOW c AS (PARTITION BY l.product_id, l.sub_type_name ORDER BY l.lvl)
+    )
+    SELECT s.product_id, s.sub_type_name, MIN(s.price), MAX(s.price),
+           COUNT(*) FILTER (WHERE s.back_price IS NOT NULL AND s.days >= 2 AND s.away_days >= 2
+                              AND GREATEST(s.price, s.back_price)
+                                  / NULLIF(LEAST(s.price, s.back_price), 0) <= 1.25),
+           v_end
+    FROM seq s
+    GROUP BY 1, 2
+    HAVING COUNT(*) FILTER (WHERE s.back_price IS NOT NULL AND s.days >= 2 AND s.away_days >= 2
+                              AND GREATEST(s.price, s.back_price)
+                                  / NULLIF(LEAST(s.price, s.back_price), 0) <= 1.25) >= 2;
+
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RETURN v_n;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Price time series for one product+variant, for charting.
 --
@@ -898,11 +1004,17 @@ $$ LANGUAGE sql STABLE;
 -- "then" end is checked, because "now" is later and can't be earlier in a
 -- card's life.
 --
--- The 9- and 10-argument forms are signatures from before p_modern_only and
--- the launch flags. Dropped so an existing database does not keep them as
--- second, ambiguous overloads.
+-- Flipping prices (p_include_flipping) are left out by default too: a card
+-- in price_flips jumps between two levels for weeks, so either end of the
+-- window can land on the wrong one. flipping marks such a card when it is
+-- included, so the screen can say so.
+--
+-- The 9-, 10- and 12-argument forms are signatures from before p_modern_only,
+-- the launch flags and p_include_flipping. Dropped so an existing database
+-- does not keep them as second, ambiguous overloads.
 DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE);
 DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE, BOOLEAN);
+DROP FUNCTION IF EXISTS item_movers(INTEGER, INTEGER, INTEGER, BOOLEAN, NUMERIC, TEXT, INTEGER, INTEGER, DATE, BOOLEAN, BOOLEAN, BOOLEAN);
 CREATE OR REPLACE FUNCTION item_movers(
     p_days INTEGER DEFAULT 7,
     p_category_id INTEGER DEFAULT NULL,
@@ -915,7 +1027,8 @@ CREATE OR REPLACE FUNCTION item_movers(
     p_as_of DATE DEFAULT NULL,
     p_modern_only BOOLEAN DEFAULT FALSE,
     p_include_prerelease BOOLEAN DEFAULT FALSE,
-    p_include_early BOOLEAN DEFAULT FALSE
+    p_include_early BOOLEAN DEFAULT FALSE,
+    p_include_flipping BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     product_id INTEGER,
     name TEXT,
@@ -928,7 +1041,8 @@ CREATE OR REPLACE FUNCTION item_movers(
     then_price NUMERIC,
     now_price NUMERIC,
     pct_change NUMERIC,
-    url TEXT
+    url TEXT,
+    flipping BOOLEAN
 ) AS $$
 DECLARE
     -- Clamped to the window, because the two medians must not share days.
@@ -1009,6 +1123,9 @@ BEGIN
           AND (prior.product_id, prior.sub_type_name) NOT IN (
               SELECT ln.product_id, ln.sub_type_name
               FROM launch_noise(v_prior_from, p_include_prerelease, p_include_early) ln)
+          AND (COALESCE(p_include_flipping, FALSE)
+               OR (prior.product_id, prior.sub_type_name) NOT IN (
+                   SELECT pf.product_id, pf.sub_type_name FROM price_flips pf))
         ORDER BY
             CASE WHEN p_direction = 'up' THEN (recent.p - prior.p) / prior.p END DESC NULLS LAST,
             CASE WHEN p_direction <> 'up' THEN (recent.p - prior.p) / prior.p END ASC NULLS LAST,
@@ -1027,7 +1144,9 @@ BEGIN
         ROUND(m.then_p, 2),
         ROUND(m.now_p, 2),
         ROUND(m.chg * 100, 2),
-        pr.url
+        pr.url,
+        EXISTS (SELECT 1 FROM price_flips pf
+                 WHERE pf.product_id = pr.product_id AND pf.sub_type_name = m.stn)
     FROM moves m
     JOIN products pr ON pr.product_id = m.pid
     JOIN groups g ON g.group_id = pr.group_id
@@ -1164,8 +1283,14 @@ $$ LANGUAGE sql STABLE;
 -- settles_on is the set's own release + its game's early_days, when that is
 -- after the window start, so the screen can say why a new set has no change
 -- yet. NULL for settled and undated sets.
+--
+-- FLIPPING PRICES (p_include_flipping) are left out of the change the same
+-- way, and n_flipping counts how many were, so a set can say so. Base Set
+-- (Shadowless) moved ~$9,700 every time its 1st Edition Charizard switched
+-- level. Value still counts them.
 DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE);
 DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE, BOOLEAN, NUMERIC, NUMERIC, NUMERIC);
+DROP FUNCTION IF EXISTS game_set_overview(INTEGER, INTEGER, DATE, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, BOOLEAN);
 CREATE OR REPLACE FUNCTION game_set_overview(
     p_category_id INTEGER DEFAULT NULL,
     p_days        INTEGER DEFAULT 30,
@@ -1175,7 +1300,8 @@ CREATE OR REPLACE FUNCTION game_set_overview(
     p_despike_tolerance NUMERIC DEFAULT 1.05,
     p_despike_deviation NUMERIC DEFAULT 1.25,
     p_include_prerelease BOOLEAN DEFAULT FALSE,
-    p_include_early      BOOLEAN DEFAULT FALSE
+    p_include_early      BOOLEAN DEFAULT FALSE,
+    p_include_flipping   BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     group_id        INTEGER,
     set_name        TEXT,
@@ -1198,7 +1324,8 @@ CREATE OR REPLACE FUNCTION game_set_overview(
     start_date      DATE,
     end_date        DATE,
     is_modern       BOOLEAN,
-    settles_on      DATE
+    settles_on      DATE,
+    n_flipping      INTEGER
 ) AS $$
 DECLARE
     v_end   DATE;
@@ -1283,16 +1410,28 @@ BEGIN
         GROUP BY 1
     ),
     -- set_return()'s basket: priced on both days, less launch pricing at the
-    -- start unless asked for (see the header).
-    moves AS (
+    -- start and flipping prices unless asked for (see the header).
+    common AS (
         SELECT nr.gid, nr.pid, nr.stn,
                tr.price AS start_price, nr.price AS end_price,
-               (nr.price - tr.price) AS delta
+               (nr.price - tr.price) AS delta,
+               EXISTS (SELECT 1 FROM price_flips pf
+                        WHERE pf.product_id = nr.pid AND pf.sub_type_name = nr.stn) AS flips
         FROM then_rows tr
         JOIN now_rows nr ON nr.pid = tr.pid AND nr.stn = tr.stn
         WHERE (tr.pid, tr.stn) NOT IN (
             SELECT ln.product_id, ln.sub_type_name
             FROM launch_noise(v_start, p_include_prerelease, p_include_early) ln)
+    ),
+    moves AS (
+        SELECT c.* FROM common c
+        WHERE COALESCE(p_include_flipping, FALSE) OR NOT c.flips
+    ),
+    flipped AS (
+        SELECT c.gid, COUNT(*)::INTEGER AS n
+        FROM common c
+        WHERE c.flips AND NOT COALESCE(p_include_flipping, FALSE)
+        GROUP BY 1
     ),
     ret AS (
         SELECT m.gid, COUNT(*)::INTEGER AS n_common,
@@ -1336,7 +1475,8 @@ BEGIN
         v_end,
         g.group_id IN (SELECT mg.group_id FROM modern_group_ids() mg),
         CASE WHEN g.published_on + t.early_days > v_start
-             THEN g.published_on + t.early_days END
+             THEN g.published_on + t.early_days END,
+        COALESCE(flipped.n, 0)
     FROM groups g
     JOIN categories c ON c.category_id = g.category_id
     LEFT JOIN tracked_categories t ON t.category_id = g.category_id
@@ -1347,6 +1487,7 @@ BEGIN
     LEFT JOIN top ON top.gid = g.group_id
     LEFT JOIN products pr ON pr.product_id = top.pid
     LEFT JOIN spikes ON spikes.gid = g.group_id
+    LEFT JOIN flipped ON flipped.gid = g.group_id
     WHERE (p_category_id IS NULL OR g.category_id = p_category_id)
     ORDER BY g.published_on DESC NULLS LAST, g.name;
 END;

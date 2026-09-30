@@ -4,10 +4,10 @@ import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ImageProvenance;
 import com.cardtracker.model.ItemSearchResult;
 import com.cardtracker.model.ItemVariant;
-import com.cardtracker.model.LaunchPricing;
 import com.cardtracker.model.Mover;
 import com.cardtracker.model.PricePoint;
 import com.cardtracker.model.SetOverview;
+import com.cardtracker.model.TrendScope;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -70,7 +70,7 @@ public class QueryRepository {
     /** Every variant of one product, with current price and all-time high. */
     public List<ItemVariant> variants(int productId) throws Exception {
         String sql = "SELECT sub_type_name, first_date, latest_date, latest_market, "
-                + "all_time_high FROM item_variants(?)";
+                + "all_time_high, flip_low, flip_high, flip_reversals FROM item_variants(?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, productId);
             List<ItemVariant> out = new ArrayList<>();
@@ -81,7 +81,10 @@ public class QueryRepository {
                             localDate(rs.getDate("first_date")),
                             localDate(rs.getDate("latest_date")),
                             rs.getBigDecimal("latest_market"),
-                            rs.getBigDecimal("all_time_high")));
+                            rs.getBigDecimal("all_time_high"),
+                            rs.getBigDecimal("flip_low"),
+                            rs.getBigDecimal("flip_high"),
+                            nullableInt(rs, "flip_reversals")));
                 }
             }
             return out;
@@ -245,27 +248,28 @@ public class QueryRepository {
      * categoryId null = every tracked game. despike replaces readings that
      * swung hard and reverted the next day with the median of their
      * neighbours; see game_set_overview(). Pass false for a raw two-point
-     * comparison matching set_return(). launch says whether pre-release and
-     * early prices count toward the change (value always counts them).
+     * comparison matching set_return(). scope says whether pre-release, early
+     * and flipping prices count toward the change (value always counts them).
      */
     public List<SetOverview> setOverview(Integer categoryId, Integer days, LocalDate asOf,
-                                        boolean despike, LaunchPricing launch) throws Exception {
+                                        boolean despike, TrendScope scope) throws Exception {
         String sql = """
                 SELECT group_id, set_name, game, published_on, n_priced, total_value,
                        n_common, total_start, total_end, pct_return,
                        top_product_id, top_name, top_sub_type, top_delta, top_share,
                        top_url, n_despiked, despike_usd, start_date, end_date, is_modern,
-                       settles_on
-                  FROM game_set_overview(?, ?, ?, ?,
-                       p_include_prerelease => ?, p_include_early => ?)
+                       settles_on, n_flipping
+                  FROM game_set_overview(?, ?, ?, ?, p_include_prerelease => ?,
+                       p_include_early => ?, p_include_flipping => ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             if (categoryId == null) ps.setNull(1, Types.INTEGER); else ps.setInt(1, categoryId);
             setIntOrDefault(ps, 2, days, 30);
             setDate(ps, 3, asOf);
             ps.setBoolean(4, despike);
-            ps.setBoolean(5, launch.includePreRelease());
-            ps.setBoolean(6, launch.includeEarly());
+            ps.setBoolean(5, scope.includePreRelease());
+            ps.setBoolean(6, scope.includeEarly());
+            ps.setBoolean(7, scope.includeFlipping());
 
             List<SetOverview> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
@@ -292,7 +296,8 @@ public class QueryRepository {
                             localDate(rs.getDate("start_date")),
                             localDate(rs.getDate("end_date")),
                             rs.getBoolean("is_modern"),
-                            localDate(rs.getDate("settles_on"))));
+                            localDate(rs.getDate("settles_on")),
+                            rs.getInt("n_flipping")));
                 }
             }
             return out;
@@ -305,19 +310,21 @@ public class QueryRepository {
      * a caller that passes nothing still gets the sane default view (7 days,
      * gains, singles, $1 floor) instead of an unfiltered firehose.
      *
-     * modernOnly and launch are passed by name so p_as_of, which the API never
+     * modernOnly and scope are passed by name so p_as_of, which the API never
      * sets, can stay at its default between them.
      */
     public List<Mover> movers(Integer days, Integer categoryId, Integer groupId,
                               boolean includeSealed, BigDecimal minPrice,
                               String direction, Integer smoothing, Integer limit,
-                              boolean modernOnly, LaunchPricing launch)
+                              boolean modernOnly, TrendScope scope)
             throws Exception {
         String sql = """
                 SELECT product_id, name, card_number, rarity, set_name, game,
-                       sub_type_name, is_sealed, then_price, now_price, pct_change, url
+                       sub_type_name, is_sealed, then_price, now_price, pct_change, url,
+                       flipping
                   FROM item_movers(?, ?, ?, ?, ?, ?, ?, ?, p_modern_only => ?,
-                       p_include_prerelease => ?, p_include_early => ?)
+                       p_include_prerelease => ?, p_include_early => ?,
+                       p_include_flipping => ?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             setIntOrDefault(ps, 1, days, 7);
@@ -329,8 +336,9 @@ public class QueryRepository {
             setIntOrDefault(ps, 7, smoothing, 3);
             setIntOrDefault(ps, 8, limit, 50);
             ps.setBoolean(9, modernOnly);
-            ps.setBoolean(10, launch.includePreRelease());
-            ps.setBoolean(11, launch.includeEarly());
+            ps.setBoolean(10, scope.includePreRelease());
+            ps.setBoolean(11, scope.includeEarly());
+            ps.setBoolean(12, scope.includeFlipping());
 
             List<Mover> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
@@ -347,7 +355,8 @@ public class QueryRepository {
                             rs.getBigDecimal("then_price"),
                             rs.getBigDecimal("now_price"),
                             rs.getBigDecimal("pct_change"),
-                            rs.getString("url")));
+                            rs.getString("url"),
+                            rs.getBoolean("flipping")));
                 }
             }
             return out;

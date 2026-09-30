@@ -66,6 +66,16 @@
     Include early pricing
   </label>
 
+  <label class="toggle" [title]="flippingTitle">
+    <input
+      type="checkbox"
+      [ngModel]="launch.includeFlipping()"
+      (ngModelChange)="launch.includeFlipping.set($event); load()"
+      name="includeFlipping"
+    />
+    Include flipping prices
+  </label>
+
   <!-- Exposed rather than hidden because it changes reported numbers. A
        correction you can't switch off is a correction you can't check. -->
   <label class="toggle">
@@ -101,6 +111,10 @@
 
   @if (modernOnly()) {
     <p class="method">{{ modernNote() }}</p>
+  }
+
+  @if (flippingNote(); as note) {
+    <p class="method">{{ note }}</p>
   }
 
   @if (launchNote(); as note) {
@@ -185,6 +199,18 @@
                   "
                 >
                   +{{ notInBasket(r) }} new
+                </span>
+              }
+              @if (r.nFlipping > 0) {
+                <span
+                  class="sub-note"
+                  [title]="
+                    r.nFlipping +
+                    (r.nFlipping === 1 ? ' card counts' : ' cards count') +
+                    ' toward value but not toward change: the price keeps flipping between two prices'
+                  "
+                >
+                  {{ r.nFlipping }} flipping
                 </span>
               }
             </td>

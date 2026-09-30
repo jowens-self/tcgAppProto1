@@ -32,6 +32,8 @@ export interface UserSettings {
   /** The launch-pricing boxes on Movers, Sets and card charts. */
   includePreRelease: boolean;
   includeEarly: boolean;
+  /** The flipping-prices box on Movers and Sets. */
+  includeFlipping: boolean;
 }
 
 /** Body of PUT /api/games/{id}/rules. modernSince null means every set is modern. */
@@ -103,6 +105,14 @@ export interface ItemVariant {
   /** Raw market price. Null means none was recorded that day. */
   latestMarket: number | null;
   allTimeHigh: number | null;
+  /**
+   * Set when this variant's price keeps flipping between two levels: the two
+   * levels, and how many times it went back in the last 180 days. Trends
+   * leave such a card out unless asked. Null otherwise.
+   */
+  flipLow: number | null;
+  flipHigh: number | null;
+  flipReversals: number | null;
 }
 
 /**
@@ -159,6 +169,8 @@ export interface Mover {
   nowPrice: number;
   pctChange: number;
   url: string | null;
+  /** Its price keeps flipping between two levels; only listed when asked for. */
+  flipping: boolean;
 }
 
 /**
@@ -223,6 +235,8 @@ export interface SetOverview {
    * has no change yet, and this is why. Null for settled or undated sets.
    */
   settlesOn: string | null;
+  /** Cards left out of the change because their price keeps flipping. */
+  nFlipping: number;
 }
 
 /**

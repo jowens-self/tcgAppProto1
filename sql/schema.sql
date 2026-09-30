@@ -584,6 +584,20 @@ CREATE OR REPLACE TRIGGER price_snapshots_first_priced
     REFERENCING NEW TABLE AS inserted
     FOR EACH STATEMENT EXECUTE FUNCTION note_first_priced();
 
+-- Cards whose market price keeps flipping between two far-apart levels, left
+-- out of trends unless asked for. Derived, like card_first_priced: rebuilt by
+-- refresh_price_flips() after each day's pull, never written by hand. The rule
+-- and what prompted it: migration 007.
+CREATE TABLE IF NOT EXISTS price_flips (
+    product_id       INTEGER NOT NULL,
+    sub_type_name    TEXT    NOT NULL,
+    level_low        NUMERIC(12,2) NOT NULL,
+    level_high       NUMERIC(12,2) NOT NULL,
+    reversals        INTEGER NOT NULL,
+    computed_through DATE    NOT NULL,
+    PRIMARY KEY (product_id, sub_type_name)
+);
+
 -- Accounts. Identity only, no credentials: how someone proves who they are is
 -- a separate decision (see sql/migrations/001_users.sql). user_id 1 is the
 -- local owner, so code can reference a real user before any login exists.
@@ -612,6 +626,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     show_cost_line     BOOLEAN NOT NULL DEFAULT FALSE,
     include_prerelease BOOLEAN NOT NULL DEFAULT FALSE,
     include_early      BOOLEAN NOT NULL DEFAULT FALSE,
+    include_flipping   BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

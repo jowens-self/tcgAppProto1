@@ -162,7 +162,8 @@ body {
   border-color: var(--accent);
   color: var(--accent);
 }
-.tag.sealed {
+.tag.sealed,
+.tag.flips {
   border-color: var(--warn);
   color: var(--warn);
 }

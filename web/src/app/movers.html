@@ -108,6 +108,16 @@
     />
     Include early pricing
   </label>
+
+  <label class="toggle" [title]="flippingTitle">
+    <input
+      type="checkbox"
+      [ngModel]="launch.includeFlipping()"
+      (ngModelChange)="launch.includeFlipping.set($event); load()"
+      name="includeFlipping"
+    />
+    Include flipping prices
+  </label>
 </form>
 
 @if (error()) {
@@ -150,6 +160,10 @@
     <p class="method">{{ note }}</p>
   }
 
+  @if (flippingNote(); as note) {
+    <p class="method">{{ note }}</p>
+  }
+
   <div class="table-wrap">
     <table>
       <thead>
@@ -184,6 +198,9 @@
                   }
                   @if (r.isSealed) {
                     <span class="tag sealed">Sealed</span>
+                  }
+                  @if (r.flipping) {
+                    <span class="tag flips" [title]="flippingTitle">Flips</span>
                   }
                 </span>
                 <span class="set">{{ r.setName }} · {{ r.game }}</span>

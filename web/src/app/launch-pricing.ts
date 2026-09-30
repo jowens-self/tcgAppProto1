@@ -66,6 +66,43 @@ export function earlyPricingTitle(weeks: number | null): string {
   );
 }
 
+/** Hover text for the "Include flipping prices" box. */
+export const FLIPPING_TITLE =
+  'Cards whose market price keeps jumping between two far-apart prices, holding ' +
+  'each for days or weeks. It happens on cards that rarely sell. Either end of a ' +
+  'comparison can land on the wrong one.';
+
+/** What the flipping box is leaving out, in one sentence, or '' when nothing is. */
+export function flippingNote(includeFlipping: boolean, counts: string): string {
+  return includeFlipping
+    ? ''
+    : `Cards whose price keeps flipping between two prices don't count toward ${counts}.`;
+}
+
+/**
+ * The card view's line about a flipping price, or '' for a price that holds
+ * still. Says what it does to the screens, not just that it happens.
+ */
+export function flipSummary(
+  low: number | null,
+  high: number | null,
+  reversals: number | null,
+): string {
+  if (low === null || high === null) return '';
+  const times = reversals === 1 ? 'once' : `${reversals} times`;
+  return (
+    `This price keeps flipping between about ${money(low)} and ${money(high)}: it went ` +
+    `back ${times} in the last 180 days. Movers and set changes leave it out unless ` +
+    `"Include flipping prices" is ticked. The chart shows it as recorded.`
+  );
+}
+
+function money(v: number): string {
+  return v >= 100
+    ? `$${Math.round(v).toLocaleString('en-US')}`
+    : `$${v.toFixed(2)}`;
+}
+
 /** Hover text for the "Include pre-release" box. */
 export const PRE_RELEASE_TITLE =
   'Prices from before a card comes out: preorders, thinly traded and usually ' +

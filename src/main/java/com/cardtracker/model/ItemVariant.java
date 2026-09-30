@@ -16,11 +16,18 @@ import java.time.LocalDate;
  * that day" reads as null instead of silently becoming a mid or low price.
  * allTimeHigh does use the documented market->mid->low fallback, matching
  * item_all_time_high() exactly.
+ *
+ * flipLow, flipHigh and flipReversals are set when this variant's price keeps
+ * flipping between two levels (price_flips): the two levels, and how many
+ * times it went back in the last 180 days. Null otherwise.
  */
 public record ItemVariant(
         String subTypeName,
         LocalDate firstDate,
         LocalDate latestDate,
         BigDecimal latestMarket,
-        BigDecimal allTimeHigh) {
+        BigDecimal allTimeHigh,
+        BigDecimal flipLow,
+        BigDecimal flipHigh,
+        Integer flipReversals) {
 }

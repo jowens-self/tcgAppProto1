@@ -5,9 +5,11 @@ import { CardTrackerApi } from './api';
 import { Game, SetOverview } from './api.models';
 import { defaultGame } from './game-default';
 import {
+  FLIPPING_TITLE,
   PRE_RELEASE_TITLE,
   earlyPricingTitle,
   earlyWeeks,
+  flippingNote,
   launchNote,
 } from './launch-pricing';
 import { UserPrefs } from './user-prefs';
@@ -99,6 +101,7 @@ export class Sets {
    */
   protected readonly launch = inject(UserPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
+  protected readonly flippingTitle = FLIPPING_TITLE;
 
   /**
    * New sets with nothing settled to compare yet, hidden by "Hide sets with
@@ -175,6 +178,7 @@ export class Sets {
         despike: this.despike(),
         includePreRelease: this.launch.includePreRelease(),
         includeEarly: this.launch.includeEarly(),
+        includeFlipping: this.launch.includeFlipping(),
       })
       .subscribe({
         next: (r) => {
@@ -223,6 +227,10 @@ export class Sets {
     );
   }
 
+  protected flippingNote(): string {
+    return flippingNote(this.launch.includeFlipping(), "a set's change");
+  }
+
   /** A new set's change cell: still settling, or settled after the window began. */
   protected settlingLabel(r: SetOverview): string {
     return r.settlesOn! > r.endDate ? `New · settles ${r.settlesOn}` : `Settled ${r.settlesOn}`;
@@ -244,11 +252,12 @@ export class Sets {
   }
 
   /**
-   * Cards priced on the end date but not at the window's start. Their value
-   * counts toward totalValue and NOT toward the return, which is exactly
-   * why both numbers are shown rather than one.
+   * Cards priced on the end date but not at the window's start, or whose
+   * price then was launch pricing. Their value counts toward totalValue and
+   * NOT toward the return, which is exactly why both numbers are shown
+   * rather than one. Flipping cards are left out too, and counted apart.
    */
   protected notInBasket(r: SetOverview): number {
-    return r.nPriced - r.nCommon;
+    return r.nPriced - r.nCommon - r.nFlipping;
   }
 }

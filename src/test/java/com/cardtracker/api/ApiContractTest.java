@@ -256,20 +256,20 @@ class ApiContractTest {
     void settingsStartAtTheDefaultsAndSave() throws Exception {
         try {
             assertEquals("""
-                    {"showCostLine":false,"includePreRelease":false,"includeEarly":false}""",
+                    {"showCostLine":false,"includePreRelease":false,"includeEarly":false,"includeFlipping":false}""",
                     get("/settings").body());
 
             HttpResponse<String> saved = put("/settings",
                     """
-                    {"showCostLine":true,"includePreRelease":false,"includeEarly":true}
+                    {"showCostLine":true,"includePreRelease":false,"includeEarly":true,"includeFlipping":true}
                     """);
             assertEquals(200, saved.statusCode(), saved.body());
             assertEquals("""
-                    {"showCostLine":true,"includePreRelease":false,"includeEarly":true}""",
+                    {"showCostLine":true,"includePreRelease":false,"includeEarly":true,"includeFlipping":true}""",
                     get("/settings").body());
         } finally {
             put("/settings", """
-                    {"showCostLine":false,"includePreRelease":false,"includeEarly":false}
+                    {"showCostLine":false,"includePreRelease":false,"includeEarly":false,"includeFlipping":false}
                     """);
         }
     }
@@ -280,6 +280,9 @@ class ApiContractTest {
         assertEquals(400, put("/settings", """
                 {"showCostLine":true}
                 """).statusCode());
+        assertEquals(400, put("/settings", """
+                {"showCostLine":true,"includePreRelease":false,"includeEarly":true}
+                """).statusCode(), "a client from before includeFlipping must not reset it");
         assertEquals(400, put("/settings", "not json").statusCode(),
                 "an unreadable body is the caller's mistake, so a 400, not a 500");
     }

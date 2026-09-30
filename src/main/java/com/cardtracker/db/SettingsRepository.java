@@ -29,7 +29,7 @@ public class SettingsRepository {
     /** The user's preferences, or the defaults if they have never saved any. */
     public UserSettings get(long userId) throws Exception {
         String sql = """
-                SELECT show_cost_line, include_prerelease, include_early
+                SELECT show_cost_line, include_prerelease, include_early, include_flipping
                   FROM user_settings WHERE user_id = ?
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -37,7 +37,8 @@ public class SettingsRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return UserSettings.DEFAULTS;
                 return new UserSettings(rs.getBoolean("show_cost_line"),
-                        rs.getBoolean("include_prerelease"), rs.getBoolean("include_early"));
+                        rs.getBoolean("include_prerelease"), rs.getBoolean("include_early"),
+                        rs.getBoolean("include_flipping"));
             }
         }
     }
@@ -46,12 +47,13 @@ public class SettingsRepository {
     public UserSettings save(long userId, UserSettings s) throws Exception {
         String sql = """
                 INSERT INTO user_settings
-                    (user_id, show_cost_line, include_prerelease, include_early)
-                VALUES (?, ?, ?, ?)
+                    (user_id, show_cost_line, include_prerelease, include_early, include_flipping)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (user_id) DO UPDATE
                     SET show_cost_line = EXCLUDED.show_cost_line,
                         include_prerelease = EXCLUDED.include_prerelease,
                         include_early = EXCLUDED.include_early,
+                        include_flipping = EXCLUDED.include_flipping,
                         updated_at = now()
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -59,6 +61,7 @@ public class SettingsRepository {
             ps.setBoolean(2, s.showCostLine());
             ps.setBoolean(3, s.includePreRelease());
             ps.setBoolean(4, s.includeEarly());
+            ps.setBoolean(5, s.includeFlipping());
             ps.executeUpdate();
         }
         return get(userId);

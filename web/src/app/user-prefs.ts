@@ -8,13 +8,15 @@ export const DEFAULT_SETTINGS: UserSettings = {
   showCostLine: false,
   includePreRelease: false,
   includeEarly: false,
+  includeFlipping: false,
 };
 
 export function sameSettings(a: UserSettings, b: UserSettings): boolean {
   return (
     a.showCostLine === b.showCostLine &&
     a.includePreRelease === b.includePreRelease &&
-    a.includeEarly === b.includeEarly
+    a.includeEarly === b.includeEarly &&
+    a.includeFlipping === b.includeFlipping
   );
 }
 
@@ -37,6 +39,7 @@ export class UserPrefs {
   readonly showCostLine = signal(DEFAULT_SETTINGS.showCostLine);
   readonly includePreRelease = signal(DEFAULT_SETTINGS.includePreRelease);
   readonly includeEarly = signal(DEFAULT_SETTINGS.includeEarly);
+  readonly includeFlipping = signal(DEFAULT_SETTINGS.includeFlipping);
 
   /** Set when the last save failed, so the Settings screen can say so. */
   readonly saveFailed = signal(false);
@@ -53,6 +56,7 @@ export class UserPrefs {
         showCostLine: this.showCostLine(),
         includePreRelease: this.includePreRelease(),
         includeEarly: this.includeEarly(),
+        includeFlipping: this.includeFlipping(),
       };
       if (this.saved === null || sameSettings(next, this.saved)) return;
       this.saved = next;
@@ -79,5 +83,6 @@ export class UserPrefs {
     this.showCostLine.set(settings.showCostLine);
     this.includePreRelease.set(settings.includePreRelease);
     this.includeEarly.set(settings.includeEarly);
+    this.includeFlipping.set(settings.includeFlipping);
   }
 }

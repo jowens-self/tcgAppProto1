@@ -5,11 +5,11 @@ package com.cardtracker.model;
  * {@link #DEFAULTS}, which match the table's column defaults.
  *
  * showCostLine draws what was paid under the collection's value line.
- * includePreRelease and includeEarly are the launch-pricing boxes on the
- * trend screens (see sql/migrations/005): one setting, shown in several
- * places.
+ * includePreRelease, includeEarly and includeFlipping are the boxes on the
+ * trend screens (see TrendScope): one setting each, shown in several places.
  */
-public record UserSettings(boolean showCostLine, boolean includePreRelease, boolean includeEarly) {
+public record UserSettings(boolean showCostLine, boolean includePreRelease, boolean includeEarly,
+                           boolean includeFlipping) {
 
-    public static final UserSettings DEFAULTS = new UserSettings(false, false, false);
+    public static final UserSettings DEFAULTS = new UserSettings(false, false, false, false);
 }

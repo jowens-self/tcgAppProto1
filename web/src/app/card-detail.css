@@ -295,3 +295,14 @@
   gap: 0.35rem;
   user-select: none;
 }
+
+/* A price that keeps flipping: amber like the other "read this with care"
+   marks, and said in words, since the chart alone looks like wild moves. */
+.flip-note {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--warn);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text);
+}

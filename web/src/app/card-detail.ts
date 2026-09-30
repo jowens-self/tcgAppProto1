@@ -19,6 +19,7 @@ import {
   chartablePoints,
   earlyPricingTitle,
   earlyWeeks,
+  flipSummary,
   hasLaunchPricing,
 } from './launch-pricing';
 import { UserPrefs } from './user-prefs';
@@ -119,6 +120,12 @@ export class CardDetail {
   );
   protected readonly chartSeries = computed(() => this.chartView().points);
   protected readonly chartOnlyLaunch = computed(() => this.chartView().onlyLaunch);
+
+  /** What to say about the open variant's price if it keeps flipping, or ''. */
+  protected readonly flipNote = computed(() => {
+    const v = this.variants().find((x) => x.subTypeName === this.activeVariant());
+    return v ? flipSummary(v.flipLow, v.flipHigh, v.flipReversals) : '';
+  });
 
   /** The boxes only appear for a card that has launch pricing to show or hide. */
   protected readonly hasLaunch = computed(() => hasLaunchPricing(this.history()));

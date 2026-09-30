@@ -44,6 +44,10 @@ import java.time.LocalDate;
  * {@code settlesOn} is set when the set itself was still new at the window
  * start: its release plus its game's early_days. With launch pricing left out
  * (the default) such a set usually has no change yet, and this says why.
+ *
+ * {@code nFlipping} is how many of its cards were left out of the change
+ * because their price keeps flipping between two levels (price_flips). Zero
+ * when flipping prices are included.
  */
 public record SetOverview(
         int groupId,
@@ -67,5 +71,6 @@ public record SetOverview(
         LocalDate startDate,
         LocalDate endDate,
         boolean modern,
-        LocalDate settlesOn) {
+        LocalDate settlesOn,
+        int nFlipping) {
 }

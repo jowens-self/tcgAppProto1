@@ -8,7 +8,7 @@ import com.cardtracker.db.SettingsRepository;
 import com.cardtracker.images.ImageFiles;
 import com.cardtracker.model.DataFreshness;
 import com.cardtracker.model.ItemVariant;
-import com.cardtracker.model.LaunchPricing;
+import com.cardtracker.model.TrendScope;
 import com.cardtracker.model.UserSettings;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -137,8 +137,8 @@ public class ApiServer {
         // day is an upstream error, and the median of its neighbours is used
         // instead. Pass despike=false for the raw two-point comparison.
         //
-        // prerelease=true / early=true count launch pricing toward the change;
-        // both are left out by default (see launchPricing()).
+        // prerelease=true / early=true / flipping=true count those prices
+        // toward the change; all are left out by default (see trendScope()).
         app.get("/api/sets/overview", ctx -> {
             Integer days = atLeast(ctx, "days", 1);
             ctx.json(db.withRepo(repo -> repo.setOverview(
@@ -146,15 +146,15 @@ public class ApiServer {
                     days,
                     dateParam(ctx.queryParam("asOf"), "asOf"),
                     !"false".equalsIgnoreCase(ctx.queryParam("despike")),
-                    launchPricing(ctx))));
+                    trendScope(ctx))));
         });
 
         // Biggest movers over a window.
         //   ?days=7&game=3&set=23353&sealed=false&minPrice=1&direction=down
-        //   &smoothing=3&limit=50&modern=true&prerelease=true&early=true
+        //   &smoothing=3&limit=50&modern=true&prerelease=true&early=true&flipping=true
         // Every parameter is optional: the defaults (7 days, gains,
-        // singles, $1 floor, 3-day median smoothing, every era, settled prices
-        // only) are the screen's default view and live in item_movers() so
+        // singles, $1 floor, 3-day median smoothing, every era, settled and
+        // steady prices only) are the screen's default view and live in item_movers() so
         // psql callers get them too.
         app.get("/api/movers", ctx -> {
             String dir = ctx.queryParam("direction");
@@ -175,7 +175,7 @@ public class ApiServer {
                     smoothing,
                     intParam(ctx.queryParam("limit"), "limit"),
                     "true".equalsIgnoreCase(ctx.queryParam("modern")),
-                    launchPricing(ctx))));
+                    trendScope(ctx))));
         });
 
         // Card / product search. q is required; everything else optional.
@@ -379,12 +379,13 @@ public class ApiServer {
         app.put("/api/settings", ctx -> {
             SettingsRequest req = body(ctx, SettingsRequest.class);
             if (req.showCostLine() == null || req.includePreRelease() == null
-                    || req.includeEarly() == null) {
-                throw new BadRequestResponse(
-                        "showCostLine, includePreRelease and includeEarly are all required");
+                    || req.includeEarly() == null || req.includeFlipping() == null) {
+                throw new BadRequestResponse("showCostLine, includePreRelease, includeEarly "
+                        + "and includeFlipping are all required");
             }
             ctx.json(db.withConn(conn -> new SettingsRepository(conn).save(LOCAL_USER,
-                    new UserSettings(req.showCostLine(), req.includePreRelease(), req.includeEarly()))));
+                    new UserSettings(req.showCostLine(), req.includePreRelease(),
+                            req.includeEarly(), req.includeFlipping()))));
         });
 
         // One game's rules: where "modern" starts (null means every set) and
@@ -413,7 +414,7 @@ public class ApiServer {
 
     /** Body of PUT /api/settings. Boxed so a missing field can be told from false. */
     public record SettingsRequest(Boolean showCostLine, Boolean includePreRelease,
-                                  Boolean includeEarly) {
+                                  Boolean includeEarly, Boolean includeFlipping) {
     }
 
     /** Body of PUT /api/games/{id}/rules. modernSince null means every set is modern. */
@@ -513,14 +514,15 @@ public class ApiServer {
     }
 
     /**
-     * ?prerelease=true and ?early=true count launch pricing on a trend screen.
-     * Absent means left out, which is the point: pre-release and early prices
-     * are mostly noise, so only a caller who asks gets them.
+     * ?prerelease=true, ?early=true and ?flipping=true count those prices on a
+     * trend screen. Absent means left out, which is the point: all three
+     * mislead a trend, so only a caller who asks gets them.
      */
-    private static LaunchPricing launchPricing(Context ctx) {
-        return new LaunchPricing(
+    private static TrendScope trendScope(Context ctx) {
+        return new TrendScope(
                 "true".equalsIgnoreCase(ctx.queryParam("prerelease")),
-                "true".equalsIgnoreCase(ctx.queryParam("early")));
+                "true".equalsIgnoreCase(ctx.queryParam("early")),
+                "true".equalsIgnoreCase(ctx.queryParam("flipping")));
     }
 
     /** An optional integer query parameter that must be at least min when present. */

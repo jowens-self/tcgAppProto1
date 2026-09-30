@@ -37,8 +37,8 @@
 
   <h3>Trend screens</h3>
   <p class="section-help">
-    Movers, Sets and card charts. The same two boxes are on those screens too; this
-    is one setting, wherever you change it.
+    Movers, Sets and card charts. The same boxes are on those screens too; each is
+    one setting, wherever you change it.
   </p>
   <label class="option">
     <input
@@ -65,6 +65,18 @@
         A card's first weeks after release, while its price settles. How many weeks
         is set per game below.
       </span>
+    </span>
+  </label>
+  <label class="option">
+    <input
+      type="checkbox"
+      [ngModel]="prefs.includeFlipping()"
+      (ngModelChange)="prefs.includeFlipping.set($event)"
+      name="includeFlipping"
+    />
+    <span class="option-text">
+      <span class="option-name">Include flipping prices</span>
+      <span class="option-help">{{ flippingTitle }}</span>
     </span>
   </label>
 </section>

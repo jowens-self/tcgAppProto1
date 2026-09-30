@@ -110,6 +110,20 @@ if [ "$SKIP_PULL" != "true" ]; then
   fi
 fi
 
+# --- 1b. flag flipping prices -------------------------------------------------
+#
+# price_flips is derived from the prices (migration 007). refresh_price_flips()
+# rebuilds it only when the newest day has changed since it last ran, so this
+# costs a date comparison every hour and ~15s once a day. Every run rather than
+# only after a pull, so a refresh that fails is retried next hour instead of
+# waiting for tomorrow's pull. A failure here never stops the export.
+if [ "$SKIP_PULL" != "true" ]; then
+  FLIPS="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A \
+    -c "SELECT refresh_price_flips();" 2>&1)" \
+    && say "flips: ${FLIPS:-already current}${FLIPS:+ cards flagged}." \
+    || say "flips: FAILED: $FLIPS"
+fi
+
 # --- 2. export whatever has settled ------------------------------------------
 if [ "$SKIP_EXPORT" != "true" ]; then
   say "export: starting."

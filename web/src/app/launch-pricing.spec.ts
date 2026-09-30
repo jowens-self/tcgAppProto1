@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Game, PricePhase } from './api.models';
-import { chartablePoints, earlyWeeks, launchNote, phaseRuns } from './launch-pricing';
+import {
+  chartablePoints,
+  earlyWeeks,
+  flipSummary,
+  flippingNote,
+  launchNote,
+  phaseRuns,
+} from './launch-pricing';
 
 const at = (date: string, phase: PricePhase | null) => ({ date, value: 1, phase });
 
@@ -95,5 +102,22 @@ describe('launchNote', () => {
     expect(launchNote(true, false, 8, 'the board')).toBe(
       "Early pricing (the first 8 weeks after release) doesn't count toward the board.",
     );
+  });
+});
+
+describe('flipping prices', () => {
+  it('says nothing once flipping prices are included', () => {
+    expect(flippingNote(true, 'the board')).toBe('');
+    expect(flippingNote(false, 'the board')).toContain("don't count toward the board");
+  });
+
+  it('names both levels and how often it went back', () => {
+    expect(flipSummary(240, 10000, 12)).toContain('between about $240 and $10,000');
+    expect(flipSummary(240, 10000, 12)).toContain('went back 12 times');
+    expect(flipSummary(8.15, 38, 2)).toContain('$8.15 and $38.00');
+  });
+
+  it('says nothing for a price that holds still', () => {
+    expect(flipSummary(null, null, null)).toBe('');
   });
 });

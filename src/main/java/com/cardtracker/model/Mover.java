@@ -16,6 +16,9 @@ import java.math.BigDecimal;
  * sql/functions.sql for why (thinly-traded cards lurch on single sales, and
  * an average additionally leaks prices across a step, which misreported a
  * real +200% move as +80% until this was changed on 2026-08-18).
+ *
+ * flipping marks a card whose price keeps jumping between two levels
+ * (price_flips). Such cards are only on the board when asked for.
  */
 public record Mover(
         int productId,
@@ -29,5 +32,6 @@ public record Mover(
         BigDecimal thenPrice,
         BigDecimal nowPrice,
         BigDecimal pctChange,
-        String url) {
+        String url,
+        boolean flipping) {
 }

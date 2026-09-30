@@ -136,6 +136,9 @@
             }
           </div>
           <price-chart [series]="chartSeries()" />
+          @if (flipNote(); as note) {
+            <p class="flip-note">{{ note }}</p>
+          }
           @if (chartOnlyLaunch()) {
             <p class="hint">
               This card hasn't settled yet, so everything here is launch pricing. It's
