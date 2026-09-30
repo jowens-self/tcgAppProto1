@@ -28,16 +28,43 @@ wrong today; all are wrong for a shipped app.
 
 ---
 
-## Where the project actually is (updated 2026-08-20)
+## Where the project actually is (updated 2026-09-30)
 
 Built and working: daily price ingest for Pokemon (3) and One Piece (68)
 with archive backfill to 2024-02-08 and zero gaps; the SQL function layer
-in `sql/functions.sql`; a read-only Javalin API on :7070; an Angular 22
-front end in `web/` with three screens (Card/Product Search, Movers,
-Sets); locally-cached Pokemon card images at 95.72% coverage; and as of
-2026-08-20 an actual test suite (see "Tests" below).
+in `sql/functions.sql`; a Javalin API on :7070, read-only over price data,
+that also records holdings; an Angular 22 front end in `web/` with four
+screens (Card/Product Search, Movers, Sets, Collection); locally-cached
+Pokemon card images at 95.72% coverage; and a test suite (see "Tests"
+below).
 
 Behaviour worth knowing before reading the code, newest first:
+
+- **Launch pricing is left out of trends by default** (migration 005 has
+  the numbers). Prices from before a card's release, and from its first
+  `early_days` after it, are mostly noise: preorders sit at ~3x where a card
+  settles. Movers and a set's change drop them unless asked; values never do.
+  Each card's first price is kept in `card_first_priced` by a trigger on
+  `price_snapshots`. See "Multi-game support" below for the rules and where
+  they live.
+- **"Modern" is a per-game date in `tracked_categories`**, and set release
+  dates are real `DATE`s. 19 catch-all groups have no date upstream and are
+  stored as unknown rather than as the mirror's build time (migrations 003
+  and 004).
+- **Freshness is watched, not assumed.** `data_freshness()` is the one
+  definition, read by `/api/health`, a banner on every screen, the hourly
+  job (which raises a macOS notification) and `sql/checks/data_freshness.sql`.
+  Stale means more than 2 days old, because the newest data is normally
+  yesterday's.
+- **Holdings are append-only, like prices.** A change is a new row, a sale
+  is quantity 0, and "what do I hold" is the newest row per (card, variant,
+  condition). `HoldingsRepository` has no update or delete.
+- **`schema.sql` runs once, on an empty database, and never again.** The
+  live database was created 2026-08-12, so every schema change since is also
+  a numbered file in `sql/migrations/`, applied with `./sql/migrate.sh` (one
+  transaction each, recorded in `schema_migrations`, then `functions.sql`
+  re-applied). Write both: the migration for this database, `schema.sql` for
+  a fresh one.
 
 - **The price history has a second copy, and the exporter is what decides a
   day is finished** (`scripts/snapshot-export.sh`, Part 39). One gzipped CSV
@@ -62,10 +89,12 @@ Behaviour worth knowing before reading the code, newest first:
   running" is true during a working day and false at 03:00, so the same guard
   on a nightly job would never fire once; an idle hour costs one
   `docker exec true`. The pull and the export deliberately do not complete in
-  the same run — see Part 39. **Stale data here is still not evidence of a
-  broken job**: `App` runs gap catch-up on every run, so a week without a pull
-  is a week the next pull backfills. Part 39 was written after reading exactly
-  that as a fault.
+  the same run — see Part 39. **Stale data here is now a real loss, not a
+  cosmetic one** (Part 42). Until September 2026 `App` ran gap catch-up from
+  tcgcsv's archive on every run, so a week without a pull was a week the next
+  pull backfilled. tcgcsv took that archive down; a day nobody pulls while the
+  mirror serves it is gone for good. Stale prices still don't prove the *job*
+  is broken — Docker may just have been off — but they do mean days were lost.
 - **A thumbnail costs no database connection** (`ImageFiles`, Part 38). Files
   are named `<category_id>/<product_id>.jpg`, so the path follows from the id
   and the endpoint never reads `card_images.file_path`. That also removed the
@@ -504,10 +533,12 @@ price-park) plus engineering rules derived from them.
   day on 2026-08-20. **Do not "simplify" this back to `LocalDate.now()` of
   any zone**: the clock answers when we asked, which is a different fact from
   what we got. The archive path never needed it because its URL names the
-  date. A parse failure refuses the run rather than falling back, and that
-  is safe because missing a day costs nothing (gap catch-up backfills it).
-  The skip test is `hasDateCovered()`, which accepts either ingest source,
-  since the mirror's date is usually one the archive already filled.
+  date. A parse failure refuses the run rather than falling back. That is
+  still right — the hourly job retries next hour, and a mis-dated day
+  corrupts history — but it is **no longer free**: if the failure outlasts the
+  mirror's ~24h window, that day is lost, because gap catch-up is gone
+  (Part 42). The skip test is `hasDateCovered()`, which accepts either ingest
+  source; before Part 42 the archive usually filled the day first.
 - **"Current" means the newest day the database HOLDS, never
   `CURRENT_DATE`.** Any function or screen with an as-of default anchors on
   `MAX(snapshot_date)`. `item_movers()` and `game_set_overview()` always did;
@@ -723,11 +754,17 @@ classes lazily, so a running process can die partway through.
 this data unattended yet, so a daemon would mean Docker Desktop parked in
 memory for no one. Run the jar by hand when you want fresh data.
 
-**Missing a day costs nothing**: that's why on-demand is safe. tcgcsv's
-archives persist back to 2024-02-08 and `App` runs gap catch-up
-unconditionally on every run, so skipping a week just means the next run
-backfills those seven days. A day with no pull is a day with no *new*
-row, not a lost one.
+**Missing a day used to cost nothing. It no longer does** (Part 42). The
+decision above rested on tcgcsv's daily archives, which `App` used to
+backfill any skipped day. In September 2026 tcgcsv took the archive down
+(server costs, moderation burden; "temporarily", no appeal) and removed the
+catch-up with it. The live endpoints only ever serve the current day, so a
+day not pulled between tcgcsv's ~20:00 UTC refresh and the next one is lost
+for good, and this repo's archive is the only copy of what was caught.
+
+**So the premise of the on-demand decision is gone.** Whether to answer that
+with a resident pull, a scheduled Docker start, or by accepting the gaps is
+the owner's call; it was put to them on 2026-09-30 and is not decided here.
 
 **The trigger for a scheduled daemon is hosting, not a front end.** A
 local front end changes nothing: whoever opens it can trigger the pull.
@@ -805,7 +842,9 @@ are possible at all.
 inventory tracking cannot exist, though it was treated as one for longer than
 it should have been. Hand entry needs none of those columns: the owner picks a
 product already in `products`, says how many, in what condition, and what they
-paid. That is a complete row. Do not wait on an export to build it.
+paid. That is a complete row, and it has existed since 2026-09-09 (the
+Collection screen). A CSV import, when it comes, writes the same rows the
+same append-only way.
 
 Two former unknowns are settled and should not be re-litigated:
 
@@ -902,12 +941,13 @@ Why each of these exists, with the numbers: DEVELOPMENT_HISTORY.md Part 12.
   short list, and the moment it matters is the same moment the localhost-only
   CORS rule needs revisiting. Do both together, against a real hosting
   decision, rather than adding a dependency for load that does not exist.
-- Inventory entry by hand: pick a product, set quantity, condition and what
-  you paid. Nothing blocks this, and it does not depend on the CSV's unseen
-  columns.
-- Inventory CSV ingest beside it as a bulk import, once a real export exists.
-  One of two ways in, not the way in.
-- Inventory + price join views
+- Inventory CSV ingest beside hand entry as a bulk import, once a real export
+  exists. One of two ways in, not the way in. Blocked on seeing a sample.
+- **Value against what you paid, as a Collection chart option** (owner,
+  2026-09-11: "can be an option in settings later"). The cost basis is
+  already stored per holding; what's missing is the settings page to switch
+  it on, which is also where `modern_since` and `early_days` would become
+  editable from the app rather than by an UPDATE in psql.
 - **Community art showcase (owner's idea, 2026-08-16)**: themed voting
   prompts ("best beach vibes", "favourite darker-theme art") over card
   art, showcasing what wins each period. See DEVELOPMENT_HISTORY.md

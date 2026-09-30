@@ -14,8 +14,9 @@
 # query on the hours it does nothing, and starts a JVM at most once a day.
 #
 # Two steps, in order:
-#   1. Pull, unless a live pull already succeeded today (UTC). App does its own
-#      gap catch-up, so one pull covers however many days were missed.
+#   1. Pull, unless every tracked game already has a successful live pull
+#      today (UTC). There is no catch-up any more (Part 42): tcgcsv took its
+#      archive down, so a day not pulled while the mirror serves it is lost.
 #   2. Export whatever has settled into the archive repo.
 #
 # A day pulled at 14:00 is not exported at 14:00: the exporter leaves a day
@@ -58,23 +59,34 @@ cd "$REPO_ROOT"
 
 # --- 1. pull, at most once a day ---------------------------------------------
 if [ "$SKIP_PULL" != "true" ]; then
-  # Live-pull sources are 'tcgcsv-<categoryId>'; the archive backfill writes
-  # 'tcgcsv-archive-<categoryId>' and is not what this is asking about.
-  PULLED_TODAY="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
-    SELECT count(*) FROM ingest_runs
-    WHERE source LIKE 'tcgcsv-%'
-      AND source NOT LIKE 'tcgcsv-archive-%'
-      AND status = 'ok'
-      AND (started_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date;")"
+  # How many tracked games still lack a successful live pull today (UTC).
+  #
+  # This used to ask whether ANY live pull had succeeded today, which is wrong
+  # the moment one game fails and another does not: the next hour saw the
+  # success, said "already ran", and never retried the failure. The archive
+  # catch-up used to paper over that by refilling the day later. It is gone
+  # (Part 42), so now it would be a day lost for that game. Counting per game
+  # means a partial failure is retried every hour until it lands; App skips
+  # the games it already holds, so a retry fetches only what is missing.
+  # A failed query leaves this empty, and empty means pull: App is safe to run
+  # when it has nothing to do.
+  MISSING="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
+    SELECT count(*) FROM tracked_categories tc
+    WHERE NOT EXISTS (
+      SELECT 1 FROM ingest_runs r
+      WHERE r.source = 'tcgcsv-' || tc.category_id
+        AND r.status = 'ok'
+        AND (r.started_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date);" 2>/dev/null)"
 
-  if [ "${PULLED_TODAY:-0}" -gt 0 ]; then
-    say "pull: already ran today (UTC); skipping."
+  if [ "${MISSING:-1}" -eq 0 ] 2>/dev/null; then
+    say "pull: every tracked game already pulled today (UTC); skipping."
   elif [ ! -f "$JAR" ]; then
     say "pull: no jar at $JAR; skipping (mvn package)."
   else
-    say "pull: starting."
-    # App decides what to fetch and runs its own gap catch-up. A failure here
-    # must not stop the export -- yesterday's data is still worth archiving.
+    say "pull: starting (${MISSING:-?} game(s) not yet pulled today)."
+    # App decides what to fetch and skips what it already holds. A failure
+    # here must not stop the export -- yesterday's data is still worth
+    # archiving.
     if /usr/bin/java -jar "$JAR"; then
       say "pull: done."
     else

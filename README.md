@@ -21,9 +21,9 @@ below.
 - **No new outbound hosts without explicit permission.** `tcgcsv.com` is
   the only one. Anything else gets asked about first, before any code.
 - **No automated login, ever.** Nothing here signs into a marketplace as you.
-  Inventory, when it lands, is yours to put in: typed in by hand, or bulk
-  imported from a CSV you exported yourself. Neither route wants your
-  credentials.
+  Inventory is yours to put in: typed in by hand on the Collection screen, or,
+  once built, bulk imported from a CSV you exported yourself. Neither route
+  wants your credentials.
 - **Currently local-only.** One person, no auth, no hosting. That's
   where it is today, not a rule about where it can go.
 
@@ -45,10 +45,14 @@ Override the defaults with `CARDTRACKER_DB_URL`, `CARDTRACKER_DB_USER`,
 
 No scheduled job right now, by choice (see CLAUDE.md "On-demand pulls, not
 a scheduled job"). Nothing reads this data unattended, so a background
-daemon just means Docker Desktop parked in memory for no one. Missing a
-day costs nothing: tcgcsv's archives persist back to 2024-02-08 and every
-run backfills whatever's missing, so pull fresh data whenever you actually
-want to look at something:
+daemon just means Docker Desktop parked in memory for no one.
+
+**A missed day is lost.** This used to be free: every run backfilled gaps
+from tcgcsv's daily archives. tcgcsv took the archive down in September 2026
+(see "Backfill" below), and the live endpoints only serve the current day,
+so a day nobody pulls before tcgcsv's next ~20:00 UTC refresh is gone for
+good. The hourly job (`scripts/hourly.sh`) pulls whenever the database
+container is already up; to pull by hand:
 
 ```bash
 docker compose up -d                       # if Postgres isn't already running
@@ -612,15 +616,24 @@ categories `App`/`BackfillArchive` actually pull, seeded with just Pokemon
 INSERT INTO tracked_categories (category_id, name) VALUES (1, 'Magic');
 ```
 
-The next `App` run (or a manual `BackfillArchive` call) picks it up
-automatically, no rebuild needed. See tcgcsv's `/categories` endpoint or
+The next `App` run starts pulling it from that day forward, no rebuild
+needed. Its history before that can't be backfilled while tcgcsv's archive
+is down (see "Backfill"). See tcgcsv's `/categories` endpoint or
 CLAUDE.md "Multi-game support" for the full category list and important
 caveats (Pokemon-specific quirks like code-card exclusion don't
 automatically apply to a new game; verify before assuming).
 
 ## Backfill
 
-The mirror publishes daily archives from 2024-02-08 onward at
+> **Unavailable since September 2026.** tcgcsv took the price archive down
+> ("temporarily", citing server costs and moderation burden) and every
+> archive URL now returns 403 with that notice as the body. It asks clients
+> to use the live category/group/price endpoints and not to fetch the same
+> price file more than once in 24 hours. `App` no longer runs this as a
+> catch-up (Part 42 of DEVELOPMENT_HISTORY.md). What follows documents the
+> tool as it worked, for if the archive returns — check its terms first.
+
+The mirror published daily archives from 2024-02-08 onward at
 `https://tcgcsv.com/archive/tcgplayer/prices-YYYY-MM-DD.ppmd.7z`. Each one
 bundles every TCG category for that day, and `BackfillArchive` processes every
 category in `tracked_categories` from the same download, so tracking a

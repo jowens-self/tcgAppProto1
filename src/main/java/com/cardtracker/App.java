@@ -53,7 +53,6 @@ public class App {
         // ON CONFLICT DO NOTHING makes a free no-op, so being early is safe
         // rather than corrupting.
         LocalDate snapshotDate = source.dataAsOf();
-        LocalDate yesterday = snapshotDate.minusDays(1);
         System.out.printf("Mirror's newest data is %s (this machine: %s UTC)%n",
                 snapshotDate, LocalDate.now(ZoneOffset.UTC));
 
@@ -63,27 +62,20 @@ public class App {
 
             boolean anyFailed = false;
 
-            // Gap catch-up for every tracked category, once, before any
-            // live pull. BackfillArchive.run() already skips anything
-            // already covered via one indexed lookup per (category, day),
-            // and shares one archive download across every category that
-            // still needs a given day, so calling it unconditionally here
-            // is cheap on a normal day, not just "cheap if we bother to
-            // check first." Its own per-(category, day) loop already logs
-            // failures to ingest_runs; this try/catch only guards the setup
-            // phase before that loop starts (temp dir creation, the initial
-            // repo queries), a narrower version of the exact bug fixed in
-            // DEVELOPMENT_HISTORY.md Part 13, where a failure before any
-            // ingest_runs row existed could otherwise vanish with no trace.
-            // A catch-up hiccup here doesn't block today's live pulls below
-            // from still being attempted and properly tracked.
-            try {
-                BackfillArchive.run(BackfillArchive.EARLIEST_ARCHIVE, yesterday, repo);
-            } catch (Exception e) {
-                anyFailed = true;
-                System.out.printf("Gap catch-up FAILED: %s: %s%n",
-                        e.getClass().getSimpleName(), e.getMessage());
-            }
+            // No archive gap catch-up. Until 2026-09-30 this ran on every pull
+            // and made a missed day free: BackfillArchive refilled it from
+            // tcgcsv's daily archives. tcgcsv has since taken the archive down
+            // (server costs and moderation burden; the notice is served as the
+            // body of every archive URL's 403) and asks clients to use the live
+            // category/group/price endpoints instead. From ~2026-09-08 the
+            // catch-up died on its first download every run, which is what made
+            // every pull exit 1 for three weeks while the data itself was fine.
+            //
+            // So a day that is not pulled while the mirror is serving it is now
+            // gone for good. BackfillArchive stays in the tree as a manual tool
+            // for the day the archive comes back; re-enabling it here is a
+            // decision to make then, against whatever terms it returns under.
+            // DEVELOPMENT_HISTORY.md Part 42.
 
             for (int categoryId : categoryIds) {
                 try {

@@ -4590,3 +4590,86 @@ the same alarm as a dirty archive.
 2026-09-15 was recovered by hand and checked against `price_snapshots` before
 it was committed: byte-identical, 51,772 rows. The archive is 956 days,
 2024-02-08 through 2026-09-20, with no gaps.
+
+## Part 42 — The archive went away, and every pull said FAILED for three weeks
+
+From about 2026-09-08 every pull ended `pull: FAILED (exit 1)`. The data was
+fine the whole time — every day reached the database and the archive repo —
+so the failure read as noise, and a job that fails every day has stopped
+being able to tell you anything.
+
+The cause was not in the pull at all. `App` ran gap catch-up before every
+live pull: `BackfillArchive.run()` walked every day since 2024-02-08 and
+downloaded tcgcsv's archive for any day without a `tcgcsv-archive-*` run.
+A live pull does not count as coverage there, so the most recent days were
+always "gaps" until the archive filled them. 2026-09-04 was the first day
+the archive never got to. Its download returned 403, `downloadArchive`
+threw outside the per-day try, and the whole catch-up aborted — on every
+run, for three weeks, on the same day.
+
+### Why 403
+
+Every archive URL returns 403, not just that one, including 2026-09-03,
+which downloaded fine on 2026-09-04. The body of the 403 is a notice from
+tcgcsv's maintainer: the price archive has been taken down, temporarily,
+over server costs and moderation burden; prices are still archived
+privately; clients should use the live category, group and price endpoints
+instead and should not request the same price file more than once in 24
+hours. There is no workaround and no appeal.
+
+### What that breaks
+
+Much more than a log line. Since 2026-08-13 the design has rested on "a
+missed day costs nothing": the archive refilled any day nobody pulled, which
+is the whole argument for on-demand pulls in CLAUDE.md and the reason stale
+data "is not evidence of a broken job". That is no longer true. The live
+endpoints only serve the current day, so a day not pulled between one
+~20:00 UTC refresh and the next is gone for good.
+
+Nothing has been lost yet, by luck. All 25 days from 2026-09-05 to
+2026-09-29 were pulled, because `cardtracker-db` has been up since
+2026-09-08 without a break — with restart policy `no` and Docker Desktop not
+set to start at login. One reboot and nothing pulls until someone starts
+Docker by hand.
+
+### A second bug the archive was hiding
+
+`hourly.sh` skipped the pull if *any* live pull had succeeded that UTC day.
+If one game's pull failed and the other's succeeded, the next hour saw the
+success and never retried the failure. The catch-up used to refill that
+game's day later, so it never showed. Without the archive it would be a lost
+day for that game.
+
+### What changed
+
+- `App` no longer runs the catch-up. It was requesting a resource that has
+  been withdrawn, on every run, which the notice asks people to stop doing,
+  and its failure was masking every other failure. `BackfillArchive` stays
+  as a manual tool, and README's Backfill section now says it is
+  unavailable and why.
+- `hourly.sh` counts, per tracked game, whether a live pull has succeeded
+  today, and pulls while any game is missing. `App` already skips a game
+  whose snapshot it holds, so a retry fetches only what failed.
+- CLAUDE.md and README no longer say a missed day is free. The on-demand
+  decision is left standing, but marked as resting on a premise that no
+  longer holds. What to do about that is the owner's call.
+
+Built in a separate copy, because the API server was running from the jar
+and `mvn package` overwrites it in place. The new jar was swapped in with a
+rename, so the running server kept its open file (200 before and after,
+same pid). 157 tests pass. The new `App` exits 0: it reads
+`last-updated.txt`, finds 2026-09-29 already held for both games, and
+fetches nothing. The guard was checked both ways: on the real state it
+skips, and on a simulated partial failure (Pokemon ok, One Piece failed) the
+old query would have skipped while the new one retries.
+
+### The 24-hour request
+
+Not changed, and worth writing down. Over the last 30 days, 13 of 26
+Pokemon pulls started less than 24 hours after the previous one, the
+closest 8.2 hours apart. None fetched the same snapshot twice — `App` skips
+a day it holds — so each price file is downloaded once per tcgcsv refresh,
+which is the least traffic that still captures every day. Enforcing a
+literal 24-hour gap would push the pull time later every day until it
+skipped a refresh entirely, and a skipped refresh is now a lost day. That
+trade-off was put to the owner rather than decided here.
