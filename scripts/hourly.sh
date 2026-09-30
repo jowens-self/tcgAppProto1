@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 #
-# Runs hourly. Does nothing at all unless the database container is ALREADY up.
+# Runs hourly (com.cardtracker.hourly) and once more at the 16:30 pull slot
+# (com.cardtracker.daily). Does nothing at all unless the database container
+# is up.
 #
-# This does not contradict the 2026-08-13 decision against a pull daemon; it
-# is built around it. That decision was about not keeping Docker Desktop
-# resident for nobody. This never starts Docker, never wakes it, and exits in
-# about a second when it is down. What it does is notice the hours when the
-# container is up because someone is working, and use one of them.
+# Until 2026-09-30 this was built around the 2026-08-13 decision against a
+# pull daemon: it never started Docker and only used the hours the container
+# happened to be up. That decision rested on tcgcsv's archive making a missed
+# day free, and the archive is gone (Part 42), so the owner reversed it: Docker
+# now opens at login (com.cardtracker.docker-at-login) and cardtracker-db has
+# restart: unless-stopped. This script still never starts Docker itself; the
+# `docker exec true` guard below now just covers the minutes after login
+# before Docker is ready.
 #
-# Hourly rather than nightly for that same reason: "already running" is true
-# during the working day and false at 03:00, so a nightly job guarded this way
-# would never fire at all. Hourly costs one `docker exec true` and one indexed
-# query on the hours it does nothing, and starts a JVM at most once a day.
-#
-# Two steps, in order:
-#   1. Pull, unless every tracked game already has a successful live pull
-#      today (UTC). There is no catch-up any more (Part 42): tcgcsv took its
-#      archive down, so a day not pulled while the mirror serves it is lost.
+# Steps, in order:
+#   1. Pull if the day that should be held is missing for any tracked game.
+#      Before SLOT that is yesterday, from SLOT on it is today, so the pull
+#      happens at the 16:30 slot (24 hours apart, as tcgcsv asks) and the
+#      hourly runs only retry: a failed slot, a late refresh, a Mac that was
+#      off at 16:30. App skips any game already holding the day, so a retry
+#      fetches only what is missing.
 #   2. Export whatever has settled into the archive repo.
+#   3. Check the database is still receiving prices.
+#   4. Check the archive repo is committed and pushed.
 #
 # A day pulled at 14:00 is not exported at 14:00: the exporter leaves a day
 # alone until nothing has been written to it for SETTLE_MINUTES. The 15:00 run
@@ -29,6 +34,9 @@
 #   SKIP_PULL     "true" to export only
 #   SKIP_EXPORT   "true" to pull only
 #   DATA_REPO     archive repo to check in step 4 (default ../cardtracker-data)
+#   SLOT          daily pull time, HHMM local (1630); must match the Hour and
+#                 Minute in com.cardtracker.daily.plist
+#   CLOCK_HHMM    pretend the local time is this HHMM (testing only)
 
 set -euo pipefail
 
@@ -38,6 +46,7 @@ JAR="${JAR:-$REPO_ROOT/target/cardtracker-0.1.0.jar}"
 SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_EXPORT="${SKIP_EXPORT:-false}"
 DATA_REPO="${DATA_REPO:-$(cd "$REPO_ROOT/.." && pwd)/cardtracker-data}"
+SLOT="${SLOT:-1630}"
 
 say() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
@@ -57,33 +66,39 @@ trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 cd "$REPO_ROOT"
 
-# --- 1. pull, at most once a day ---------------------------------------------
+# --- 1. pull, when the day that should be held is missing -------------------
 if [ "$SKIP_PULL" != "true" ]; then
-  # How many tracked games still lack a successful live pull today (UTC).
-  #
-  # This used to ask whether ANY live pull had succeeded today, which is wrong
-  # the moment one game fails and another does not: the next hour saw the
-  # success, said "already ran", and never retried the failure. The archive
-  # catch-up used to paper over that by refilling the day later. It is gone
-  # (Part 42), so now it would be a day lost for that game. Counting per game
-  # means a partial failure is retried every hour until it lands; App skips
-  # the games it already holds, so a retry fetches only what is missing.
-  # A failed query leaves this empty, and empty means pull: App is safe to run
-  # when it has nothing to do.
+  # Which snapshot should we hold by now? tcgcsv refreshes at ~20:00 UTC and
+  # the pull slot is SLOT local, after that. Before the slot, the newest day we
+  # can expect is yesterday's; from the slot on, it is today's. (At 16:30 local
+  # the UTC date is the local date in both CDT and CST, so the snapshot tcgcsv
+  # is serving is dated today.)
+  HHMM="${CLOCK_HHMM:-$(date +%H%M)}"
+  if [ "$((10#$HHMM))" -lt "$((10#$SLOT))" ]; then
+    EXPECTED="$(date -v-1d +%F)"
+  else
+    EXPECTED="$(date +%F)"
+  fi
+
+  # Tracked games that do not yet hold EXPECTED. Counted per game on purpose:
+  # an earlier version asked whether ANY pull had succeeded today, and a game
+  # that failed while another succeeded was then never retried (Part 42). A
+  # failed query leaves this empty, and empty means pull -- App is safe to run
+  # with nothing to do.
   MISSING="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
     SELECT count(*) FROM tracked_categories tc
     WHERE NOT EXISTS (
       SELECT 1 FROM ingest_runs r
-      WHERE r.source = 'tcgcsv-' || tc.category_id
+      WHERE r.source IN ('tcgcsv-' || tc.category_id, 'tcgcsv-archive-' || tc.category_id)
         AND r.status = 'ok'
-        AND (r.started_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date);" 2>/dev/null)"
+        AND r.snapshot_date >= DATE '$EXPECTED');" 2>/dev/null)"
 
   if [ "${MISSING:-1}" -eq 0 ] 2>/dev/null; then
-    say "pull: every tracked game already pulled today (UTC); skipping."
+    say "pull: every tracked game holds $EXPECTED; skipping."
   elif [ ! -f "$JAR" ]; then
     say "pull: no jar at $JAR; skipping (mvn package)."
   else
-    say "pull: starting (${MISSING:-?} game(s) not yet pulled today)."
+    say "pull: starting (${MISSING:-?} game(s) missing $EXPECTED)."
     # App decides what to fetch and skips what it already holds. A failure
     # here must not stop the export -- yesterday's data is still worth
     # archiving.

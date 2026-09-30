@@ -5,12 +5,14 @@
 <dict>
   <key>Label</key><string>com.cardtracker.hourly</string>
 
-  <!-- scripts/hourly.sh exits immediately unless the database container is
-       already up, so this is not the pull daemon the 2026-08-13 note ruled
-       out: it never starts Docker and never keeps it resident. Hourly is what
-       makes the guard usable at all -- "already running" is true during a
-       working day and false at 03:00, so a nightly job guarded this way would
-       never fire. The pull itself is still capped at once a day. -->
+  <!-- Hourly checks: export, freshness, archive sync, and a pull ONLY when the
+       day that should be held is missing (a failed 16:30 slot, a late tcgcsv
+       refresh, a Mac that was off at 16:30). The regular pull is the 16:30 slot
+       in com.cardtracker.daily, which runs this same script. Both need
+       cardtracker-db up; since 2026-09-30 Docker opens at login
+       (com.cardtracker.docker-at-login) and the container restarts on its own,
+       reversing the 2026-08-13 on-demand decision (DEVELOPMENT_HISTORY.md
+       Part 42). -->
   <key>ProgramArguments</key>
   <array>
     <string>/Users/skullllbunnies/Claude/tcgAppProto1/scripts/hourly.sh</string>

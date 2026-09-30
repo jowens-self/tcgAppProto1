@@ -4,17 +4,39 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.cardtracker.daily</string>
+
+  <!-- The daily pull slot: 16:30 local, about an hour after tcgcsv's ~20:00 UTC
+       refresh (15:00 CDT / 14:00 CST), and well before the next one retires
+       the day. A calendar slot rather than "first hourly tick after the
+       refresh" because tcgcsv asks that no price file be fetched more than
+       once in 24 hours: a fixed wall-clock time puts pulls 24 hours apart,
+       where an hourly tick drifts and would eventually skip a whole day.
+
+       It runs the same scripts/hourly.sh as com.cardtracker.hourly, which
+       decides for itself whether a pull is due (it is at 16:30: nobody has
+       today's snapshot yet) and shares its lock, so the two never overlap.
+       The hourly job only pulls when the expected day is missing -- a failed
+       slot, a late refresh, or a Mac that was off at 16:30.
+
+       SLOT in hourly.sh must match Hour/Minute here. Owner's decision,
+       2026-09-30 (DEVELOPMENT_HISTORY.md Part 42). -->
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/java</string>
-    <string>-jar</string>
-    <string>/Users/skullllbunnies/Claude/tcgAppProto1/target/cardtracker-0.1.0.jar</string>
+    <string>/Users/skullllbunnies/Claude/tcgAppProto1/scripts/hourly.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/skullllbunnies/Claude/tcgAppProto1</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>DATA_REPO</key><string>/Users/skullllbunnies/Claude/cardtracker-data</string>
+  </dict>
+
   <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>15</integer></dict>
-  <key>StandardOutPath</key><string>/tmp/cardtracker.log</string>
-  <key>StandardErrorPath</key><string>/tmp/cardtracker.err</string>
+  <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+
+  <key>StandardOutPath</key><string>/Users/skullllbunnies/Library/Logs/cardtracker/hourly.log</string>
+  <key>StandardErrorPath</key><string>/Users/skullllbunnies/Library/Logs/cardtracker/hourly.err</string>
 </dict>
 </plist>

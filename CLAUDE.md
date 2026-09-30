@@ -79,22 +79,20 @@ Behaviour worth knowing before reading the code, newest first:
   truncated pull, and did, rejecting 546 of 927 days before it was fixed. The
   file's existence is the only record that a day is done, which is why a short
   day is skipped rather than written with a warning.
-- **One hourly job, and it does nothing unless Docker is already up**
-  (`scripts/hourly.sh`, `com.cardtracker.hourly`, the only cardtracker job in
-  `~/Library/LaunchAgents`). It pulls — at most once a day, gated on an
-  `ingest_runs` lookup rather than on starting a JVM to ask — then exports
-  whatever has settled. This does not reopen the 2026-08-13 decision: it never
-  starts Docker and never keeps it resident, it uses the hours the container is
-  already up because someone is working. **Hourly is load-bearing.** "Already
-  running" is true during a working day and false at 03:00, so the same guard
-  on a nightly job would never fire once; an idle hour costs one
-  `docker exec true`. The pull and the export deliberately do not complete in
-  the same run — see Part 39. **Stale data here is now a real loss, not a
-  cosmetic one** (Part 42). Until September 2026 `App` ran gap catch-up from
-  tcgcsv's archive on every run, so a week without a pull was a week the next
-  pull backfilled. tcgcsv took that archive down; a day nobody pulls while the
-  mirror serves it is gone for good. Stale prices still don't prove the *job*
-  is broken — Docker may just have been off — but they do mean days were lost.
+- **A 16:30 pull slot, an hourly job, and Docker at login**
+  (`scripts/hourly.sh`, run by `com.cardtracker.daily` at 16:30 and by
+  `com.cardtracker.hourly` every hour; `com.cardtracker.docker-at-login` opens
+  Docker at login and `cardtracker-db` has `restart: unless-stopped`). Decided
+  2026-09-30, reversing the 2026-08-13 on-demand decision once tcgcsv's archive
+  went away (Part 42). The script pulls only when a tracked game is missing the
+  day it should hold — yesterday's before 16:30, today's from 16:30 — so the
+  regular pull is the slot, 24 hours apart as tcgcsv asks, and the hourly runs
+  only retry after a failed slot, a late refresh or a Mac that was off.
+  **`SLOT` in the script must match the plist's Hour/Minute.** Every run then
+  exports whatever has settled; the pull and the export deliberately do not
+  complete in the same run — see Part 39. **A stale day is a lost day**
+  (Part 42): with no archive to backfill from, a day nobody pulls before
+  tcgcsv's next ~20:00 UTC refresh is gone for good.
 - **A thumbnail costs no database connection** (`ImageFiles`, Part 38). Files
   are named `<category_id>/<product_id>.jpg`, so the path follows from the id
   and the endpoint never reads `card_images.file_path`. That also removed the
@@ -123,8 +121,8 @@ Behaviour worth knowing before reading the code, newest first:
   `item_variants().latestDate`, so "30 days" means thirty days of prices
   even when the pull has not run today. **Do not "simplify" this to
   `new Date()`**: the browser's clock is host-local where every date here is
-  UTC, and on-demand pulls mean the newest day is routinely behind today with
-  nothing wrong. Same class of bug as the phantom day, one layer up. That
+  UTC, and the pull lands at 16:30 local, so for most of the day the newest
+  day is yesterday with nothing wrong. Same class of bug as the phantom day, one layer up. That
   anchor also makes an empty result impossible, so a 404 from
   `/api/items/{id}/history` means a real failure and is meant to look like
   one. A branch treating it as "no prices in range" was written, disproved,
@@ -750,34 +748,28 @@ source. Setup details are in README.
 (an import, a backfill). It overwrites the jar in place and Java loads
 classes lazily, so a running process can die partway through.
 
-**On-demand pulls, no scheduled job (decided 2026-08-13).** Nothing reads
-this data unattended yet, so a daemon would mean Docker Desktop parked in
-memory for no one. Run the jar by hand when you want fresh data.
+**Scheduled pulls, Docker at login (decided 2026-09-30).** This replaced
+**on-demand pulls (decided 2026-08-13)**, which rested on two things: nothing
+read the data unattended, so a daemon meant Docker Desktop parked in memory
+for no one; and a skipped day cost nothing, because `App` backfilled it from
+tcgcsv's daily archives. In September 2026 tcgcsv took the archive down
+(server costs, moderation burden; "temporarily", no appeal). The live
+endpoints only serve the current day, so a day not pulled between one
+~20:00 UTC refresh and the next is lost for good, and this repo's archive is
+the only copy of what was caught. Put to the owner on 2026-09-30, who chose
+Docker at login plus a fixed 16:30 pull (the hourly-job note near the top;
+Part 42). A resident Docker's memory is the accepted price.
 
-**Missing a day used to cost nothing. It no longer does** (Part 42). The
-decision above rested on tcgcsv's daily archives, which `App` used to
-backfill any skipped day. In September 2026 tcgcsv took the archive down
-(server costs, moderation burden; "temporarily", no appeal) and removed the
-catch-up with it. The live endpoints only ever serve the current day, so a
-day not pulled between tcgcsv's ~20:00 UTC refresh and the next one is lost
-for good, and this repo's archive is the only copy of what was caught.
+**If tcgcsv's archive returns, none of this reverses by itself.** Re-enabling
+catch-up is its own decision, against whatever terms the archive comes back
+under.
 
-**So the premise of the on-demand decision is gone.** Whether to answer that
-with a resident pull, a scheduled Docker start, or by accepting the gaps is
-the owner's call; it was put to them on 2026-09-30 and is not decided here.
-
-**The trigger for a scheduled daemon is hosting, not a front end.** A
-local front end changes nothing: whoever opens it can trigger the pull.
-Unattended freshness only matters once someone *other than the owner*
-loads the app. (Now that shipping is the goal, this is approaching.)
-The LaunchAgent template is checked in at `com.cardtracker.daily.plist`,
-built and verified 2026-08-13, then deliberately unloaded.
-
-**`App` is idempotent per day and self-healing:** it skips the fetch if
-today (UTC) already has a successful run, and catches up missing prior
-days before pulling today. Both verified end-to-end against an isolated
-scratch database, not just by code review; see DEVELOPMENT_HISTORY.md
-Parts 9 and 10.
+**`App` is idempotent per day:** it skips the fetch for any game that
+already holds the mirror's current day, so rerunning it is free. It used to
+be self-healing as well, catching up missing prior days from tcgcsv's archive
+before pulling, until the archive went away (Part 42). Idempotency was
+verified end-to-end against an isolated scratch database, not just by code
+review; see DEVELOPMENT_HISTORY.md Parts 9 and 10.
 
 ## Tests (added 2026-08-20 - there were none before)
 

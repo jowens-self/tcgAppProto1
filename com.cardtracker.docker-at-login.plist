@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.cardtracker.docker-at-login</string>
+
+  <!-- Opens Docker Desktop in the background at login, so cardtracker-db
+       (restart: unless-stopped) comes back after every reboot without anyone
+       remembering to start it. Decided by the owner 2026-09-30, replacing the
+       2026-08-13 on-demand decision: that one rested on tcgcsv's archive making
+       a missed day free, and the archive is gone (DEVELOPMENT_HISTORY.md
+       Part 42). A launch agent rather than Docker Desktop's own "start at
+       login" toggle because it needs no restart of Docker to take effect and
+       is visible in the repo next to the jobs that depend on it. Opening an
+       app that is already running is a no-op. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/open</string>
+    <string>-g</string>
+    <string>-a</string>
+    <string>Docker</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>

@@ -41,73 +41,44 @@ java -jar target/cardtracker-0.1.0.jar
 Override the defaults with `CARDTRACKER_DB_URL`, `CARDTRACKER_DB_USER`,
 `CARDTRACKER_DB_PASS` if you want something other than local dev creds.
 
-## Running a pull (on-demand, for now)
+## How pulls run
 
-No scheduled job right now, by choice (see CLAUDE.md "On-demand pulls, not
-a scheduled job"). Nothing reads this data unattended, so a background
-daemon just means Docker Desktop parked in memory for no one.
+Scheduled, since 2026-09-30 (CLAUDE.md, "Scheduled pulls, Docker at login"):
 
-**A missed day is lost.** This used to be free: every run backfilled gaps
-from tcgcsv's daily archives. tcgcsv took the archive down in September 2026
-(see "Backfill" below), and the live endpoints only serve the current day,
-so a day nobody pulls before tcgcsv's next ~20:00 UTC refresh is gone for
-good. The hourly job (`scripts/hourly.sh`) pulls whenever the database
-container is already up; to pull by hand:
+- `com.cardtracker.docker-at-login` opens Docker Desktop at login, and
+  `cardtracker-db` has `restart: unless-stopped`, so the database is back
+  after every reboot.
+- `com.cardtracker.daily` runs `scripts/hourly.sh` at **16:30 local**, about
+  an hour after tcgcsv's ~20:00 UTC refresh. That is the regular pull, 24
+  hours apart as tcgcsv asks.
+- `com.cardtracker.hourly` runs the same script every hour. It pulls only if
+  a tracked game is missing the day it should hold, then exports settled days
+  to `cardtracker-data` and checks freshness and archive sync.
+
+**A missed day is lost.** tcgcsv took its archive down in September 2026
+(see "Backfill" below) and the live endpoints only serve the current day, so
+a day nobody pulls before the next refresh is gone for good.
+
+The three plists are checked in at the project root. To install or reload
+them:
+
+```bash
+for n in com.cardtracker.docker-at-login com.cardtracker.daily com.cardtracker.hourly; do
+  cp $n.plist ~/Library/LaunchAgents/
+  launchctl bootout gui/$(id -u)/$n 2>/dev/null
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/$n.plist
+done
+```
+
+**The jobs run the built jar.** Rebuild after any code change, but not with
+`mvn package` while the API server or a pull is using the jar: it overwrites
+the jar in place (see CLAUDE.md). Logs are in `~/Library/Logs/cardtracker/`.
+
+To pull by hand:
 
 ```bash
 docker compose up -d                       # if Postgres isn't already running
-mvn package                                # rebuild if source changed
 java -jar target/cardtracker-0.1.0.jar
-```
-
-## Daily schedule (macOS): built, tested, currently unloaded
-
-A working LaunchAgent template is checked in at `com.cardtracker.daily.plist`
-in the project root. It was installed and verified live on 2026-08-13, then
-deliberately unloaded and removed from `~/Library/LaunchAgents` in favor of
-the on-demand approach above. To reinstate it later:
-
-```bash
-cp com.cardtracker.daily.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.cardtracker.daily.plist
-```
-
-Runs at 03:15 local. The mirror refreshes around 20:00 UTC, so this always
-picks up a complete day. Logs go to `/tmp/cardtracker.log` /
-`/tmp/cardtracker.err`.
-
-**Requires Docker Desktop to already be running.** It does not currently
-auto-launch at login (only its privileged helper daemons do), so a reboot
-needs Docker Desktop reopened by hand before the next 03:15 run, unless
-"Start Docker Desktop when you log in" has been enabled in its own
-Settings > General.
-
-**Requires `mvn package` to have been run first.** The LaunchAgent invokes
-the built jar directly (`java -jar target/cardtracker-0.1.0.jar`), not the
-source. Rebuild after any code change or the scheduled runs will use stale
-code.
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.cardtracker.daily</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/bin/java</string>
-    <string>-jar</string>
-    <string>/Users/YOU/cardtracker/target/cardtracker-0.1.0.jar</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>/Users/YOU/cardtracker</string>
-  <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>15</integer></dict>
-  <key>StandardOutPath</key><string>/tmp/cardtracker.log</string>
-  <key>StandardErrorPath</key><string>/tmp/cardtracker.err</string>
-</dict>
-</plist>
 ```
 
 ## Design decisions worth not undoing

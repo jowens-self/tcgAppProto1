@@ -2,6 +2,10 @@ services:
   db:
     image: postgres:16
     container_name: cardtracker-db
+    # Comes back by itself when Docker does (Docker opens at login via
+    # com.cardtracker.docker-at-login). A day nobody pulls is lost now that
+    # tcgcsv's archive is gone -- DEVELOPMENT_HISTORY.md Part 42.
+    restart: unless-stopped
     environment:
       POSTGRES_DB: cardtracker
       POSTGRES_USER: cardtracker
