@@ -319,6 +319,9 @@ class SourceGuardsTest {
         for (Path p : filesUnder("sql", ".sql")) corpus.append(read(p));
         for (Path p : filesUnder("web/src", ".ts", ".html", ".css")) corpus.append(read(p));
         for (Path p : filesUnder("sql/checks", ".sh")) corpus.append(read(p));
+        // The hourly job and the exporter are code CLAUDE.md documents in
+        // detail (the pull slot, the settle time), so their names are real too.
+        for (Path p : filesUnder("scripts", ".sh")) corpus.append(read(p));
         String all = corpus.toString();
 
         Set<String> missing = new HashSet<>();
