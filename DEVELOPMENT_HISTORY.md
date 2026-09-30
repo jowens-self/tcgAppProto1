@@ -55,9 +55,18 @@ origin through that date, then continuing forward from there).
 36. [Part 36 — A month of a card, not all of it](#part-36--a-month-of-a-card-not-all-of-it)
 37. [Part 37 — The fifty-first Charizard](#part-37--the-fifty-first-charizard)
 38. [Part 38 — Fifty connections to draw one page](#part-38--fifty-connections-to-draw-one-page)
-36. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-37. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-38. [What's still open](#whats-still-open)
+39. [Part 39 — Nine hundred days in one volume](#part-39--nine-hundred-days-in-one-volume)
+40. [Part 40 — The job Part 39 described had never run](#part-40--the-job-part-39-described-had-never-run)
+41. [Part 41 — The day the archive lost, and the reason nothing said so](#part-41--the-day-the-archive-lost-and-the-reason-nothing-said-so)
+42. [Part 42 — The archive went away, and every pull said FAILED for three weeks](#part-42--the-archive-went-away-and-every-pull-said-failed-for-three-weeks)
+43. [Part 43 — A schema that can change, and holdings that never do](#part-43--a-schema-that-can-change-and-holdings-that-never-do)
+44. [Part 44 — The Collection screen, and a check that reads the data](#part-44--the-collection-screen-and-a-check-that-reads-the-data)
+45. [Part 45 — Charts you can read a day off](#part-45--charts-you-can-read-a-day-off)
+46. [Part 46 — The summer slump, and the noise around new sets](#part-46--the-summer-slump-and-the-noise-around-new-sets)
+47. [Part 47 — One card view for two screens](#part-47--one-card-view-for-two-screens)
+48. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+49. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+50. [What's still open](#whats-still-open)
 
 ---
 
@@ -4258,7 +4267,10 @@ Not started. Schema not yet designed.
 - **Inventory CSV ingestion** — `InventorySource` is an interface with no
   implementation, intentionally, until a real Seller Portal export sample
   exists to design against.
-- **Inventory + price join views** — not started; depends on the above.
+- ~~**Inventory + price join views**~~ — built without waiting on the CSV
+  (Parts 43–45): hand entry, holdings priced by `current_holdings()` on any
+  date, and the collection's value day by day. The CSV above stays open as
+  a bulk import beside it, not a prerequisite.
 - **Real scheduling** — the LaunchAgent template still exists
   (`com.cardtracker.daily.plist` in the project root) and can be
   reinstated in two commands once there's an actual front-end that needs
@@ -4501,6 +4513,10 @@ check that reads the data rather than the exit status. "Is the newest
 snapshot older than two days" would have caught this on 2026-09-01 instead of
 2026-09-04. That check does not exist yet.
 
+*Update, 2026-09-09: it does now, as `data_freshness()` with four readers
+(the health endpoint, a banner on every screen, the hourly job's
+notification and a check file). See Part 44.*
+
 ### Addendum, 2026-09-07: the same move again, to its final home
 
 `~/Dev 26+` lasted three days. The projects were consolidated into `~/Claude`
@@ -4673,3 +4689,333 @@ which is the least traffic that still captures every day. Enforcing a
 literal 24-hour gap would push the pull time later every day until it
 skipped a refresh entirely, and a skipped refresh is now a lost day. That
 trade-off was put to the owner rather than decided here.
+
+---
+
+## Part 43 — A schema that can change, and holdings that never do
+
+*2026-09-08 to 2026-09-09.*
+
+The docs said inventory would arrive by CSV, and that the CSV was blocked on
+never having seen a real Seller Portal export. The owner read that and asked
+the obvious question: if we're tracking inventory, why can't you just type it
+in? The CSV's unknown columns block the CSV parser and nothing else. Hand
+entry needs a product already in `products`, a quantity, a condition and what
+was paid, and that is a complete row. The docs were corrected first: one of
+two ways in, not the way in.
+
+Then the owner set the direction: build towards accounts, where people save
+their own inventory. Two calls were theirs and were asked: **how people sign
+in is decided at hosting time**, not now; and **holdings are append-only,
+like prices**.
+
+### A schema that can change
+
+`schema.sql` is mounted into `docker-entrypoint-initdb.d`, which runs once,
+on an empty data directory. This database was initialised on 2026-08-12 and
+holds 42M price rows, so `schema.sql` had not run since and never would. Every
+schema change after the first boot had been a psql command somebody
+remembered to type.
+
+`sql/migrate.sh` is the fix. Numbered files in `sql/migrations/` apply in
+order, each in a single transaction together with its row in
+`schema_migrations`, so a migration lands completely or not at all. Then
+`functions.sql`, which is idempotent, is applied again. `--pending` lists
+what would run and changes nothing. `schema.sql` stays the definition for a
+fresh database, which means every change is written twice: as a migration
+for this database, and in `schema.sql` for a new one.
+
+### Accounts before sign-in
+
+`001_users` adds a `users` table with one row: the local owner, user 1, as
+`owner@localhost`. No real address is stored. `002_holdings` gives
+`inventory_snapshots` a surrogate key, a `user_id` that defaults to 1, a
+`cost_basis`, and `quantity >= 0`. The default is what lets every query,
+endpoint and screen be written per user today, before any login exists, and
+keep working unchanged afterwards. The table was empty, so every `ALTER` was
+free. That stops being true the moment anything is entered, which was the
+argument for doing it first.
+
+### Append-only holdings
+
+A correction is a new row; a sale is a row with quantity 0; "what do I hold"
+is the newest row per (card, variant, condition), one `DISTINCT ON` in
+`current_holdings()`. What that buys is an honest past. Asking what the
+collection was worth on 1 June moves the holdings **and** the prices back to
+that day, rather than pricing today's cards at June's prices. Checked on
+live data: a holding corrected from 2 to 5 still reads 2 as of an earlier
+date, and a card sold later still appears on the day before the sale.
+`HoldingsRepository` has no `update()` and no `delete()`, and CLAUDE.md says
+not to add either.
+
+### The check that could only be satisfied by deleting history
+
+`sql/checks/price_history_integrity.sql` asserted that excluded products had
+no price rows at all. That was permanently red whenever a new code card
+appeared, because the archive backfill runs first and knows only product ids,
+so a new code card gets priced for a day or two before the pull discovers
+what it is. The only way to turn the check green was to delete real
+observations from an append-only table. Five such rows were deleted on the
+owner's word before the check itself was questioned. The check now asks
+what actually matters: did any excluded product gain prices **after** it was
+excluded? That would prove exclusion had stopped working. Rows from before
+are harmless, since nothing joins to an excluded product.
+
+---
+
+## Part 44 — The Collection screen, and a check that reads the data
+
+*2026-09-09.*
+
+The Collection screen is search, pick, and record. Typing searches as you go
+(250 ms debounce, and a newer query cancels an older one in flight). Picking
+a card loads the variants it actually trades as, and selects the only one
+automatically. Then comes a condition, a quantity and, optionally, what you
+paid. Totals come from one function, `holding-totals.ts`, that counts
+unpriced and uncosted rows rather than treating them as $0. "Value on
+<date>" answers for any past day, and clicking a quantity shows every change
+ever recorded for it.
+
+One bug found by using it rather than by testing it: the API accepted
+"Normal" for Nidoking (42351), which only trades as Holofoil. A holding in a
+variant that has no prices sits at a null value forever, so the POST now
+checks the variant against the card's real ones and says which exist, e.g.
+"it trades as: Holofoil".
+
+### The check Part 40 said did not exist
+
+Part 40 ended on "Is the newest snapshot older than two days would have
+caught this… That check does not exist yet." It does now, as one SQL
+function, `data_freshness()`, with four readers:
+
+- `/api/health`, which reports `stale`, not just that the process is up;
+- a banner on every screen, because whichever screen you open should be the
+  one that tells you;
+- the hourly job, which logs it and raises a macOS notification;
+- `sql/checks/data_freshness.sql`, which also flags an ingest run stuck in
+  `running` for six hours.
+
+Stale means more than two days, because the newest data is normally
+yesterday's. The alarm path was tested, not just the all-clear: the test
+fixtures are dated 2026-08-19, so the contract test asserts that health says
+stale.
+
+### Twenty-two seconds
+
+The first version of the freshness query took `MAX(snapshot_date)` per game
+by scanning the whole 42M-row table: 22.5 seconds, behind a health check. It
+now looks in a four-day window on the date index and falls back to the full
+scan only when that window is empty: 250 ms. The API caches the answer for a
+minute: 1.5 ms. The same query had also been written three times, in the
+API, the check and `hourly.sh`, and is now the one function.
+
+Two smaller fixes in the same pass. A save opened three database connections
+(check the card, check the variant, record) and now opens one. And the
+per-holding history endpoint returned 500 after its SQL moved into
+`holding_events()`, because the Java still read the old column names. An
+earlier test had passed on an empty list, which is how it hid. It now has its
+own record type rather than a holding with six nulls, and a test that fails
+if the column names drift, confirmed by breaking them on purpose.
+
+---
+
+## Part 45 — Charts you can read a day off
+
+*2026-09-09 to 2026-09-11.*
+
+**Pictures on Movers.** Movers was built the day local images landed and
+never got them. There was no decision behind their absence. They are served
+off our own disk, like every other image.
+
+**Scrubbing.** Hovering or dragging across any chart reads that day's price.
+It uses pointer events, so a finger works like a mouse, with `touch-action:
+pan-y` so a vertical swipe still scrolls the page. The SVG is stretched to its
+box (`preserveAspectRatio="none"`), so the readout is placed by fraction of
+width rather than in SVG units. Because points are evenly spaced, the one
+under the cursor is a rounding (`chart-scrub.ts`), not a search: it costs the
+same at 30 points or 900, and never makes a request.
+
+**What the collection was worth, day by day.** `collection_value()` turns
+each card's append-only entries into validity intervals with `LEAD()`,
+matches every day in the range to the intervals it falls in, and prices each
+card at its newest price on or before that day, one index seek each. A
+window-function forward-fill was tried instead and measured: 661 ms at 90 days
+but 16.9 s at 365. It was reverted, and the reason is left in the function's
+comment. As built: 200 holdings over 90 days in ~110 ms, 1,000 over a year in
+~1.1 s.
+
+The invariant that matters: **the chart's last point equals the Value total
+printed under it.** A chart that contradicts the number beneath it is worse
+than no chart. It was checked at several totals, from $2,349.58 to $232,195.65,
+and a contract test holds it; with the carry-forward removed that test fails
+with "chart ends at 0 but the table totals 231.0". One more fix came from
+using it: the server returns a row for every day, so an empty collection drew
+a confident flat line at $0. The series is now trimmed to the first day
+anything was held.
+
+The chart itself now takes a plain {date, value} series, so the same
+component draws a card's price and a collection's value without knowing
+which. Comparing value against what you paid was put to the owner and parked
+as a settings option for later.
+
+---
+
+## Part 46 — The summer slump, and the noise around new sets
+
+*2026-09-29.*
+
+### A question the data first answered wrongly
+
+"Based on last year's data, when did the summer slump end?" The first answer
+was that, for Pokemon, there wasn't one. The typical card worth $1 or more
+from an already-released set rose every week of summer 2025, just slowest in
+June. That was true of the basket it measured, and the owner didn't buy it:
+"maybe because you're counting vintage, can you filter by modern? Sword and
+Shield on?"
+
+They were right. Of ~16,000 cards in that basket, ~13,000 predate Sword &
+Shield, and they were climbing steadily enough to drown out everything else.
+Modern singles alone (~2,600 cards) peaked in mid-March 2025 and slid ~11% to
+early July. They turned in late July and were back at the March high in
+September: the pricier cards by ~9 September, the typical card by the end of
+it. Sealed never slumped. 2024's modern slide ran July to September and
+turned in November. Two independent measures agreed: each card against its
+own May price, and the share of cards up versus down over four weeks.
+
+Worth keeping: the first answer was correct about the question it answered
+and wrong about the question asked. A market is not one market, and the
+owner's sense of it caught a composition effect the numbers did not flag.
+
+### Set release dates, and nineteen that weren't
+
+Answering that needed "modern", which needed set release dates. Those were
+already stored, from TCGplayer's catalog via the mirror, and right for every
+real set checked. But 19 catch-all and promo groups (Miscellaneous Cards &
+Products, POP Series 1–9, Burger King Promos, the EX Trainer Kits…) have no
+date upstream, and the mirror stamps them with the time it built the file.
+So every day they read as released that day, and sorted above every real new
+set on the Sets screen.
+
+A real release date always arrives at midnight, so anything else is now
+stored as unknown. The column became a `DATE`. It had been a timestamp read
+in whatever zone the ingesting JVM ran in, which was only right because this
+machine is west of UTC. A pull that stops sending a date we already hold
+keeps ours (migration 003).
+
+### Modern, as a date per game
+
+The owner's call: modern starts at Sword & Shield, and may move to Scarlet &
+Violet later. So it is a date in `tracked_categories.modern_since`, and moving
+it is an UPDATE.
+- **Pokemon is 2019-11-15, the first SWSH promo,** three months before the
+  first set, so the SWSH promos count with their block and Cosmic Eclipse is
+  the last set out.
+- **One Piece has no cutoff.**
+- **A set with no date is never modern.** The owner's rule: exclude it if it
+  can't be placed in a block.
+
+There is one rule, `modern_group_ids()`. Movers applies it before the top-50
+cut, and set lists carry a flag, so the front end never compares a date.
+
+### Launch pricing
+
+Answering the same question also meant leaving out new sets, and that is
+where the Sets screen had been lying. ME: 30th Celebration read −97.47% over
+30 days on a basket of five cards, every one a preorder price. That prompted
+a measurement across 14 Pokemon and 15 One Piece main sets released since
+spring 2024:
+- **Before release:** prices appear ~10 days early for Pokemon and 2–3 weeks
+  for One Piece, sometimes months (some 30th Celebration cards were priced
+  from June for a September release). About half the cards have one, at
+  roughly 3x where they settle a week out.
+- **Release day:** still 1.5–2x.
+- **After release:** Pokemon then loses ~24% in week one and 4–7% a week for
+  the rest of the month. One Piece falls ~12%, then ~5% a week for six weeks.
+- **By week 8:** both are flat.
+
+On the day, 28 of the 50 biggest modern drops on Movers were cards that
+hadn't existed ten weeks earlier.
+
+The owner's design: a checkbox for pre-release, one for early pricing, both
+off by default, "cuz that's mostly noise in the data".
+- **A card's release** is its set's date, unless it was first priced more
+  than 30 days after that. The exception catches new promos filed under a
+  long-running promo group: the 30th Celebration promos sit in a Mega
+  Evolution group dated 2025, and were two of that week's top five drops. A
+  card priced since before our history began has no release to filter by
+  (`card_release()`).
+- **A price's phase** is `pre_release` before that date, `early` for the
+  game's `early_days` after (56), and settled after that (`price_phase()`).
+- **`launch_noise()`** is the one list that trend screens drop. Movers checks
+  the "then" end, Sets the window start. Values never change: what a card or
+  set is worth today is real money either way.
+
+### Making it cheap enough
+
+Telling a card's phase needs its first price date. Looking that up is one
+index seek per card, and a screen touches ~50,000 cards: 4.3 s. So it lives
+in `card_first_priced`, a derived table kept by a statement-level trigger on
+`price_snapshots`. It is a trigger because prices arrive three ways (the
+pull, the archive backfill, a COPY restore from the backup) and only a
+trigger sees all three. It only ever moves a date earlier and writes nothing
+to `price_snapshots`.
+
+`launch_noise()` then took 190 ms by itself. It computed a phase for all 53k
+cards, and `price_phase()` wasn't being inlined, because its argument was a
+`CASE` used three times, so Postgres called it as a function per row. It now
+narrows to cards in a recent set or first priced recently, and materialises
+them so the release is a plain column and the phase inlines: ~25 ms. Movers
+is ~50 ms slower than before and Sets ~70 ms.
+
+Charts carry the phase too. When launch pricing is shown, it sits on a shaded
+band, darker before release. A card that hasn't settled is charted anyway,
+with a note, and without a percentage, since a change measured from a
+preorder price is exactly what the boxes are for.
+
+### Two things that bit
+
+- Rebuilding the jar under a running API server made it return 500. The JVM
+  loads classes lazily from a jar that had been swapped out underneath it.
+  Restart the API after every `mvn package`.
+- `lsof -ti:7070` lists the browser's connections as well as the server, so
+  killing all of them fails. Kill only `-sTCP:LISTEN`.
+
+---
+
+## Part 47 — One card view for two screens
+
+*2026-09-30.*
+
+"You need to make it where you can see the card when you click on it in
+movers." Clicking a Movers row opened a small chart below all fifty rows,
+out of sight. It had been built that way and never looked at on a real
+screen, which is the same lesson as Part 45's flat $0 line: use the thing.
+
+Search already had the full view: picture, every variant's price and
+all-time high, range buttons, chart. That panel is now one component,
+`card-detail`, used by both screens, so a card cannot read differently in
+two places.
+- **On Movers** it opens directly under the clicked row, adds the move that
+  put the card on the board, and scrolls into view if it would hang off the
+  screen. Clicking the row again closes it.
+- **Its layout follows its own width, not the screen's** (a container query):
+  stacked in Search's ~520px column, picture beside the numbers in a
+  ~1,000px Movers row.
+- **The chart range belongs to the screen,** so it sticks from card to card:
+  "All" on Search as before, 90 days on Movers, where the point is a recent
+  move.
+- **Late answers are guarded.** A response for a card or variant that has
+  since been replaced no longer overwrites the newer one.
+
+The owner also moved Movers' default to biggest gains, listed first, and the
+default moved in `item_movers()` too, so a bare psql call shows the same board.
+
+### Sharing a checkout
+
+Another session was mid-change in the same working tree while this was built:
+the archive withdrawal in Part 42, touching `App` and `hourly.sh`. This one
+committed only its own files, dropped its planned history numbers to make
+room for Part 42, and did not rebuild the jar while that uncommitted `App`
+change was in the tree. The hourly job runs that jar, so a rebuild would
+have put someone else's half-finished pull into production. It rebuilt once
+the change was committed.

@@ -40,8 +40,8 @@ below).
 
 Behaviour worth knowing before reading the code, newest first:
 
-- **Launch pricing is left out of trends by default** (migration 005 has
-  the numbers). Prices from before a card's release, and from its first
+- **Launch pricing is left out of trends by default** (Part 46; migration
+  005 has the numbers). Prices from before a card's release, and from its first
   `early_days` after it, are mostly noise: preorders sit at ~3x where a card
   settles. Movers and a set's change drop them unless asked; values never do.
   Each card's first price is kept in `card_first_priced` by a trigger on
@@ -49,17 +49,17 @@ Behaviour worth knowing before reading the code, newest first:
   they live.
 - **"Modern" is a per-game date in `tracked_categories`**, and set release
   dates are real `DATE`s. 19 catch-all groups have no date upstream and are
-  stored as unknown rather than as the mirror's build time (migrations 003
-  and 004).
-- **Freshness is watched, not assumed.** `data_freshness()` is the one
+  stored as unknown rather than as the mirror's build time (Part 46,
+  migrations 003 and 004).
+- **Freshness is watched, not assumed** (Part 44). `data_freshness()` is the one
   definition, read by `/api/health`, a banner on every screen, the hourly
   job (which raises a macOS notification) and `sql/checks/data_freshness.sql`.
   Stale means more than 2 days old, because the newest data is normally
   yesterday's.
-- **Holdings are append-only, like prices.** A change is a new row, a sale
+- **Holdings are append-only, like prices** (Part 43). A change is a new row, a sale
   is quantity 0, and "what do I hold" is the newest row per (card, variant,
   condition). `HoldingsRepository` has no update or delete.
-- **`schema.sql` runs once, on an empty database, and never again.** The
+- **`schema.sql` runs once, on an empty database, and never again** (Part 43). The
   live database was created 2026-08-12, so every schema change since is also
   a numbered file in `sql/migrations/`, applied with `./sql/migrate.sh` (one
   transaction each, recorded in `schema_migrations`, then `functions.sql`
@@ -843,7 +843,7 @@ inventory tracking cannot exist, though it was treated as one for longer than
 it should have been. Hand entry needs none of those columns: the owner picks a
 product already in `products`, says how many, in what condition, and what they
 paid. That is a complete row, and it has existed since 2026-09-09 (the
-Collection screen). A CSV import, when it comes, writes the same rows the
+Collection screen, Part 44). A CSV import, when it comes, writes the same rows the
 same append-only way.
 
 Two former unknowns are settled and should not be re-litigated:
