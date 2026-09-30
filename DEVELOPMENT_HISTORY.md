@@ -66,9 +66,10 @@ origin through that date, then continuing forward from there).
 47. [Part 47 — One card view for two screens](#part-47--one-card-view-for-two-screens)
 48. [Part 48 — A settings screen, and two kinds of setting](#part-48--a-settings-screen-and-two-kinds-of-setting)
 49. [Part 49 — Reading the whole thing again](#part-49--reading-the-whole-thing-again)
-50. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-51. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-52. [What's still open](#whats-still-open)
+50. [Part 50 — Prices that flip, and saying what every number means](#part-50--prices-that-flip-and-saying-what-every-number-means)
+51. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+52. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+53. [What's still open](#whats-still-open)
 
 ---
 
@@ -5203,3 +5204,88 @@ hours", and archive catch-up that no longer runs.
 
 Verified: 163 Java tests, 59 front-end tests, all five SQL checks, and each
 screen in the browser.
+
+---
+
+## Part 50 — Prices that flip, and saying what every number means
+
+The oldest open data question (Part 23) was cards whose market price flips
+between two far-apart values for weeks. On 2026-09-30 the owner asked to see
+the list, picked "leave them out of trends by default, with a box, and say
+so on the card", and asked for a disclosures page so people can see what
+each number includes and how it is worked out.
+
+### Finding them
+
+Over the last 180 days, a day-over-day change of 2x or more starts a new
+price level, and a card "goes back" when it returns to within 25% of an
+earlier level after two or more days away. 97 cards went back at least twice;
+75 of those never rose above $5. The 22 others were shown to the owner as
+small charts, split by eye into cards that switch between two prices for
+weeks (the Base Set Shadowless 1st Edition Charizard at ~$250 or exactly
+$10,000, twelve-plus times) and cards that "mostly moved for real".
+
+**That split didn't survive a closer look.** No rule separated the two
+groups, and the "real" rises mostly started from a flip level: Umbreon's
+$48 readings sat among $186-$300 ones. Rather than invent a distinction the
+data doesn't support, every card meeting the rule is flagged, and the box
+brings any of them back.
+
+### A test caught the rule counting one-day spikes
+
+The first version flagged a test card that sat at $40 with three single days
+at $400. Each spike is its own one-day level, so "a day at $400, then 19
+days back at $40, then $400 again" counted as leaving $400 and returning to
+it. The fix: the level returned to must also have lasted two days or more.
+One-day errors are the Sets screen's despiking, not this. On the real data
+the count fell from 97 to 87 (20 at $5 or more); Flareon Star and the Neo
+Genesis 1st Edition Lugia dropped out, their jumps having been single days.
+
+### How it works
+
+- **`price_flips` is derived**, like `card_first_priced`: rebuilt by
+  `refresh_price_flips()` (migration 007, ~16s). The hourly job calls it
+  every run; it rebuilds only when the newest day has moved, so a failed
+  refresh retries next hour. DELETE and INSERT, not TRUNCATE, so screens keep
+  reading the old list during a rebuild instead of blocking on it.
+- **Trends leave flagged cards out unless asked**: Movers (before the top-50
+  cut, like modern and launch pricing) and a set's change. Values never do.
+  With the box ticked, a Movers row says "Flips"; a set says how many of its
+  cards were left out.
+- **The card view says so**, with the two levels and how often it went back.
+  The chart shows the prices as recorded.
+- **One saved preference** (`user_settings.include_flipping`), the same box on
+  Movers, Sets and Settings. The three trend exclusions now travel together as
+  `TrendScope` in Java, replacing `LaunchPricing`.
+
+Effect on 30-day set changes: EX Power Keepers read −13.64% with its flipping
+Jolteon Star counted, +2.88% without; Aquapolis read +20.49% with its Lugia,
++7.26% without. 41 sets show a flipping count, most of them because of
+penny cards moving between $0.02 and $0.12, which change nothing visible.
+
+### The Disclosures screen
+
+A new tab: where prices come from, what a price means, and for each screen
+what is included, what is left out and how it is calculated, ending with the
+three things trends leave out. The rules that are data (each game's modern
+cutoff and early-pricing weeks, the staleness threshold, the user's own
+boxes) are read live, so they can't go out of date. The fixed thresholds are
+written in the page and in `sql/functions.sql`, each pointing at the other,
+and CLAUDE.md now says the page changes in the same commit as any rule it
+describes.
+
+Writing it found two things:
+- **The stale alarm and the stale banner disagreed.** The screen called data
+  stale at 2 days, the hourly alarm at 3. With no archive a missed day is
+  lost, so the alarm now matches the screen.
+- **The mid/low fallback picks up parked listings.** On a day with no market
+  price, a card's chart and all-time high fall back to TCGplayer's mid, then
+  low price, and those are listings, not sales. The Charizard above charts at
+  $100,000 from 2026-09-20 and shows a $100,000 all-time high, both from one
+  listing parked at that price; 4,456 printings have an all-time high over 3x
+  their highest market price or have none at all. The page states the
+  fallback; whether to keep it is open for the owner.
+
+Verified: 168 Java tests (5 new for flipping), 62 front-end tests, all five
+SQL checks, and each part in the browser. Preferences were left at their
+defaults.

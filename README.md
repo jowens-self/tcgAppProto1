@@ -185,7 +185,7 @@ java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
 | `GET /api/holdings/{id}/history` | Every recorded change to one card's holding |
 | `POST /api/holdings` | Record a holding: appends, and quantity 0 is a sale |
 | `GET /api/settings` | Your preferences (the defaults until you save any) |
-| `PUT /api/settings` | Save them; all three fields required |
+| `PUT /api/settings` | Save them; every field required |
 | `PUT /api/games/{id}/rules` | A game's modern cutoff and early-pricing days; answers with the new set counts |
 
 Search takes `q` (required), plus optional `game` (category id),
@@ -288,9 +288,15 @@ both that rule and the connection-per-request in `ApiServer.withRepo`.
 
 ## Front end (`web/`)
 
-Angular 22 app over the API. Five screens: card / product search (find an
+Angular 22 app over the API. Six screens: card / product search (find an
 item, see its variants and their prices, chart one's history), Movers, Sets,
-Collection, and Settings.
+Collection, Disclosures, and Settings.
+
+**Disclosures** tells a user what every number includes, what it leaves out
+and how it is worked out. It reads the rules that are data (modern cutoffs,
+early-pricing weeks, the staleness threshold, the user's own boxes) live, so
+those can't drift; the fixed thresholds are written there, and it changes in
+the same commit as any rule it describes.
 
 A card opens in the same view everywhere: Search's side panel, and on Movers
 right under the row you clicked, with the move that put it on the board.
@@ -299,8 +305,8 @@ right under the row you clicked, with the move that put it on the board.
 - **Your preferences** save the moment they change and live on the server
   per user (`user_settings`), so they survive cleared browser data. They are:
   - "Show what you paid", a dashed line under the collection's value;
-  - the two launch-pricing boxes, which are the same setting as the boxes on
-    Movers and Sets.
+  - the launch-pricing and flipping-prices boxes, which are the same
+    settings as the boxes on Movers and Sets.
 - **Game rules** take an explicit Save, because they change what every
   trend screen counts:
   - where "modern" starts, picked from the game's sets by release date;
@@ -343,10 +349,11 @@ Structure, all standalone components with signals:
 | `movers.ts/.html/.css` | Movers screen: window/game/set/modern filters, table |
 | `sets.ts/.html/.css` | Sets screen: per-set value, return, concentration, modern filter |
 | `modern-rule.ts` | The sentence explaining what "Modern only" means for the game on screen |
-| `launch-pricing.ts` | The shared launch-pricing checkboxes, and which chart points they keep |
+| `launch-pricing.ts` | The words for the launch-pricing and flipping boxes, and which chart points they keep |
 | `price-chart.ts` | Hand-rolled SVG line chart, no charting library; hover or drag to read any day; optional dashed second line |
 | `card-detail.ts/.html/.css` | The one card view: picture, variants, range, chart; used by Search and Movers |
 | `settings.ts/.html/.css` | Settings screen: preferences and game rules |
+| `disclosures.ts/.html/.css` | Disclosures screen: what each number includes and how it's worked out |
 | `user-prefs.ts` | Your preferences as signals, loaded before the app draws, saved on change |
 | `modern-cutoff.ts` | A game's release dates as "modern starts with" choices |
 | `collection.ts/.html/.css` | Collection screen: add cards, value chart, totals, per-card history |
@@ -388,7 +395,13 @@ curl "localhost:7070/api/movers?game=3&set=23353&direction=up"
 ```
 
 Takes `days`, `game`, `set`, `sealed=true`, `modern=true`, `prerelease=true`,
-`early=true`, `minPrice`, `direction` (`up`/`down`), `smoothing`, `limit`.
+`early=true`, `flipping=true`, `minPrice`, `direction` (`up`/`down`),
+`smoothing`, `limit`.
+
+**Flipping prices are left off the board unless `flipping=true` is passed.**
+A card whose market price keeps jumping between two far-apart levels (listed
+in `price_flips`, rebuilt daily) can land on the wrong one at either end.
+When included, such a row carries `flipping: true`.
 
 **Launch pricing is left off the board unless `prerelease=true` /
 `early=true` is passed.** A card whose price at the "then" end was a preorder
@@ -456,7 +469,8 @@ curl "localhost:7070/api/sets/overview?game=3&days=30&despike=false"   # raw
 ```
 
 Takes `game`, `days` (default 30), `asOf`, `despike` (default on), and
-`prerelease=true` / `early=true`.
+`prerelease=true` / `early=true` / `flipping=true`. Flipping cards are left out
+of the change (never the value) unless asked, and `nFlipping` counts them.
 
 **Launch pricing is left out of a set's change by default**, though never
 out of its value, since what a set is worth today is real either way.

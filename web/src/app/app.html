@@ -12,7 +12,7 @@
       type="button"
       class="tab"
       [class.active]="tab() === t.id"
-      [class.settings-tab]="t.id === 'settings'"
+      [class.aside-tab]="t.id === 'disclosures'"
       [attr.aria-current]="tab() === t.id ? 'page' : null"
       (click)="tab.set(t.id)"
     >
@@ -29,6 +29,8 @@
   <app-sets />
 } @else if (tab() === 'collection') {
   <app-collection />
+} @else if (tab() === 'disclosures') {
+  <app-disclosures />
 } @else {
   <app-settings />
 }

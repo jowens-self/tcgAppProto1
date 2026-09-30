@@ -137,7 +137,7 @@ for Pokemon images only; One Piece has no image source yet.
 | `App` | the daily pull (`java -jar target/cardtracker-0.1.0.jar`) |
 | `com.cardtracker.api.ApiServer` | Javalin API on :7070 |
 | `ImportCardImages` | fetches Pokemon card images (resumable) |
-| `web/` | Angular 22: Search, Movers, Sets, Collection, Settings |
+| `web/` | Angular 22: Search, Movers, Sets, Collection, Disclosures, Settings |
 | `sql/schema.sql`, `sql/migrations/` | the schema (see below) |
 | `sql/functions.sql` | every query the API runs; idempotent, re-applied by `migrate.sh` |
 | `sql/checks/` | invariants checked against the live data |
@@ -192,13 +192,14 @@ for Pokemon images only; One Piece has no image source yet.
   days (owner); the defaults live in `item_movers()`, so psql agrees.
 - **Freshness is read from the data**: `data_freshness()` is the one
   definition, used by `/api/health`, the stale banner, `hourly.sh` and
-  `sql/checks/data_freshness.sql`. Stale is more than 2 days old.
+  `sql/checks/data_freshness.sql`. Stale is 2 or more days old
+  (`DataFreshness.STALE_AFTER_DAYS`), the same for the banner and the alarm.
 - **The exporter decides a day is finished** (`scripts/snapshot-export.sh`):
   nothing written for 30 minutes *and* a row count within 10% of the median of
   the ten days either side. **Don't turn that into a global median**: the
   catalog grows, and a global median rejected 546 of 927 real days (Part 39).
 
-### Multi-game, modern and launch pricing
+### Multi-game, modern, and what trends leave out
 
 - **A quirk found in one game is not assumed in another.** Code-card
   exclusion checks `categoryId == TcgCsvUrls.POKEMON`; a new game's quirk
@@ -216,6 +217,22 @@ for Pokemon images only; One Piece has no image source yet.
   only definitions. `card_first_priced` is derived, kept by a trigger that
   only ever moves a date earlier and never writes `price_snapshots`. Why,
   with numbers: migration 005 and Part 46.
+- **Flipping prices are left out of trends by default** (owner, 2026-09-30).
+  A card whose market price keeps jumping between two far-apart levels
+  (2x or more, two or more days at each, back and forth at least twice in
+  180 days) is listed in `price_flips`, which is derived: rebuilt by
+  `refresh_price_flips()` from `hourly.sh`, once per new day. Movers and a
+  set's change skip it unless asked; values never do; the card view says so.
+  Migration 007 and Part 50.
+- **The three trend exclusions travel together** as `TrendScope` in Java and
+  `withTrendScope()` in the front end, each with a box on Movers, Sets and
+  Settings that is one saved preference.
+- **The Disclosures screen is a promise about the code.** It tells users what
+  every number includes and how it is worked out. Change
+  `web/src/app/disclosures.html` in the same commit as any rule it describes.
+  Rules that are data (modern cutoffs, early weeks, the stale threshold, the
+  user's boxes) are read live there; fixed thresholds are written in both
+  places, and each names the other.
 - **Settings are stored in two places on purpose.** Preferences are per user
   in `user_settings`, updated in place and loaded before the app draws
   (`UserPrefs`). Game rules are per game in `tracked_categories`, shared,
@@ -327,10 +344,13 @@ deleted"); those are what a diff can't show.
   can't be derived (Part 27).
 - **Should the provenance band appear in the search grid?** Cost is no longer
   the obstacle (~5ms); it would band about a fifth of every page (Part 29).
-- **Oscillating `market_price` on thin markets**: some cards flip between two
-  far-apart values for weeks (Base Set Shadowless Charizard at ~$250 or
-  exactly $10,000). Neither smoothing nor despiking touches it. Flag it, or
-  treat it as suspect at ingest? (Part 23.)
+- **The mid/low fallback picks up parked listings.** On a day with no
+  market price, charts and all-time highs fall back to mid, then low, and
+  those are listing prices. Base Set Shadowless Charizard 1st Edition charts
+  at $100,000 from 2026-09-20 and has a $100,000 all-time high, both from one
+  parked listing; 4,456 printings have an all-time high over 3x their highest
+  market price, or none at all. Keep the fallback, drop it, or cap it? The
+  Disclosures screen already says the fallback exists (Part 50).
 - **Community art showcase** (owner's idea, 2026-08-16): themed votes on card
   art. Read DEVELOPMENT_HISTORY.md "What's still open" first; the open
   question is redistributing card art publicly.

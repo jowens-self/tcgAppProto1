@@ -2,15 +2,16 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CardTrackerApi } from './api';
 import { GameFreshness } from './api.models';
 import { Collection } from './collection';
+import { Disclosures } from './disclosures';
 import { Movers } from './movers';
 import { Search } from './search';
 import { Sets } from './sets';
 import { Settings } from './settings';
 
-type Tab = 'search' | 'movers' | 'sets' | 'collection' | 'settings';
+type Tab = 'search' | 'movers' | 'sets' | 'collection' | 'disclosures' | 'settings';
 
 /**
- * Five screens, switched by a signal rather than the router. Nothing needs a
+ * Six screens, switched by a signal rather than the router. Nothing needs a
  * deep link yet, so wiring up @angular/router would be ceremony. Revisit when
  * a screen does need its own URL, for sharing a link or for browser
  * back/forward. Collection makes that closer than it was: it is the first
@@ -19,7 +20,7 @@ type Tab = 'search' | 'movers' | 'sets' | 'collection' | 'settings';
  */
 @Component({
   selector: 'app-root',
-  imports: [Search, Movers, Sets, Collection, Settings],
+  imports: [Search, Movers, Sets, Collection, Disclosures, Settings],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -32,6 +33,7 @@ export class App {
     { id: 'movers', label: 'Movers' },
     { id: 'sets', label: 'Sets' },
     { id: 'collection', label: 'Collection' },
+    { id: 'disclosures', label: 'Disclosures' },
     { id: 'settings', label: 'Settings' },
   ];
 

@@ -28,8 +28,9 @@
   border-color: var(--accent);
   background: var(--accent-fade);
 }
-/* Set apart at the far end: a place you visit, not one of the views. */
-.settings-tab {
+/* Disclosures and Settings sit apart at the far end: places you visit, not
+   views of the data. */
+.aside-tab {
   margin-left: auto;
 }
 

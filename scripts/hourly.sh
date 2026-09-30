@@ -140,11 +140,13 @@ fi
 #
 # So this asks the database instead. Two days rather than one, because
 # snapshot_date anchors to the mirror's dataAsOf() and a healthy system is
-# one day behind by design.
+# one day behind by design. The same threshold as the app's banner
+# (DataFreshness.STALE_AFTER_DAYS): a missed day can't be recovered, so the
+# alarm should not wait a day longer than the screen does.
 STALE="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
   SELECT string_agg(game || ' (' || days_stale ||
                     CASE WHEN days_stale = 1 THEN ' day)' ELSE ' days)' END, ', ')
-    FROM data_freshness() WHERE days_stale > 2;" 2>/dev/null)"
+    FROM data_freshness() WHERE days_stale >= 2;" 2>/dev/null)"
 
 if [ -n "${STALE//[[:space:]]/}" ]; then
   say "STALE: price data has stopped arriving for $STALE"

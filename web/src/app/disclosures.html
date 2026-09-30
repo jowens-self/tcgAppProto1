@@ -1,0 +1,238 @@
+<header class="head">
+  <h1>Disclosures</h1>
+  <p class="sub">What each number includes, what it leaves out, and how it's worked out</p>
+</header>
+
+<nav class="toc" aria-label="On this page">
+  <a href="#source">Where prices come from</a>
+  <a href="#price">What a price means</a>
+  <a href="#movers">Movers</a>
+  <a href="#sets">Sets</a>
+  <a href="#card">A card's page</a>
+  <a href="#collection">Collection</a>
+  <a href="#left-out">What trends leave out</a>
+</nav>
+
+<section id="source">
+  <h2>Where prices come from</h2>
+  <ul>
+    <li>
+      Every price is TCGplayer's <em>market price</em>, which TCGplayer works out from
+      recent sales. We don't calculate it. We collect it once a day from tcgcsv.com, a
+      free, independent copy of TCGplayer's price data, and store each day's price
+      exactly as it was. Stored prices are never edited afterwards. CardTracker isn't
+      affiliated with TCGplayer or tcgcsv.
+    </li>
+    <li>
+      TCGplayer's data updates once a day. Until that day's collection has run, the
+      newest prices shown are the previous day's. Dates are calendar days in UTC.
+    </li>
+    <li>
+      History goes back to February 2024 for Pokemon and One Piece. A day that wasn't
+      collected is missing, never filled in with a guess. The one exception is
+      Collection's value chart, which carries the last price forward (see below).
+    </li>
+    <li>
+      If a game's newest prices are
+      {{ staleAfterDays() ?? 2 }} or more days old, every screen shows a warning
+      that the numbers are not current.
+    </li>
+  </ul>
+</section>
+
+<section id="price">
+  <h2>What a price means</h2>
+  <ul>
+    <li>
+      <strong>One printing, not one card.</strong> Normal, Holofoil, Reverse Holofoil,
+      1st Edition and so on trade separately, so each has its own price. They are
+      never averaged together.
+    </li>
+    <li>
+      <strong>No condition.</strong> Prices aren't broken down by condition. Collection
+      records the condition you enter, but values the card at the same market price
+      whatever the condition.
+    </li>
+    <li>
+      <strong>TCGplayer's "high" price is never used</strong>, anywhere. Sellers can
+      list at any price they like, including far above what anyone pays.
+    </li>
+    <li>
+      <strong>Market price only, with one exception.</strong> Movers, Sets and
+      Collection use the market price alone. On a day with no market price, a card's
+      chart and its all-time high use TCGplayer's mid price instead, then its low price.
+      Those are listing prices, not sales, so on a card that rarely sells they can sit
+      far from what it actually goes for.
+    </li>
+    <li>
+      <strong>Digital code cards aren't tracked.</strong> They are online redemption
+      codes packed with sealed product, not cards.
+    </li>
+  </ul>
+</section>
+
+<section id="movers">
+  <h2>Movers</h2>
+  <ul>
+    <li>
+      A move compares the <strong>median</strong> price of the last 3 days with the
+      median of the 3 days ending at the start of the window (7 days ago, by default).
+      A median rather than a single day or an average, so one odd sale can't top the
+      board. For 1- and 2-day windows the medians shrink to fit, so the two ends never
+      share a day.
+    </li>
+    <li>A card is only compared if it has a market price on every one of those days.</li>
+    <li>
+      The starting price must be at least the "Min $" amount ($1 unless you change it).
+      Without it, a card going from 6 cents to 1 cent would top the drops at −83%.
+    </li>
+    <li>Singles only, unless "Include sealed" is ticked.</li>
+    <li>
+      Pre-release, early and flipping prices are left out unless ticked; see
+      <a href="#left-out">what trends leave out</a>.
+    </li>
+    <li>"Modern only": {{ modernRule() }}</li>
+    <li>The board shows the 50 biggest moves.</li>
+  </ul>
+</section>
+
+<section id="sets">
+  <h2>Sets</h2>
+  <ul>
+    <li>
+      <strong>Value</strong> adds up the market price of every single printing in the
+      set that has a market price on the newest day, one copy of each. Sealed product
+      never counts toward a set.
+    </li>
+    <li>
+      <strong>Change</strong> compares the same cards at the start and end of the
+      window (30 days by default). Only cards priced on both days count, so cards added
+      to the set partway through can't look like a price move. Launch pricing and
+      flipping prices are left out of the change but still count toward value.
+    </li>
+    <li>
+      <strong>"Correct one-day price errors"</strong> (on by default) fixes a reading
+      that jumps and comes straight back. When a day's price is at least 25% away from
+      the days either side of it, those two days agree within 5%, and the jump is worth
+      at least $10, the median of the three days is used instead. Stored prices aren't
+      changed, every set with a correction says so, and unticking the box shows the raw
+      comparison. The newest day can't be corrected, because the day after it hasn't
+      happened yet.
+    </li>
+    <li>
+      <strong>"Driven by"</strong> names the card whose price moved the most in dollars,
+      and its share of all the set's movement, counting rises and falls alike. Past
+      50%, one card is doing most of the work and the set's percentage says more about
+      that card than about the set, so it's flagged.
+    </li>
+    <li>
+      "Hide sets with no return" hides sets with no change to show: nothing priced on
+      both days, or a new set with nothing settled yet. The screen says how many new
+      sets it's hiding.
+    </li>
+  </ul>
+</section>
+
+<section id="card">
+  <h2>A card's page</h2>
+  <ul>
+    <li>
+      The chart shows the market price day by day (with the mid- and low-price fallback
+      described above). Ranges like "90d" count back from the card's newest price, not
+      from today.
+    </li>
+    <li>
+      Launch pricing is shaded. If it's unticked it's also left off the chart, unless
+      the card has nothing else yet, in which case it's shown and labelled.
+    </li>
+    <li>The change above the chart is from the first to the last point drawn.</li>
+    <li>
+      The all-time high is the highest price ever recorded for that printing, using
+      the same fallback.
+    </li>
+    <li>
+      Pictures come from pokemontcg.io, a community project, and are stored with us.
+      About 1 in 20 Pokemon cards, and every One Piece card, has no picture. A picture
+      with a warning band shows a different printing of the card, because our source
+      doesn't have this one; the prices are still this printing's.
+    </li>
+    <li>
+      A card whose price keeps flipping says so under its chart, with the two prices.
+    </li>
+  </ul>
+</section>
+
+<section id="collection">
+  <h2>Collection</h2>
+  <ul>
+    <li>
+      A card's value is the quantity you hold times its market price from the newest
+      day we have. Condition isn't taken into account.
+    </li>
+    <li>
+      A card with no market price that day isn't counted, and the screen says how many
+      were left out.
+    </li>
+    <li>
+      "Value on" a past date moves both what you held and the prices back to that day,
+      so it shows what your collection was actually worth then.
+    </li>
+    <li>
+      The value chart carries each card's last price forward over a day with no data,
+      rather than dropping the card to zero.
+    </li>
+    <li>
+      Cost and gain use the price you entered. A card with no price entered is left out
+      of the cost and has no gain shown, rather than a gain of its whole value.
+    </li>
+    <li>
+      Nothing you record is overwritten. A change or a sale is a new entry, so past
+      dates keep their answers.
+    </li>
+  </ul>
+</section>
+
+<section id="left-out">
+  <h2>What trends leave out</h2>
+  <p class="lead">
+    Movers and a set's change can be thrown off by prices that don't reflect where a
+    card trades. Three kinds are left out by default. Each has a box on Movers, Sets
+    and in Settings to bring it back. None is ever left out of a value: what a card or
+    set is worth today counts every price.
+  </p>
+
+  <h3>Pre-release prices</h3>
+  <p>
+    Prices from before a card is released, mostly preorders, which usually sit well
+    above where the card settles. A card's release is its set's release date. A card
+    first priced more than 30 days after its set came out, like a new promo added to a
+    long-running promo set, is released on its first price instead.
+    <span class="yours">{{ shown(prefs.includePreRelease()) }}</span>
+  </p>
+
+  <h3>Early pricing</h3>
+  <p>
+    A card's first weeks after release, while its price settles: {{ earlyWeeks() }}. New
+    sets typically drop hard in the first week and keep sliding for about a month.
+    <span class="yours">{{ shown(prefs.includeEarly()) }}</span>
+  </p>
+
+  <h3>Flipping prices</h3>
+  <p>
+    Some cards that rarely sell have a market price that jumps between two far-apart
+    prices and sits at each for days or weeks. One card went back and forth between
+    about $250 and $10,000 a dozen times in six months. Either end of a comparison can
+    land on the wrong one. A card is marked as flipping when, over the last 180 days:
+  </p>
+  <ul>
+    <li>its price jumped to at least double, or at most half, the day before;</li>
+    <li>stayed at the new price for two days or more;</li>
+    <li>then came back to within 25% of a price it had held for two days or more;</li>
+    <li>and did that at least twice.</li>
+  </ul>
+  <p>
+    A real price move steps once and stays, so it isn't marked. The list is rechecked
+    every day. Charts always show these prices as recorded.
+    <span class="yours">{{ shown(prefs.includeFlipping()) }}</span>
+  </p>
+</section>
