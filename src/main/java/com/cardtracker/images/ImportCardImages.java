@@ -19,7 +19,6 @@ import java.text.Normalizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -149,13 +148,9 @@ public class ImportCardImages {
         Path imageDir = ImageDir.resolve();
         Files.createDirectories(imageDir);
 
-        String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
-        String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
-        String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
-
         PokemonTcgCatalog api = new PokemonTcgCatalog();
 
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+        try (Connection conn = Env.connect()) {
             List<Product> todo = productsNeedingImages(conn, onlyGroup, limit, dryRun, skipFailed);
             if (todo.isEmpty()) {
                 // Distinguish "there is nothing pending" from "you asked for

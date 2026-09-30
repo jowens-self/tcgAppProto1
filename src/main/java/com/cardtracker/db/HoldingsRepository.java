@@ -10,6 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,8 +18,8 @@ import java.util.List;
 /**
  * Read and write a user's holdings.
  *
- * The only writing repository the API has. Ingestion still lives in
- * App/BackfillArchive; this writes nothing but inventory_snapshots, and
+ * Ingestion still lives in App/BackfillArchive; this writes nothing but
+ * inventory_snapshots, and
  * inventory_snapshots is append-only for the same reason price_snapshots is:
  * changing a quantity records a new row, so what you held last month remains
  * answerable. There is deliberately no update() or delete() here - correcting
@@ -119,7 +120,7 @@ public final class HoldingsRepository {
      * read, so this is the thing that makes that true rather than theoretical.
      */
     public List<HoldingEvent> historyFor(long userId, int productId) throws Exception {
-        String sql = "SELECT * FROM holding_events(?, ?)";;
+        String sql = "SELECT * FROM holding_events(?, ?)";
         List<HoldingEvent> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, userId);
@@ -135,7 +136,7 @@ public final class HoldingsRepository {
                             rs.getString("condition"),
                             rs.getInt("quantity"),
                             rs.getBigDecimal("cost_basis"),
-                            rs.getObject("entered_at", java.time.OffsetDateTime.class)));
+                            rs.getObject("entered_at", OffsetDateTime.class)));
                 }
             }
         }

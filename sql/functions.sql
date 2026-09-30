@@ -119,10 +119,10 @@ $$ LANGUAGE sql STABLE;
 -- **"Current" means the newest day we HOLD, not today.** This defaulted to
 -- CURRENT_DATE until 2026-08-22, and that made the no-argument call (the
 -- one README documents and the one a person reaches for in psql) return
--- NULL for most of every day. Pulls are on demand, so the newest snapshot is
--- routinely yesterday with nothing wrong; CURRENT_DATE in the container is
--- also UTC while the host is UTC-5, so the two disagree for five hours each
--- evening even on a day that did pull. Measured the day it was fixed:
+-- NULL for most of every day. The day's pull lands at 16:30 local, so the
+-- newest snapshot is routinely yesterday with nothing wrong; CURRENT_DATE in
+-- the container is also UTC while the host is UTC-5, so the two disagree for
+-- five hours each evening even on a day that did pull. Measured the day it was fixed:
 -- set_value(2848) gave 0 variants / NULL, while the same call anchored on
 -- MAX(snapshot_date) gave 369 variants / $8,430.52. Silent, and wrong in the
 -- direction that looks like "this set has no data."
@@ -244,52 +244,6 @@ RETURNS TEXT AS $$
         '');
 $$ LANGUAGE sql IMMUTABLE;
 
--- Name search across products, newest-relevance first. Case-insensitive
--- substring match, backed by the pg_trgm GIN index on products.name (see
--- schema.sql). Without that index this is a full seq scan on every
--- keystroke.
---
--- Ranking is deliberately simple and explainable rather than a similarity
--- score: exact name match, then prefix match, then any substring; ties
--- broken by name length so "Charizard" outranks "Charizard G" and
--- "Bug Catcher - 189/236 (#34 Charizard Stamped)". Card names are short
--- and highly repeated across sets (266 Pokemon products match
--- 'charizard'), so set_name/game are returned on every row, since a bare name
--- list is genuinely ambiguous here, not just less pretty.
---
--- p_category_id filters to one game (NULL = all tracked games).
--- p_include_sealed = FALSE hides sealed product. It IS a parameter here,
--- unlike in set_return/set_value where sealed is hardcoded out. Looking
--- something up is not a set-level aggregate, and "find me that booster
--- box" is a legitimate search.
---
--- card_number and rarity come from extendedData, NOT from the name, and
--- they are not decoration: they are frequently the only thing separating
--- two hits. The same set routinely reprints one card at several rarities:
--- SV03 Obsidian Flames has three "Charizard ex" (125/197 Double Rare,
--- 215/197 Ultra Rare, 223/197 Special Illustration Rare) that trade at
--- very different prices. TCGplayer does append the number to the name in
--- those cases, but only sometimes: just 5,276 of 34,435 singles have a
--- number in the name, so Base Set Charizard would come back with nothing
--- to identify it. extendedData carries Number and Rarity for 100% of
--- singles in both tracked games, so that's the source used here.
--- CREATE OR REPLACE cannot change a function's return type ("cannot change
--- return type of existing function"), so adding a column to the RETURNS
--- TABLE below makes a plain re-run of this file fail against any database
--- that already has the older signature. Dropping first keeps this file
--- re-runnable, which is the whole point of it, since it's loaded on fresh boot
--- (where this is a no-op) and re-applied by hand after every edit. Signature
--- is spelled out because item_search is overload-free but Postgres still
--- needs the exact argument list to identify it.
-DROP FUNCTION IF EXISTS item_search(TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
-DROP FUNCTION IF EXISTS item_search_core(TEXT, TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
-
--- The search itself, with name and card number already separated. Callers
--- normally want item_search() below, which parses a single typed string
--- into these two parts; this is split out so that parsing and matching stay
--- separately testable, and so the wrapper can run it twice (see its
--- fallback) without duplicating the query.
-
 -- Is this captured token a real variant descriptor, or just punctuation the
 -- name happens to end with? Shared by both halves of variant_label() so a
 -- parenthetical and a bracket are judged identically.
@@ -400,6 +354,92 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
+-- One product's identity row, in the shape search returns it: what a card
+-- is, which set and game, how many variants it trades as and how recent its
+-- newest price is. Search runs this over each hit it keeps, and /items/{id}
+-- over a single id, so a product can't be described two ways.
+--
+-- card_number and rarity come from extendedData, NOT from the name, and
+-- they are not decoration: they are frequently the only thing separating
+-- two hits. The same set routinely reprints one card at several rarities:
+-- SV03 Obsidian Flames has three "Charizard ex" (125/197 Double Rare,
+-- 215/197 Ultra Rare, 223/197 Special Illustration Rare) that trade at
+-- very different prices. TCGplayer does append the number to the name in
+-- those cases, but only sometimes: just 5,276 of 34,435 singles have a
+-- number in the name, so Base Set Charizard would come back with nothing
+-- to identify it. extendedData carries Number and Rarity for 100% of
+-- singles in both tracked games, so that's the source used here.
+CREATE OR REPLACE FUNCTION item_product(p_product_id INTEGER)
+RETURNS TABLE (
+    product_id INTEGER,
+    name TEXT,
+    card_number TEXT,
+    rarity TEXT,
+    variant_label TEXT,
+    set_name TEXT,
+    game TEXT,
+    is_sealed BOOLEAN,
+    variant_count INTEGER,
+    latest_date DATE,
+    url TEXT,
+    image_url TEXT
+) AS $$
+    SELECT p.product_id, p.name,
+           extended_field(p.extended_data, 'Number'),
+           extended_field(p.extended_data, 'Rarity'),
+           variant_label(p.name),
+           g.name, c.name, p.is_sealed,
+           v.variant_count, v.latest_date, p.url, p.image_url
+    FROM products p
+    JOIN groups g ON g.group_id = p.group_id
+    JOIN categories c ON c.category_id = p.category_id
+    CROSS JOIN LATERAL (
+        SELECT COUNT(DISTINCT ps.sub_type_name)::INTEGER AS variant_count,
+               MAX(ps.snapshot_date) AS latest_date
+        FROM price_snapshots ps WHERE ps.product_id = p.product_id
+    ) v
+    WHERE p.product_id = p_product_id;
+$$ LANGUAGE sql STABLE;
+
+-- Name search across products, newest-relevance first. Case-insensitive
+-- substring match, backed by the pg_trgm GIN index on products.name (see
+-- schema.sql). Without that index this is a full seq scan on every
+-- keystroke.
+--
+-- Ranking is deliberately simple and explainable rather than a similarity
+-- score: exact name match, then prefix match, then any substring; ties
+-- broken by name length so "Charizard" outranks "Charizard G" and
+-- "Bug Catcher - 189/236 (#34 Charizard Stamped)". Card names are short
+-- and highly repeated across sets (266 Pokemon products match
+-- 'charizard'), so set_name/game are returned on every row, since a bare name
+-- list is genuinely ambiguous here, not just less pretty.
+--
+-- p_category_id filters to one game (NULL = all tracked games).
+-- p_include_sealed = FALSE hides sealed product. It IS a parameter here,
+-- unlike in set_return/set_value where sealed is hardcoded out. Looking
+-- something up is not a set-level aggregate, and "find me that booster
+-- box" is a legitimate search.
+--
+-- Each hit is described by item_product(), where card_number and rarity
+-- are explained.
+--
+-- CREATE OR REPLACE cannot change a function's return type ("cannot change
+-- return type of existing function"), so adding a column to the RETURNS
+-- TABLE below makes a plain re-run of this file fail against any database
+-- that already has the older signature. Dropping first keeps this file
+-- re-runnable, which is the whole point of it, since it's loaded on fresh boot
+-- (where this is a no-op) and re-applied by hand after every edit. Signature
+-- is spelled out because item_search is overload-free but Postgres still
+-- needs the exact argument list to identify it.
+DROP FUNCTION IF EXISTS item_search(TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS item_search_core(TEXT, TEXT, INTEGER, BOOLEAN, INTEGER, INTEGER);
+
+-- The search itself, with name and card number already separated. Callers
+-- normally want item_search() below, which parses a single typed string
+-- into these two parts; this is split out so that parsing and matching stay
+-- separately testable, and so the wrapper can run it twice (see its
+-- fallback) without duplicating the query.
+
 CREATE OR REPLACE FUNCTION item_search_core(
     p_name TEXT,
     p_number TEXT DEFAULT NULL,
@@ -426,8 +466,7 @@ CREATE OR REPLACE FUNCTION item_search_core(
     -- the variant scan for every match (266 for 'charizard') and only then
     -- takes 25, measured at 722ms vs 37ms for this shape.
     WITH hits AS (
-        SELECT p.product_id, p.name, p.is_sealed, p.group_id, p.category_id,
-               p.url, p.image_url, p.extended_data,
+        SELECT p.product_id, p.name,
                CASE WHEN lower(p.name) = lower(p_name) THEN 0
                     WHEN lower(p.name) LIKE lower(p_name) || '%' THEN 1
                     ELSE 2 END AS rank
@@ -461,22 +500,11 @@ CREATE OR REPLACE FUNCTION item_search_core(
         ORDER BY rank, length(p.name), p.name, p.product_id
         LIMIT LEAST(COALESCE(p_limit, 25), 200) OFFSET GREATEST(COALESCE(p_offset, 0), 0)
     )
-    -- Extracted after the LIMIT, same reasoning as the variant lookup: no
+    -- Described after the LIMIT, same reasoning as the variant lookup: no
     -- point unwrapping JSON for 266 matches to return 25.
-    SELECT h.product_id, h.name,
-           extended_field(h.extended_data, 'Number'),
-           extended_field(h.extended_data, 'Rarity'),
-           variant_label(h.name),
-           g.name, c.name, h.is_sealed,
-           v.variant_count, v.latest_date, h.url, h.image_url
+    SELECT d.*
     FROM hits h
-    JOIN groups g ON g.group_id = h.group_id
-    JOIN categories c ON c.category_id = h.category_id
-    CROSS JOIN LATERAL (
-        SELECT COUNT(DISTINCT ps.sub_type_name)::INTEGER AS variant_count,
-               MAX(ps.snapshot_date) AS latest_date
-        FROM price_snapshots ps WHERE ps.product_id = h.product_id
-    ) v
+    CROSS JOIN LATERAL item_product(h.product_id) d
     ORDER BY h.rank, length(h.name), h.name, h.product_id;
 $$ LANGUAGE sql STABLE;
 
@@ -763,6 +791,34 @@ RETURNS TABLE (group_id INTEGER) AS $$
     FROM groups g
     JOIN tracked_categories t ON t.category_id = g.category_id
     WHERE t.modern_since IS NULL OR g.published_on >= t.modern_since;
+$$ LANGUAGE sql STABLE;
+
+-- The tracked games, for every screen's game filter and the Settings screen.
+-- A game that is listed but has never been pulled still appears, named from
+-- its tracked_categories row. modern_set_count of set_count is what the
+-- modern rule currently takes in, counted by modern_group_ids() itself.
+CREATE OR REPLACE FUNCTION tracked_games()
+RETURNS TABLE (
+    category_id INTEGER,
+    name TEXT,
+    product_count INTEGER,
+    modern_since DATE,
+    early_days INTEGER,
+    set_count INTEGER,
+    modern_set_count INTEGER
+) AS $$
+    SELECT tc.category_id, COALESCE(c.name, tc.name),
+           (SELECT COUNT(*) FROM products p
+             WHERE p.category_id = tc.category_id)::INTEGER,
+           tc.modern_since, tc.early_days,
+           (SELECT COUNT(*) FROM groups g
+             WHERE g.category_id = tc.category_id)::INTEGER,
+           (SELECT COUNT(*) FROM groups g
+              JOIN modern_group_ids() m ON m.group_id = g.group_id
+             WHERE g.category_id = tc.category_id)::INTEGER
+      FROM tracked_categories tc
+      LEFT JOIN categories c ON c.category_id = tc.category_id
+     ORDER BY 2;
 $$ LANGUAGE sql STABLE;
 
 -- ---------------------------------------------------------------------------
@@ -1163,18 +1219,14 @@ BEGIN
     ),
     -- Six days rather than two: each endpoint needs its neighbours to be
     -- despikeable. Still an indexed range scan.
-    win AS (
+    kept AS (
         SELECT p.group_id AS gid, ps.product_id AS pid, ps.sub_type_name AS stn,
                ps.snapshot_date AS sd, ps.market_price AS price
         FROM price_snapshots ps
         JOIN products p ON p.product_id = ps.product_id
-        WHERE ps.snapshot_date BETWEEN v_start - 1 AND v_start + 1
-           OR ps.snapshot_date BETWEEN v_end - 1 AND v_end + 1
-    ),
-    kept AS (
-        SELECT w.* FROM win w
-        JOIN products p ON p.product_id = w.pid
-        WHERE w.price IS NOT NULL
+        WHERE (ps.snapshot_date BETWEEN v_start - 1 AND v_start + 1
+               OR ps.snapshot_date BETWEEN v_end - 1 AND v_end + 1)
+          AND ps.market_price IS NOT NULL
           AND p.is_sealed = FALSE
           AND (p_category_id IS NULL OR p.category_id = p_category_id)
     ),
@@ -1261,7 +1313,7 @@ BEGIN
         g.group_id,
         g.name,
         c.name,
-        g.published_on::DATE,
+        g.published_on,
         val.n_priced,
         ROUND(val.total_value, 2),
         COALESCE(ret.n_common, 0),

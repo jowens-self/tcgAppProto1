@@ -119,6 +119,14 @@ class ApiContractTest {
                 """).statusCode());
     }
 
+    @Test
+    void anUnreadableHoldingIsTheCallersMistake() throws Exception {
+        assertEquals(400, post("/holdings",
+                """
+                {"productId":42382,"subTypeName":"Holofoil","quantity":1,"snapshotDate":"soon"}
+                """).statusCode(), "a date that doesn't parse is a 400, not a 500");
+    }
+
     /**
      * Recording is append-only: a correction adds a row and the newest wins,
      * and quantity 0 is a sale rather than a delete. The history endpoint is

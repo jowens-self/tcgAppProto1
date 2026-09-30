@@ -18,30 +18,30 @@ import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 import io.javalin.json.JavalinJackson;
 
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * HTTP API over the price history and the user's own holdings.
+ * HTTP API over the price history, the user's holdings and their settings.
  *
- * Exists so a front end never talks to Postgres (or to tcgcsv) directly -
- * see CLAUDE.md "Architecture intent".
+ * Exists so a front end never talks to Postgres (or to tcgcsv) directly.
  *
  * Read-only over PRICE data, and that part is not negotiable: ingestion stays
  * in App/BackfillArchive where the append-only guarantees live, and nothing
- * here writes price_snapshots. The one thing this API does write is a user's
- * own holdings, which are their data rather than an observation of the market
- * (see HoldingsRepository). That table is append-only too, so a write here
- * still cannot destroy anything.
+ * here writes price_snapshots. What it does write is the user's own data:
+ * holdings (append-only, see HoldingsRepository), preferences, and each
+ * game's rules (see SettingsRepository).
  *
  * Run it:
  *   java -cp target/cardtracker-0.1.0.jar com.cardtracker.api.ApiServer
@@ -51,18 +51,15 @@ public class ApiServer {
     public static final int DEFAULT_PORT = 7070;
 
     public static void main(String[] args) {
-        String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
-        String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
-        String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
         int port = Integer.parseInt(Env.get("CARDTRACKER_API_PORT", String.valueOf(DEFAULT_PORT)));
         // Resolved the same way as ImportCardImages, which writes them, so the
         // writer and the reader cannot end up pointing at different trees.
         Path imageRoot = ImageDir.resolve();
 
-        Javalin app = createApp(url, user, pass, imageRoot);
+        Javalin app = createApp(Env.dbUrl(), Env.dbUser(), Env.dbPass(), imageRoot);
 
         app.start(port);
-        System.out.printf("CardTracker API on http://localhost:%d  (read-only)%n", port);
+        System.out.printf("CardTracker API on http://localhost:%d%n", port);
         // Printed because a wrong image root is otherwise indistinguishable
         // from "we have no image for that card". Both render as a placeholder.
         System.out.printf("  serving card images from %s%n", imageRoot);
@@ -79,6 +76,7 @@ public class ApiServer {
      */
     public static Javalin createApp(String url, String user, String pass, Path imageRoot) {
         ImageFiles imageFiles = new ImageFiles(imageRoot);
+        Db db = new Db(url, user, pass);
 
         Javalin app = Javalin.create(config -> {
             // LocalDate must serialize as "2026-08-14", not an array of ints
@@ -89,9 +87,8 @@ public class ApiServer {
             }));
             // The Angular dev server runs on its own port, so browser calls
             // here are cross-origin and blocked without this. Scoped to
-            // localhost deliberately, since this API is local-only and read-only,
-            // but that's no reason to let any site on the internet query it
-            // from a visitor's browser.
+            // localhost: no site a visitor happens to open should be able to
+            // query it from their browser.
             config.bundledPlugins.enableCors(cors -> cors.addRule(rule -> {
                 rule.allowHost("http://localhost:4200", "http://127.0.0.1:4200");
             }));
@@ -113,7 +110,7 @@ public class ApiServer {
             if (hit != null && !hit.expired()) {
                 freshness = hit.value();
             } else {
-                freshness = withRepo(url, user, pass, QueryRepository::freshness);
+                freshness = db.withRepo(QueryRepository::freshness);
                 freshnessCache.set(new Cached<>(freshness, System.nanoTime()));
             }
             boolean stale = freshness.stream().anyMatch(DataFreshness::stale);
@@ -124,11 +121,11 @@ public class ApiServer {
         });
 
         app.get("/api/games", ctx ->
-                ctx.json(withRepo(url, user, pass, QueryRepository::games)));
+                ctx.json(db.withRepo(QueryRepository::games)));
 
         app.get("/api/games/{categoryId}/sets", ctx -> {
-            int id = pathId(ctx.pathParam("categoryId"));
-            ctx.json(withRepo(url, user, pass, repo -> repo.sets(id)));
+            int id = pathId(ctx, "categoryId");
+            ctx.json(db.withRepo(repo -> repo.sets(id)));
         });
 
         // Every set of a game, with current value and windowed return.
@@ -143,11 +140,8 @@ public class ApiServer {
         // prerelease=true / early=true count launch pricing toward the change;
         // both are left out by default (see launchPricing()).
         app.get("/api/sets/overview", ctx -> {
-            Integer days = intParam(ctx.queryParam("days"), "days");
-            if (days != null && days < 1) {
-                throw new BadRequestResponse("days must be at least 1");
-            }
-            ctx.json(withRepo(url, user, pass, repo -> repo.setOverview(
+            Integer days = atLeast(ctx, "days", 1);
+            ctx.json(db.withRepo(repo -> repo.setOverview(
                     intParam(ctx.queryParam("game"), "game"),
                     days,
                     dateParam(ctx.queryParam("asOf"), "asOf"),
@@ -167,17 +161,11 @@ public class ApiServer {
             if (dir != null && !dir.equals("up") && !dir.equals("down")) {
                 throw new BadRequestResponse("direction must be 'up' or 'down'");
             }
-            Integer days = intParam(ctx.queryParam("days"), "days");
-            if (days != null && days < 1) {
-                throw new BadRequestResponse("days must be at least 1");
-            }
-            Integer smoothing = intParam(ctx.queryParam("smoothing"), "smoothing");
-            if (smoothing != null && smoothing < 1) {
-                throw new BadRequestResponse("smoothing must be at least 1");
-            }
-            java.math.BigDecimal minPrice = decimalParam(ctx.queryParam("minPrice"), "minPrice");
+            Integer days = atLeast(ctx, "days", 1);
+            Integer smoothing = atLeast(ctx, "smoothing", 1);
+            BigDecimal minPrice = decimalParam(ctx.queryParam("minPrice"), "minPrice");
 
-            ctx.json(withRepo(url, user, pass, repo -> repo.movers(
+            ctx.json(db.withRepo(repo -> repo.movers(
                     days,
                     intParam(ctx.queryParam("game"), "game"),
                     intParam(ctx.queryParam("set"), "set"),
@@ -199,13 +187,10 @@ public class ApiServer {
             }
             Integer game = intParam(ctx.queryParam("game"), "game");
             boolean includeSealed = !"false".equalsIgnoreCase(ctx.queryParam("sealed"));
-            int limit = intParam(ctx.queryParam("limit"), "limit") == null
-                    ? 25 : intParam(ctx.queryParam("limit"), "limit");
-            int offset = intParam(ctx.queryParam("offset"), "offset") == null
-                    ? 0 : intParam(ctx.queryParam("offset"), "offset");
+            int limit = Objects.requireNonNullElse(intParam(ctx.queryParam("limit"), "limit"), 25);
+            int offset = Objects.requireNonNullElse(intParam(ctx.queryParam("offset"), "offset"), 0);
 
-            ctx.json(withRepo(url, user, pass,
-                    repo -> repo.search(q, game, includeSealed, limit, offset)));
+            ctx.json(db.withRepo(repo -> repo.search(q, game, includeSealed, limit, offset)));
         });
 
         // Cached card thumbnail, served off OUR disk. The browser must never
@@ -213,11 +198,11 @@ public class ApiServer {
         // with TCGplayer's CDN (see CLAUDE.md), and it holds for the permitted
         // image source too: ImportCardImages fetches once, this serves forever.
         //
-        // 404 is an ordinary outcome, not an error: about 40% of Pokemon
-        // singles have no upstream image, and every One Piece product has
-        // none, so the client shows a placeholder.
+        // 404 is an ordinary outcome, not an error: about 5% of Pokemon
+        // singles have no upstream image, and One Piece has none yet, so the
+        // client shows a placeholder.
         app.get("/api/items/{productId}/image", ctx -> {
-            int id = pathId(ctx.pathParam("productId"));
+            int id = pathId(ctx, "productId");
             // Resolved on disk rather than out of card_images. This endpoint
             // used to spend a JDBC connection translating an id into a path,
             // which is the single biggest source of connection pressure here:
@@ -233,15 +218,15 @@ public class ApiServer {
         });
 
         app.get("/api/items/{productId}", ctx -> {
-            int id = pathId(ctx.pathParam("productId"));
-            var product = withRepo(url, user, pass, repo -> repo.product(id));
+            int id = pathId(ctx, "productId");
+            var product = db.withRepo(repo -> repo.product(id));
             if (product == null) throw new NotFoundResponse("No product " + id);
             ctx.json(product);
         });
 
         app.get("/api/items/{productId}/variants", ctx -> {
-            int id = pathId(ctx.pathParam("productId"));
-            var variants = withRepo(url, user, pass, repo -> repo.variants(id));
+            int id = pathId(ctx, "productId");
+            var variants = db.withRepo(repo -> repo.variants(id));
             // An empty variant list means the id has no price history at all,
             // which for a client is the same failure as an unknown id, so say so
             // rather than returning [] and letting a UI render a blank chart.
@@ -254,12 +239,10 @@ public class ApiServer {
         // Whose artwork this card's thumbnail actually shows. Kept separate
         // from /items/{id} because only the detail view needs it. Folding it
         // in would make every caller pay for something most never render.
-        // (It cost ~96ms until 2026-08-20 and now costs ~5ms, so the argument
-        // is about relevance rather than expense.)
         // 404 means we hold no image for the product, which is ordinary.
         app.get("/api/items/{productId}/image/provenance", ctx -> {
-            int id = pathId(ctx.pathParam("productId"));
-            var prov = withRepo(url, user, pass, repo -> repo.imageProvenance(id));
+            int id = pathId(ctx, "productId");
+            var prov = db.withRepo(repo -> repo.imageProvenance(id));
             if (prov == null) {
                 throw new NotFoundResponse("No image provenance for product " + id);
             }
@@ -271,7 +254,7 @@ public class ApiServer {
         // for the caller would mean guessing which market they meant, and
         // Normal/Holofoil/Reverse Holofoil are genuinely different markets.
         app.get("/api/items/{productId}/history", ctx -> {
-            int id = pathId(ctx.pathParam("productId"));
+            int id = pathId(ctx, "productId");
             String subType = ctx.queryParam("subType");
             if (subType == null || subType.isBlank()) {
                 throw new BadRequestResponse(
@@ -283,7 +266,7 @@ public class ApiServer {
                 throw new BadRequestResponse("from must not be after to");
             }
 
-            var points = withRepo(url, user, pass, repo -> repo.history(id, subType, from, to));
+            var points = db.withRepo(repo -> repo.history(id, subType, from, to));
             if (points.isEmpty()) {
                 throw new NotFoundResponse(
                         "No history for product " + id + " variant '" + subType + "'");
@@ -301,14 +284,14 @@ public class ApiServer {
         // What you hold now, priced. ?asOf=2026-06-01 answers as of that day,
         // moving BOTH the holdings and the prices back, so the total is what
         // the collection was actually worth then.
-        app.get("/api/holdings", ctx -> ctx.json(withHoldings(url, user, pass,
+        app.get("/api/holdings", ctx -> ctx.json(db.withHoldings(
                 repo -> repo.current(LOCAL_USER, dateParam(ctx.queryParam("asOf"), "asOf")))));
 
         // Every recorded event for one card, newest first. The audit trail
         // behind a quantity: append-only only earns its cost if it is readable.
         app.get("/api/holdings/{productId}/history", ctx -> {
-            int id = pathId(ctx.pathParam("productId"));
-            ctx.json(withHoldings(url, user, pass, repo -> repo.historyFor(LOCAL_USER, id)));
+            int id = pathId(ctx, "productId");
+            ctx.json(db.withHoldings(repo -> repo.historyFor(LOCAL_USER, id)));
         });
 
         // The collection's value day by day.
@@ -328,15 +311,15 @@ public class ApiServer {
             if (window > 1095) {
                 throw new BadRequestResponse("days must be 1095 or fewer");
             }
-            LocalDate to = LocalDate.now(java.time.ZoneOffset.UTC);
-            ctx.json(withHoldings(url, user, pass,
+            LocalDate to = LocalDate.now(ZoneOffset.UTC);
+            ctx.json(db.withHoldings(
                     repo -> repo.valueOverTime(LOCAL_USER, to.minusDays(window - 1L), to)));
         });
 
         // Record a holding. This does not update anything: it appends an event,
         // and current_holdings() reads the newest one. Quantity 0 means sold.
         app.post("/api/holdings", ctx -> {
-            HoldingRequest req = ctx.bodyAsClass(HoldingRequest.class);
+            HoldingRequest req = body(ctx, HoldingRequest.class);
             if (req.productId() == null) {
                 throw new BadRequestResponse("productId is required");
             }
@@ -348,10 +331,8 @@ public class ApiServer {
             if (req.quantity() == null || req.quantity() < 0) {
                 throw new BadRequestResponse("quantity must be 0 or more; 0 records a sale");
             }
-            // Validate, write and re-read on ONE connection. Splitting these
-            // cost three connections per save, and withRepo's own comment says
-            // a connection is the same order of cost as the query it carries.
-            ctx.status(201).json(withConn(url, user, pass, conn -> {
+            // Validate, write and re-read on ONE connection.
+            ctx.status(201).json(db.withConn(conn -> {
                 QueryRepository catalog = new QueryRepository(conn);
 
                 // Validate BOTH the product and the variant. A holding recorded
@@ -390,8 +371,8 @@ public class ApiServer {
         // shared, because they define what the data means rather than how
         // one person likes to see it.
 
-        app.get("/api/settings", ctx -> ctx.json(withConn(url, user, pass,
-                conn -> new SettingsRepository(conn).get(LOCAL_USER))));
+        app.get("/api/settings", ctx -> ctx.json(
+                db.withConn(conn -> new SettingsRepository(conn).get(LOCAL_USER))));
 
         // Every field is required. A partial body would mean guessing the
         // rest, and a guessed preference is a changed preference.
@@ -402,7 +383,7 @@ public class ApiServer {
                 throw new BadRequestResponse(
                         "showCostLine, includePreRelease and includeEarly are all required");
             }
-            ctx.json(withConn(url, user, pass, conn -> new SettingsRepository(conn).save(LOCAL_USER,
+            ctx.json(db.withConn(conn -> new SettingsRepository(conn).save(LOCAL_USER,
                     new UserSettings(req.showCostLine(), req.includePreRelease(), req.includeEarly()))));
         });
 
@@ -411,12 +392,12 @@ public class ApiServer {
         // with the game as /api/games describes it, including how many sets
         // the new cutoff takes in, counted by the same rule every screen uses.
         app.put("/api/games/{categoryId}/rules", ctx -> {
-            int id = pathId(ctx.pathParam("categoryId"));
+            int id = pathId(ctx, "categoryId");
             GameRulesRequest req = body(ctx, GameRulesRequest.class);
             if (req.earlyDays() == null || req.earlyDays() < 0 || req.earlyDays() > 365) {
                 throw new BadRequestResponse("earlyDays must be between 0 and 365");
             }
-            ctx.json(withConn(url, user, pass, conn -> {
+            ctx.json(db.withConn(conn -> {
                 if (!new SettingsRepository(conn).saveGameRules(id, req.modernSince(), req.earlyDays())) {
                     throw new NotFoundResponse("Game " + id + " is not tracked");
                 }
@@ -485,61 +466,50 @@ public class ApiServer {
             String subTypeName,
             String condition,
             Integer quantity,
-            java.math.BigDecimal costBasis,
+            BigDecimal costBasis,
             LocalDate snapshotDate) {
     }
 
-    private static <T> T withHoldings(String url, String user, String pass,
-                                      SqlFunction<HoldingsRepository, T> work) throws Exception {
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
-            return work.apply(new HoldingsRepository(conn));
-        }
-    }
-
     /**
-     * One connection, for a handler that needs more than one repository.
-     *
-     * The write path validates against the catalog, appends, and reads the
-     * collection back; through the single-repository helpers that is three
-     * connections for one save.
-     */
-    private static <T> T withConn(String url, String user, String pass,
-                                  SqlFunction<Connection, T> work) throws Exception {
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
-            return work.apply(conn);
-        }
-    }
-
-    /**
-     * One connection per request, closed on the way out.
+     * One connection per call, closed on the way out.
      *
      * Not a pool on purpose: a JDBC Connection is not thread-safe, Javalin
      * serves requests concurrently, and a single shared Connection would give
      * intermittent corruption under any parallel use rather than a clean
-     * failure. Opening one per request costs a few ms locally, which is the
-     * same order as the queries themselves. If this ever moves off localhost
-     * or serves more than one person, put HikariCP here. This method is the
-     * only place that would change.
+     * failure. Opening one per request costs a few ms locally, the same order
+     * as the queries themselves. If this ever serves more than one person,
+     * put HikariCP in withConn(); it is the only place that would change.
+     *
+     * A handler needing more than one repository (the holdings write path
+     * validates, appends and re-reads) calls withConn() once rather than
+     * paying a connection per repository.
      */
-    private static <T> T withRepo(String url, String user, String pass,
-                                  SqlFunction<QueryRepository, T> work) throws Exception {
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
-            return work.apply(new QueryRepository(conn));
+    private record Db(String url, String user, String pass) {
+        <T> T withConn(SqlFunction<Connection, T> work) throws Exception {
+            try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+                return work.apply(conn);
+            }
+        }
+
+        <T> T withRepo(SqlFunction<QueryRepository, T> work) throws Exception {
+            return withConn(conn -> work.apply(new QueryRepository(conn)));
+        }
+
+        <T> T withHoldings(SqlFunction<HoldingsRepository, T> work) throws Exception {
+            return withConn(conn -> work.apply(new HoldingsRepository(conn)));
         }
     }
 
-    /** Like {@link Function} but allowed to throw, since JDBC does. */
+    /** Like java.util.function.Function but allowed to throw, since JDBC does. */
     @FunctionalInterface
     private interface SqlFunction<A, R> {
         R apply(A a) throws Exception;
     }
 
-    private static int pathId(String raw) {
-        try {
-            return Integer.parseInt(raw);
-        } catch (NumberFormatException e) {
-            throw new BadRequestResponse("productId must be an integer, got '" + raw + "'");
-        }
+    private static int pathId(Context ctx, String name) {
+        Integer id = intParam(ctx.pathParam(name), name);
+        if (id == null) throw new BadRequestResponse(name + " is required");
+        return id;
     }
 
     /**
@@ -553,6 +523,15 @@ public class ApiServer {
                 "true".equalsIgnoreCase(ctx.queryParam("early")));
     }
 
+    /** An optional integer query parameter that must be at least min when present. */
+    private static Integer atLeast(Context ctx, String name, int min) {
+        Integer v = intParam(ctx.queryParam(name), name);
+        if (v != null && v < min) {
+            throw new BadRequestResponse(name + " must be at least " + min);
+        }
+        return v;
+    }
+
     private static Integer intParam(String raw, String name) {
         if (raw == null || raw.isBlank()) return null;
         try {
@@ -562,10 +541,10 @@ public class ApiServer {
         }
     }
 
-    private static java.math.BigDecimal decimalParam(String raw, String name) {
+    private static BigDecimal decimalParam(String raw, String name) {
         if (raw == null || raw.isBlank()) return null;
         try {
-            return new java.math.BigDecimal(raw);
+            return new BigDecimal(raw);
         } catch (NumberFormatException e) {
             throw new BadRequestResponse(name + " must be a number, got '" + raw + "'");
         }

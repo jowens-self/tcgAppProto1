@@ -11,7 +11,6 @@ import com.cardtracker.source.tcgcsv.TcgCsvUrls;
 import com.cardtracker.source.tcgcsv.Throttle;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HashSet;
@@ -22,16 +21,13 @@ import java.util.Set;
  * Daily price pull, for every category in `tracked_categories` (see
  * sql/schema.sql, where adding a card game is an INSERT, not a code change).
  *
- * Run this once per day. The mirror refreshes around 20:00 UTC, so scheduling
- * it for the small hours local time means you always get a complete day.
+ * Run by scripts/hourly.sh at the 16:30 slot, and again hourly only if a
+ * tracked game is missing the day the mirror should be serving. Rerunning is
+ * free: a game that already holds the mirror's day is skipped.
  */
 public class App {
 
     public static void main(String[] args) throws Exception {
-        String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
-        String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
-        String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
-
         PriceSource source = new TcgCsvPriceSource(Throttle.politeDefault());
 
         // Resolved from the mirror, not from this machine's clock. The UTC
@@ -56,7 +52,7 @@ public class App {
         System.out.printf("Mirror's newest data is %s (this machine: %s UTC)%n",
                 snapshotDate, LocalDate.now(ZoneOffset.UTC));
 
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+        try (Connection conn = Env.connect()) {
             PriceRepository repo = new PriceRepository(conn);
             List<Integer> categoryIds = repo.trackedCategoryIds();
 
@@ -102,8 +98,8 @@ public class App {
             LocalDate snapshotDate) throws Exception {
         String runSource = "tcgcsv-" + categoryId;
 
-        // Either path counts: the mirror's date is often one the archive
-        // backfill already filled, and re-fetching it writes nothing.
+        // Either ingest path counts, so a day BackfillArchive filled is not
+        // fetched again.
         if (repo.hasDateCovered(categoryId, snapshotDate)) {
             System.out.printf("[%d] Already have %s - skipping fetch.%n",
                     categoryId, snapshotDate);

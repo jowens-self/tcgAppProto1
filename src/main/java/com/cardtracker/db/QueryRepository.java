@@ -47,9 +47,7 @@ public class QueryRepository {
     public List<ItemSearchResult> search(String query, Integer categoryId,
                                          boolean includeSealed, int limit, int offset)
             throws Exception {
-        String sql = "SELECT product_id, name, card_number, rarity, variant_label, "
-                + "set_name, game, is_sealed, variant_count, latest_date, url, image_url "
-                + "FROM item_search(?, ?, ?, ?, ?)";
+        String sql = "SELECT " + SEARCH_COLUMNS + " FROM item_search(?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, query);
             if (categoryId == null) {
@@ -63,21 +61,7 @@ public class QueryRepository {
 
             List<ItemSearchResult> out = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    out.add(new ItemSearchResult(
-                            rs.getInt("product_id"),
-                            rs.getString("name"),
-                            rs.getString("card_number"),
-                            rs.getString("rarity"),
-                            rs.getString("variant_label"),
-                            rs.getString("set_name"),
-                            rs.getString("game"),
-                            rs.getBoolean("is_sealed"),
-                            rs.getInt("variant_count"),
-                            localDate(rs.getDate("latest_date")),
-                            rs.getString("url"),
-                            rs.getString("image_url")));
-                }
+                while (rs.next()) out.add(searchResult(rs));
             }
             return out;
         }
@@ -109,11 +93,8 @@ public class QueryRepository {
      * image for it (no row, or the match failed), which is an ordinary
      * outcome, not an error.
      *
-     * Costs ~5ms since 2026-08-20, down from ~96ms: the function now narrows
-     * to the asked-for card's source_id before grouping rather than building
-     * all ~21,000 groups and discarding them. A result page's worth of calls
-     * is no longer obviously out of reach, though whether to mark ~19% of
-     * search rows is a separate question; see Part 29.
+     * About 5ms. Whether to show it on every search row is a product
+     * question, not a cost one; see Part 29.
      */
     public ImageProvenance imageProvenance(int productId) throws Exception {
         String sql = "SELECT product_id, name, source_id, stripped_qualifier, "
@@ -176,64 +157,38 @@ public class QueryRepository {
      * a future inventory join) has no other way to resolve a name/set.
      */
     public ItemSearchResult product(int productId) throws Exception {
-        String sql = """
-                SELECT p.product_id, p.name,
-                       extended_field(p.extended_data, 'Number') AS card_number,
-                       extended_field(p.extended_data, 'Rarity') AS rarity,
-                       variant_label(p.name) AS variant_label,
-                       g.name AS set_name, c.name AS game,
-                       p.is_sealed, p.url, p.image_url,
-                       (SELECT COUNT(DISTINCT ps.sub_type_name)::INT
-                          FROM price_snapshots ps WHERE ps.product_id = p.product_id) AS variant_count,
-                       (SELECT MAX(ps.snapshot_date)
-                          FROM price_snapshots ps WHERE ps.product_id = p.product_id) AS latest_date
-                  FROM products p
-                  JOIN groups g ON g.group_id = p.group_id
-                  JOIN categories c ON c.category_id = p.category_id
-                 WHERE p.product_id = ?
-                """;
+        String sql = "SELECT " + SEARCH_COLUMNS + " FROM item_product(?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, productId);
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) return null;
-                return new ItemSearchResult(
-                        rs.getInt("product_id"),
-                        rs.getString("name"),
-                        rs.getString("card_number"),
-                        rs.getString("rarity"),
-                        rs.getString("variant_label"),
-                        rs.getString("set_name"),
-                        rs.getString("game"),
-                        rs.getBoolean("is_sealed"),
-                        rs.getInt("variant_count"),
-                        localDate(rs.getDate("latest_date")),
-                        rs.getString("url"),
-                        rs.getString("image_url"));
+                return rs.next() ? searchResult(rs) : null;
             }
         }
     }
 
-    /**
-     * The games actually being tracked, for a client-side filter. Reads
-     * tracked_categories joined to categories for the display name, so a game
-     * that's listed but has never been pulled still appears (name falls back
-     * to the tracked_categories row, which is populated at INSERT time).
-     */
+    /** What item_search() and item_product() both return, in that order. */
+    private static final String SEARCH_COLUMNS = "product_id, name, card_number, rarity, "
+            + "variant_label, set_name, game, is_sealed, variant_count, latest_date, url, image_url";
+
+    private static ItemSearchResult searchResult(ResultSet rs) throws Exception {
+        return new ItemSearchResult(
+                rs.getInt("product_id"),
+                rs.getString("name"),
+                rs.getString("card_number"),
+                rs.getString("rarity"),
+                rs.getString("variant_label"),
+                rs.getString("set_name"),
+                rs.getString("game"),
+                rs.getBoolean("is_sealed"),
+                rs.getInt("variant_count"),
+                localDate(rs.getDate("latest_date")),
+                rs.getString("url"),
+                rs.getString("image_url"));
+    }
+
+    /** The games actually being tracked, for the screens' game filters. */
     public List<Game> games() throws Exception {
-        String sql = """
-                SELECT tc.category_id, COALESCE(c.name, tc.name) AS name,
-                       (SELECT COUNT(*) FROM products p
-                         WHERE p.category_id = tc.category_id)::INT AS product_count,
-                       tc.modern_since, tc.early_days,
-                       (SELECT COUNT(*) FROM groups g
-                         WHERE g.category_id = tc.category_id)::INT AS set_count,
-                       (SELECT COUNT(*) FROM groups g
-                          JOIN modern_group_ids() m ON m.group_id = g.group_id
-                         WHERE g.category_id = tc.category_id)::INT AS modern_set_count
-                  FROM tracked_categories tc
-                  LEFT JOIN categories c ON c.category_id = tc.category_id
-                 ORDER BY name
-                """;
+        String sql = "SELECT * FROM tracked_games()";
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             List<Game> out = new ArrayList<>();
@@ -251,9 +206,7 @@ public class QueryRepository {
      * A tracked game, for filter UI. {@code modernSince} is where its modern
      * era starts, null when every set counts; {@code earlyDays} is how long a
      * new card's prices count as early pricing. Both are carried so a screen
-     * can say what its filters mean without restating the rules, and
-     * {@code modernSetCount} of {@code setCount} is what the modern rule
-     * currently takes in, counted by modern_group_ids() itself.
+     * can say what its filters mean without restating the rules.
      */
     public record Game(int categoryId, String name, int productCount, LocalDate modernSince,
                        int earlyDays, int setCount, int modernSetCount) {
@@ -356,7 +309,7 @@ public class QueryRepository {
      * sets, can stay at its default between them.
      */
     public List<Mover> movers(Integer days, Integer categoryId, Integer groupId,
-                              boolean includeSealed, java.math.BigDecimal minPrice,
+                              boolean includeSealed, BigDecimal minPrice,
                               String direction, Integer smoothing, Integer limit,
                               boolean modernOnly, LaunchPricing launch)
             throws Exception {
@@ -371,8 +324,7 @@ public class QueryRepository {
             if (categoryId == null) ps.setNull(2, Types.INTEGER); else ps.setInt(2, categoryId);
             if (groupId == null) ps.setNull(3, Types.INTEGER); else ps.setInt(3, groupId);
             ps.setBoolean(4, includeSealed);
-            if (minPrice == null) ps.setBigDecimal(5, java.math.BigDecimal.ONE);
-            else ps.setBigDecimal(5, minPrice);
+            ps.setBigDecimal(5, minPrice == null ? BigDecimal.ONE : minPrice);
             ps.setString(6, direction == null ? "up" : direction);
             setIntOrDefault(ps, 7, smoothing, 3);
             setIntOrDefault(ps, 8, limit, 50);
@@ -447,7 +399,7 @@ public class QueryRepository {
      * and hourly.sh call the same definition rather than copies of it.
      */
     public List<DataFreshness> freshness() throws Exception {
-        String sql = "SELECT * FROM data_freshness()";;
+        String sql = "SELECT * FROM data_freshness()";
         List<DataFreshness> out = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -455,7 +407,7 @@ public class QueryRepository {
                 out.add(new DataFreshness(
                         rs.getInt("category_id"),
                         rs.getString("game"),
-                        rs.getObject("newest", java.time.LocalDate.class),
+                        rs.getObject("newest", LocalDate.class),
                         rs.getInt("days_stale")));
             }
         }

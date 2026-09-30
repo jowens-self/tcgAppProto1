@@ -14,7 +14,6 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -24,6 +23,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
+ * Dormant: tcgcsv withdrew its daily archives in September 2026 and every
+ * archive URL now answers 403. Kept for the day they return; running it again
+ * is a decision to make then (CLAUDE.md, DEVELOPMENT_HISTORY.md Part 42).
+ *
  * One-time (or resumable) backfill from tcgcsv's daily archives, covering
  * 2024-02-08 onward. Each archive bundles every TCG category for one day,
  * so one download per day serves every category in `tracked_categories`,
@@ -54,11 +57,7 @@ public final class BackfillArchive {
         // UTC, not host-local, matching App's snapshot_date convention.
         LocalDate end = args.length > 1 ? LocalDate.parse(args[1]) : LocalDate.now(ZoneOffset.UTC).minusDays(1);
 
-        String url = Env.get("CARDTRACKER_DB_URL", "jdbc:postgresql://localhost:5432/cardtracker");
-        String user = Env.get("CARDTRACKER_DB_USER", "cardtracker");
-        String pass = Env.get("CARDTRACKER_DB_PASS", "localdev");
-
-        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+        try (Connection conn = Env.connect()) {
             run(start, end, new PriceRepository(conn));
         }
     }
@@ -69,8 +68,7 @@ public final class BackfillArchive {
      * Safe to call with a wide range even when most of it is already
      * covered: each already-done (category, day) costs one indexed lookup,
      * not a download, and a day already covered for every tracked category
-     * is skipped before any download happens at all. Used both by main()
-     * for manual/full backfills and by App for its startup gap catch-up.
+     * is skipped before any download happens at all.
      */
     public static void run(LocalDate start, LocalDate end, PriceRepository repo) throws Exception {
         List<Integer> categoryIds = repo.trackedCategoryIds();
