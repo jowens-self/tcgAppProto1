@@ -853,7 +853,7 @@ CREATE OR REPLACE FUNCTION item_movers(
     p_group_id INTEGER DEFAULT NULL,
     p_include_sealed BOOLEAN DEFAULT FALSE,
     p_min_price NUMERIC DEFAULT 1,
-    p_direction TEXT DEFAULT 'down',
+    p_direction TEXT DEFAULT 'up',
     p_smoothing INTEGER DEFAULT 3,
     p_limit INTEGER DEFAULT 50,
     p_as_of DATE DEFAULT NULL,

@@ -95,7 +95,7 @@ export class CardTrackerApi {
 
   /**
    * Biggest movers. Every option is omitted unless set, so the server's own
-   * defaults (7 days, decliners, singles, $1 floor, 3-day median) apply -
+   * defaults (7 days, gains, singles, $1 floor, 3-day median) apply -
    * they live in item_movers() rather than being restated here.
    */
   movers(opts: {

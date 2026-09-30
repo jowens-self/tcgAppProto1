@@ -384,7 +384,7 @@ early pricing". Both start unticked, because both are mostly noise.
 
 `GET /api/movers`. All parameters optional, because the defaults that
 define the screen's default view live in `item_movers()` so psql callers
-get them too: 7 days, biggest drops, singles only, $1 minimum, 3-day
+get them too: 7 days, biggest gains, singles only, $1 minimum, 3-day
 smoothing, 50 rows.
 
 ```bash

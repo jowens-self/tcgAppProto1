@@ -1,26 +1,10 @@
-import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
-import {
-  Game,
-  ImageProvenance,
-  ItemSearchResult,
-  ItemVariant,
-  PricePoint,
-  ChartDatum,
-} from './api.models';
-import { HISTORY_WINDOWS, HistoryWindow, windowStart } from './history-window';
-import {
-  LaunchPricingPrefs,
-  PRE_RELEASE_TITLE,
-  chartablePoints,
-  earlyPricingTitle,
-  earlyWeeks,
-  hasLaunchPricing,
-} from './launch-pricing';
-import { PriceChart } from './price-chart';
+import { Game, ItemSearchResult } from './api.models';
+import { CardDetail } from './card-detail';
+import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
 import { variantLabelAddsInfo } from './variant-label';
 
 /**
@@ -37,7 +21,7 @@ import { variantLabelAddsInfo } from './variant-label';
  */
 @Component({
   selector: 'app-search',
-  imports: [FormsModule, CurrencyPipe, DecimalPipe, PriceChart],
+  imports: [FormsModule, CardDetail],
   templateUrl: './search.html',
   styleUrl: './search.css',
 })
@@ -87,53 +71,20 @@ export class Search {
    */
   private generation = 0;
 
+  /** The card open in the side panel, shown by card-detail. */
   protected readonly selected = signal<ItemSearchResult | null>(null);
-  protected readonly variants = signal<ItemVariant[]>([]);
-  protected readonly activeVariant = signal<string | null>(null);
-  protected readonly history = signal<PricePoint[]>([]);
 
   /**
-   * Whether launch pricing is drawn. The same setting Movers and Sets use, so
-   * a card looks the same here as it does under the board.
-   */
-  protected readonly launch = inject(LaunchPricingPrefs);
-  protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
-
-  /** The price view of the history, less any launch pricing that's unticked. */
-  private readonly chartView = computed(() =>
-    chartablePoints<ChartDatum>(
-      this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice, phase: p.phase })),
-      this.launch.includePreRelease(),
-      this.launch.includeEarly(),
-    ),
-  );
-  protected readonly chartSeries = computed(() => this.chartView().points);
-  protected readonly chartOnlyLaunch = computed(() => this.chartView().onlyLaunch);
-
-  /** The boxes only appear for a card that has launch pricing to show or hide. */
-  protected readonly hasLaunch = computed(() => hasLaunchPricing(this.history()));
-  protected readonly loadingDetail = signal(false);
-
-  /**
-   * How much of the chosen variant's history the chart plots.
+   * How much of the chosen variant's history the chart plots. Held here
+   * rather than in the panel so the choice is sticky across cards.
    *
    * Opens on "All" because that is what this screen has always shown, and
    * the full series is what the database actually holds (925 days of it).
-   * The shorter ranges are one click away, and the choice is sticky across
-   * cards, the way Movers keeps its own window between loads.
+   * The shorter ranges are one click away.
    */
-  protected readonly chartWindows = HISTORY_WINDOWS;
   protected readonly chartWindow = signal<HistoryWindow>(
     HISTORY_WINDOWS[HISTORY_WINDOWS.length - 1],
   );
-
-
-  /**
-   * Provenance of the selected card's picture, or null when we hold no image
-   * or have not heard back yet. Only 'base_art' renders anything; see the
-   * band in search.html.
-   */
-  protected readonly provenance = signal<ImageProvenance | null>(null);
 
   /**
    * product_ids whose thumbnail 404'd. Roughly 40% of Pokemon singles have
@@ -304,138 +255,12 @@ export class Search {
       });
   }
 
+  /** Opens a result in the side panel; card-detail loads everything else. */
   protected select(item: ItemSearchResult): void {
     this.selected.set(item);
-    this.variants.set([]);
-    this.history.set([]);
-    this.activeVariant.set(null);
-    this.provenance.set(null);
-    this.loadingDetail.set(true);
-
-    // Fire-and-forget alongside variants: a missing verdict must never hold
-    // up the prices, which are what the screen is actually for. A 404 is the
-    // ordinary "we have no image" case and stays silent.
-    this.api.imageProvenance(item.productId).subscribe({
-      next: (p) => {
-        // The user may have clicked another card while this was in flight.
-        if (this.selected()?.productId === p.productId) this.provenance.set(p);
-      },
-      error: () => this.provenance.set(null),
-    });
-
-    this.api.variants(item.productId).subscribe({
-      next: (v) => {
-        this.variants.set(v);
-        this.loadingDetail.set(false);
-        // Open on the most valuable variant. For a card with a $5 Normal
-        // and a $77 Reverse Holofoil, that's overwhelmingly the one being
-        // looked up.
-        const best = [...v].sort(
-          (a, b) => (b.latestMarket ?? 0) - (a.latestMarket ?? 0),
-        )[0];
-        if (best) this.showVariant(item.productId, best.subTypeName);
-      },
-      error: () => {
-        this.loadingDetail.set(false);
-        this.error.set('Could not load variants for this item.');
-      },
-    });
-  }
-
-  /**
-   * Spells out what the band means. Built here rather than in the template
-   * because it is three conditional clauses, and a title attribute assembled
-   * inline is the kind of thing that quietly loses a space.
-   */
-  protected provenanceTooltip(): string {
-    const p = this.provenance();
-    if (!p || p.provenance !== 'base_art') return '';
-    const printing = p.strippedQualifier ? ` (${p.strippedQualifier})` : '';
-    const shown = p.ownerName ? `"${p.ownerName}"` : 'another printing';
-    return (
-      `Our image source has no photo of this printing${printing}, ` +
-      `so ${shown} is shown instead. The prices are this card's; ` +
-      `the picture may not be.`
-    );
-  }
-
-  protected showVariant(productId: number, subType: string): void {
-    this.activeVariant.set(subType);
-    this.history.set([]);
-    this.api.history(productId, subType, this.windowFrom(subType)).subscribe({
-      next: (h) => this.history.set(h),
-      error: () => this.error.set(`No history for ${subType}.`),
-    });
-  }
-
-  /** Re-fetches the open variant over the newly chosen range. */
-  protected setChartWindow(w: HistoryWindow): void {
-    if (this.chartWindow() === w) return;
-    this.chartWindow.set(w);
-    const productId = this.selected()?.productId;
-    const subType = this.activeVariant();
-    if (productId != null && subType) this.showVariant(productId, subType);
-  }
-
-  /**
-   * Start date for the current range, or undefined for "All".
-   *
-   * The range is anchored on this variant's own newest snapshot rather
-   * than on today. See history-window.ts for why a clock is the wrong
-   * anchor here.
-   *
-   * That anchor also makes an empty result impossible, which is worth
-   * knowing before writing a branch for one. item_variants() reports
-   * latestDate as MAX(snapshot_date) for this exact sub-type, so the range
-   * always contains at least that day's row. The endpoint 404s on an empty
-   * history, and from this screen that can only mean a real failure, so it
-   * still surfaces as one.
-   *
-   * A variant with no latest date can't happen here either, since the
-   * buttons are built from the same list, so that fallback is just the
-   * unwindowed request rather than a guess.
-   */
-  private windowFrom(subType: string): string | undefined {
-    const days = this.chartWindow().days;
-    if (days === null) return undefined;
-    const variant = this.variants().find((v) => v.subTypeName === subType);
-    return variant ? windowStart(variant.latestDate, days) : undefined;
   }
 
   protected clearSelection(): void {
     this.selected.set(null);
-    this.variants.set([]);
-    this.history.set([]);
-    this.activeVariant.set(null);
-  }
-
-  /**
-   * Percent change across what the chart draws, or null if unusable. The
-   * drawn series, not the loaded one, so an unticked preorder price can't
-   * set the starting point of a number shown right above the chart. None at
-   * all for a card that hasn't settled: its chart is drawn anyway, but a
-   * change measured from a preorder price is exactly the number the unticked
-   * boxes are there to keep out.
-   */
-  protected totalReturn(): number | null {
-    if (this.chartOnlyLaunch()) return null;
-    const pts = this.chartSeries().filter((p) => p.value != null);
-    if (pts.length < 2) return null;
-    const start = pts[0].value!;
-    const end = pts[pts.length - 1].value!;
-    // Matches the server rule: no percent change off a zero/negative start.
-    if (start <= 0) return null;
-    return ((end - start) / start) * 100;
-  }
-
-  /** First day the chart draws, for the "Since" label over it. */
-  protected shownFrom(): string | null {
-    return this.chartSeries()[0]?.date ?? null;
-  }
-
-  /** Early pricing's length for the selected card's own game. */
-  protected earlyTitle(): string {
-    const game = this.games().find((g) => g.name === this.selected()?.game);
-    return earlyPricingTitle(earlyWeeks(this.games(), game?.categoryId ?? null));
   }
 }

@@ -135,165 +135,20 @@
   </section>
 
   <aside class="detail" [class.empty]="!selected()" aria-label="Item detail">
-    @if (!selected()) {
-      <p class="hint">Select an item to see its variants and price history.</p>
+    @if (selected(); as item) {
+      <!-- The same card view Movers opens under a row, so a card reads the
+           same everywhere. Its close button only shows below 960px, where
+           this panel pins over the results; on the two-column layout it is
+           just a column and there is nothing to dismiss. -->
+      <card-detail
+        [card]="item"
+        [games]="games()"
+        closeButton="narrow"
+        [(chartWindow)]="chartWindow"
+        (closed)="clearSelection()"
+      />
     } @else {
-      <div class="detail-head">
-        <h2>{{ selected()!.name }}</h2>
-        <!-- Only rendered as a control on narrow screens, where the panel
-             is pinned over the results and has to be dismissable. On the
-             two-column layout it's just a column, so CSS hides it. -->
-        <button
-          type="button"
-          class="detail-close"
-          (click)="clearSelection()"
-          aria-label="Close detail"
-        >
-          ✕
-        </button>
-        <p class="detail-sub">
-          {{ selected()!.setName }} · {{ selected()!.game }}
-          @if (selected()!.cardNumber) {
-            · {{ selected()!.cardNumber }}
-          }
-          @if (selected()!.rarity) {
-            · {{ selected()!.rarity }}
-          }
-        </p>
-        @if (selected()!.url) {
-          <a class="tcg-link" [href]="selected()!.url" target="_blank" rel="noopener">
-            View on TCGplayer ↗
-          </a>
-        }
-      </div>
-
-      <!-- Served off our own disk by /api/items/{id}/image, never a third
-           party. Hidden entirely once the image 404s, which is an ordinary
-           outcome rather than an error. The band names the printing, but
-           only when that adds something the name above doesn't already
-           say, the same rule as the list chip. -->
-      @if (!noImage().has(selected()!.productId)) {
-        <figure class="detail-art">
-          <img
-            class="detail-img"
-            [class.loaded]="loadedImages().has(selected()!.productId)"
-            [src]="imageUrl(selected()!.productId)"
-            [alt]="selected()!.name"
-            (load)="imageLoaded(selected()!.productId)"
-            (error)="imageFailed(selected()!.productId)"
-          />
-          <!-- The caution Part 25 reserved --warn for and could not yet
-               spend: this picture is provably another printing's, not this
-               card's. Only base_art earns it: own_art is correct and
-               'unknown' is an open question, and neither is a warning.
-               Sits at the top so it never collides with the variant band.
-               The owner printing's name lives in the tooltip, not the band:
-               at this thumbnail's width it truncated to "Aar..." and the
-               caution is the message, the name is the detail. -->
-          @if (provenance()?.provenance === 'base_art') {
-            <span class="art-warn-band" [title]="provenanceTooltip()">
-              Base printing's art
-            </span>
-          }
-          @if (variantLabelAddsInfo(selected()!.name, selected()!.variantLabel)) {
-            <figcaption class="variant-band" [title]="selected()!.variantLabel!">
-              {{ selected()!.variantLabel }}
-            </figcaption>
-          }
-        </figure>
-      }
-
-      @if (loadingDetail()) {
-        <p class="hint">Loading variants…</p>
-      }
-
-      @if (variants().length) {
-        <div class="variants" role="tablist">
-          @for (v of variants(); track v.subTypeName) {
-            <button
-              type="button"
-              role="tab"
-              class="variant"
-              [class.active]="activeVariant() === v.subTypeName"
-              [attr.aria-selected]="activeVariant() === v.subTypeName"
-              (click)="showVariant(selected()!.productId, v.subTypeName)"
-            >
-              <span class="v-name">{{ v.subTypeName }}</span>
-              <span class="v-price">
-                {{ v.latestMarket != null ? (v.latestMarket | currency) : '—' }}
-              </span>
-              <span class="v-ath">ATH {{ v.allTimeHigh | currency }}</span>
-            </button>
-          }
-        </div>
-      }
-
-      @if (activeVariant()) {
-        <div class="history">
-          <!-- Same day counts Movers and Sets offer, so a range means one
-               thing across the app. Each is measured back from this
-               variant's newest snapshot, not from today. The pull is
-               on-demand and the data is routinely a day behind. -->
-          <div class="windows" role="group" aria-label="Chart range">
-            @for (w of chartWindows; track w.label) {
-              <button
-                type="button"
-                class="window"
-                [class.active]="chartWindow() === w"
-                [attr.aria-pressed]="chartWindow() === w"
-                (click)="setChartWindow(w)"
-              >
-                {{ w.label }}
-              </button>
-            }
-          </div>
-
-          @if (history().length) {
-            @let ret = totalReturn();
-            <div class="ret-row">
-              <span class="ret-label">Since {{ shownFrom() }}</span>
-              @if (ret !== null) {
-                <span class="ret" [class.up]="ret >= 0" [class.down]="ret < 0">
-                  {{ ret >= 0 ? '+' : '' }}{{ ret | number: '1.2-2' }}%
-                </span>
-              }
-            </div>
-            <price-chart [series]="chartSeries()" />
-            @if (chartOnlyLaunch()) {
-              <p class="hint">
-                This card hasn't settled yet, so everything here is launch pricing.
-                It's shown anyway rather than an empty chart.
-              </p>
-            }
-            <!-- Same setting as Movers and Sets. Only offered for a card that
-                 has launch pricing, so most charts don't carry dead controls. -->
-            @if (hasLaunch()) {
-              <div class="launch-toggles">
-                <label [title]="preReleaseTitle">
-                  <input
-                    type="checkbox"
-                    [ngModel]="launch.includePreRelease()"
-                    (ngModelChange)="launch.includePreRelease.set($event)"
-                    name="includePreRelease"
-                  />
-                  Include pre-release
-                </label>
-                <label [title]="earlyTitle()">
-                  <input
-                    type="checkbox"
-                    [ngModel]="launch.includeEarly()"
-                    (ngModelChange)="launch.includeEarly.set($event)"
-                    name="includeEarly"
-                  />
-                  Include early pricing
-                </label>
-              </div>
-            }
-          } @else {
-            <p class="hint">Loading history…</p>
-          }
-        </div>
-      }
+      <p class="hint">Select an item to see its variants and price history.</p>
     }
   </aside>
 </div>

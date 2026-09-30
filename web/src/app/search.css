@@ -195,9 +195,9 @@
    the card's own name, and implied doubt about artwork that is correct.
    --warn is reserved for a real caution: a picture that is genuinely
    another printing's art. That reservation is now spent, but NOT here: it
-   went to .art-warn-band on the detail artwork, where card_image_provenance()
-   can prove the picture is borrowed. This chip still says nothing about
-   artwork. Parts 25, 27. */
+   went to .art-warn-band on the detail artwork (card-detail.css), where
+   card_image_provenance() can prove the picture is borrowed. This chip still
+   says nothing about artwork. Parts 25, 27. */
 .tag.variant {
   border-color: var(--line);
   color: var(--muted);
@@ -208,83 +208,13 @@
   text-overflow: ellipsis;
 }
 
-/* --- detail artwork --- */
-.detail-art {
-  position: relative;
-  width: 160px;
-  height: 220px;
-  margin: 0.9rem 0 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  overflow: hidden;
-}
-/* 160px wide is the cached thumbnail's native width (ImportCardImages
-   THUMB_WIDTH), so this renders 1:1 with no upscaling. */
-.detail-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-.detail-img.loaded {
-  opacity: 1;
-}
-/* Sits over the card's own text box, the least costly part of the art to
-   cover. Fixed colours, not tokens: this floats on the artwork, not on a
-   themed surface, so it must stay legible in both themes. */
-.variant-band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 0.28rem 0.35rem;
-  background: rgba(0, 0, 0, 0.58);
-  backdrop-filter: blur(1.5px);
-  color: #fff;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-align: center;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* Top edge, opposite .variant-band, so a card can carry both without them
-   stacking. Filled rather than outlined, because unlike the quiet .tag.variant chip,
-   this one is a genuine caution and is meant to be read before the picture
-   is trusted. Fixed colours for the same reason as .variant-band: it floats
-   on artwork, not on a themed surface. */
-.art-warn-band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  padding: 0.28rem 0.35rem;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(1.5px);
-  color: var(--warn);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-align: center;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .detail-img,
   .thumb {
     transition: none;
   }
 }
 
-/* --- detail --- */
+/* --- detail: the column card-detail sits in (its own styles are there) --- */
 .detail {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -292,94 +222,6 @@
   background: var(--surface);
   position: sticky;
   top: 1rem;
-}
-.detail-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.detail-head h2 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-.detail-head .detail-sub {
-  flex-basis: 100%;
-}
-/* Hidden on the two-column layout, where the panel is just a column and
-   nothing is covered, so there's nothing to dismiss. Shown only in the
-   pinned narrow layout below. */
-.detail-close {
-  display: none;
-  flex: none;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--muted);
-  border-radius: 6px;
-  width: 1.75rem;
-  height: 1.75rem;
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-}
-.detail-close:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-.detail-sub {
-  margin: 0.25rem 0 0.5rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-}
-.tcg-link {
-  font-size: 0.82rem;
-  color: var(--accent);
-  text-decoration: none;
-}
-.tcg-link:hover {
-  text-decoration: underline;
-}
-
-.variants {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  margin: 1rem 0;
-}
-.variant {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-.variant:hover {
-  border-color: var(--accent);
-}
-.variant.active {
-  border-color: var(--accent);
-  background: var(--accent-fade);
-}
-.v-name {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-.v-price {
-  font-size: 1rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.v-ath {
-  font-size: 0.68rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* Sits under the last result row, only while more may exist. */
@@ -411,71 +253,6 @@
 .more:disabled {
   color: var(--muted);
   cursor: default;
-}
-
-/* Chart range picker. Deliberately quieter than the .variant buttons above
-   it: those choose which market you are looking at, which is a different
-   card's worth of decision; this only changes how much of it is drawn. */
-.windows {
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 0.6rem;
-}
-.window {
-  padding: 0.2rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-}
-.window:hover {
-  color: inherit;
-  border-color: var(--line);
-}
-.window.active {
-  border-color: var(--accent);
-  background: var(--accent-fade);
-  color: inherit;
-}
-
-.ret-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 0.5rem;
-}
-.ret-label {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-.launch-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-  margin-top: 0.6rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-.launch-toggles label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  user-select: none;
-}
-.ret {
-  font-size: 0.95rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.ret.up {
-  color: var(--up);
-}
-.ret.down {
-  color: var(--down);
 }
 
 /* --- narrow screens only: pin the detail panel ---------------------------
@@ -518,12 +295,6 @@
     max-height: 58vh;
     overflow-y: auto;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  }
-
-  .detail-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
   }
 
   /* The list gives up its own scrollbox here and lets the page scroll, so

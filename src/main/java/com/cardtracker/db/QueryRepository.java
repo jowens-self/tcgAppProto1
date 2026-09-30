@@ -342,7 +342,7 @@ public class QueryRepository {
      * Biggest movers over a window. Every argument has a server-side default
      * in item_movers(); nulls here mean "use it" rather than "no filter", so
      * a caller that passes nothing still gets the sane default view (7 days,
-     * decliners, singles, $1 floor) instead of an unfiltered firehose.
+     * gains, singles, $1 floor) instead of an unfiltered firehose.
      *
      * modernOnly and launch are passed by name so p_as_of, which the API never
      * sets, can stay at its default between them.
@@ -365,7 +365,7 @@ public class QueryRepository {
             ps.setBoolean(4, includeSealed);
             if (minPrice == null) ps.setBigDecimal(5, java.math.BigDecimal.ONE);
             else ps.setBigDecimal(5, minPrice);
-            ps.setString(6, direction == null ? "down" : direction);
+            ps.setString(6, direction == null ? "up" : direction);
             setIntOrDefault(ps, 7, smoothing, 3);
             setIntOrDefault(ps, 8, limit, 50);
             ps.setBoolean(9, modernOnly);

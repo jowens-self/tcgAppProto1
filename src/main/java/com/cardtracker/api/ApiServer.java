@@ -156,7 +156,7 @@ public class ApiServer {
         // Biggest movers over a window.
         //   ?days=7&game=3&set=23353&sealed=false&minPrice=1&direction=down
         //   &smoothing=3&limit=50&modern=true&prerelease=true&early=true
-        // Every parameter is optional: the defaults (7 days, decliners,
+        // Every parameter is optional: the defaults (7 days, gains,
         // singles, $1 floor, 3-day median smoothing, every era, settled prices
         // only) are the screen's default view and live in item_movers() so
         // psql callers get them too.

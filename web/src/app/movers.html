@@ -50,8 +50,8 @@
     (ngModelChange)="load()"
     aria-label="Direction"
   >
-    <option value="down">Biggest drops</option>
     <option value="up">Biggest gains</option>
+    <option value="down">Biggest drops</option>
   </select>
 
   <label class="minprice">
@@ -165,13 +165,11 @@
         @for (r of rows(); track r.productId + '|' + r.subTypeName) {
           <tr
             class="row"
-            [class.active]="
-              selected()?.productId === r.productId &&
-              selected()?.subTypeName === r.subTypeName
-            "
-            (click)="select(r)"
+            [class.active]="isSelected(r)"
+            (click)="toggle(r)"
             tabindex="0"
-            (keydown.enter)="select(r)"
+            (keydown.enter)="toggle(r)"
+            [attr.aria-expanded]="isSelected(r)"
           >
             <td class="c-item">
               <!-- Local file only; the browser never contacts TCGplayer. -->
@@ -208,44 +206,27 @@
               {{ r.pctChange >= 0 ? '+' : '' }}{{ r.pctChange | number: '1.2-2' }}%
             </td>
           </tr>
+          <!-- The card opens right under the row that was clicked, spanning
+               the table, rather than below all fifty rows where it used to
+               land out of sight. -->
+          @if (isSelected(r)) {
+            <tr class="preview-row">
+              <td colspan="5">
+                <div class="preview" #preview>
+                  <card-detail
+                    [card]="r"
+                    [variant]="r.subTypeName"
+                    [move]="selectedMove()"
+                    [games]="games()"
+                    [(chartWindow)]="chartWindow"
+                    (closed)="clearSelection()"
+                  />
+                </div>
+              </td>
+            </tr>
+          }
         }
       </tbody>
     </table>
   </div>
-}
-
-@if (selected(); as sel) {
-  <aside class="detail" aria-label="Price history">
-    <div class="detail-head">
-      <h2>{{ sel.name }} · {{ sel.subTypeName }}</h2>
-      <button type="button" class="detail-close" (click)="clearSelection()" aria-label="Close">
-        ✕
-      </button>
-    </div>
-    <p class="detail-sub">
-      {{ sel.setName }} · {{ sel.game }}
-      @if (sel.cardNumber) {
-        · {{ sel.cardNumber }}
-      }
-      @if (sel.rarity) {
-        · {{ sel.rarity }}
-      }
-    </p>
-    @if (sel.url) {
-      <a class="tcg-link" [href]="sel.url" target="_blank" rel="noopener">
-        View on TCGplayer ↗
-      </a>
-    }
-    @if (history().length) {
-      <price-chart [series]="chartSeries()" />
-      @if (chartOnlyLaunch()) {
-        <p class="hint">
-          This card hasn't settled yet, so everything here is launch pricing. It's
-          shown anyway rather than an empty chart.
-        </p>
-      }
-    } @else {
-      <p class="hint">Loading history…</p>
-    }
-  </aside>
 }

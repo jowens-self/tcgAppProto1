@@ -1,42 +1,41 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
-import { Game, GameSet, Mover, PricePoint,
-  ChartDatum,
-} from './api.models';
+import { Game, GameSet, Mover } from './api.models';
+import { CardDetail, CardMove } from './card-detail';
 import { defaultGame } from './game-default';
+import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
 import {
   LaunchPricingPrefs,
   PRE_RELEASE_TITLE,
-  chartablePoints,
   earlyPricingTitle,
   earlyWeeks,
   launchNote,
 } from './launch-pricing';
 import { modernRule } from './modern-rule';
-import { PriceChart } from './price-chart';
 
 /**
  * Movers: "what moved this week".
  *
- * Defaults to the biggest decliners over 7 days within the LARGEST tracked
- * game, which is the question a seller actually opens the app with. Set
- * filter narrows it once you know where you're looking.
+ * Opens on the biggest GAINS over 7 days within the LARGEST tracked game
+ * (owner's call, 2026-09-30; it opened on decliners before). The set filter
+ * narrows it once you know where you're looking.
  *
  * It used to default to all games at once; that ranked Pokemon and One
  * Piece against each other in one list, which compares markets the owner
  * considers separately. "All games" is still selectable; see
  * defaultGame().
  *
- * Every default here is the SERVER's default (see item_movers()), not a
- * restatement: days, direction, min price and smoothing are all left unset
- * on the first load so there is exactly one place defining what the default
- * view means.
+ * The opening values mirror item_movers()'s own defaults (7 days, gains,
+ * singles, $1 floor), so the screen and a bare psql call show the same board.
+ *
+ * Clicking a row opens the card right under it, with the same card view
+ * Search uses. It used to open below all fifty rows, where nobody saw it.
  */
 @Component({
   selector: 'app-movers',
-  imports: [FormsModule, CurrencyPipe, DecimalPipe, PriceChart],
+  imports: [FormsModule, CurrencyPipe, DecimalPipe, CardDetail],
   templateUrl: './movers.html',
   styleUrl: './movers.css',
 })
@@ -49,31 +48,26 @@ export class Movers {
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
 
+  /** The row whose card is open under it, or null. */
   protected readonly selected = signal<Mover | null>(null);
-  protected readonly history = signal<PricePoint[]>([]);
 
   /**
-   * Whether launch pricing counts. Shared with every screen, so the chart
-   * below the board follows the same boxes as the board itself.
+   * The open card's chart range, kept here so it sticks from one row to the
+   * next. 90 days rather than Search's "All": a mover is about a recent move,
+   * and 90 days shows it with enough around it to judge it.
    */
+  protected readonly chartWindow = signal<HistoryWindow>(
+    HISTORY_WINDOWS.find((w) => w.days === 90) ?? HISTORY_WINDOWS[0],
+  );
+
+  /** Whether launch pricing counts. Shared with every screen and the open card. */
   protected readonly launch = inject(LaunchPricingPrefs);
   protected readonly preReleaseTitle = PRE_RELEASE_TITLE;
-
-  /** The price view of the history, less any launch pricing that's unticked. */
-  private readonly chartView = computed(() =>
-    chartablePoints<ChartDatum>(
-      this.history().map((p) => ({ date: p.snapshotDate, value: p.trendablePrice, phase: p.phase })),
-      this.launch.includePreRelease(),
-      this.launch.includeEarly(),
-    ),
-  );
-  protected readonly chartSeries = computed(() => this.chartView().points);
-  protected readonly chartOnlyLaunch = computed(() => this.chartView().onlyLaunch);
 
   protected game: number | null = null;
   protected set: number | null = null;
   protected days = 7;
-  protected direction: 'up' | 'down' = 'down';
+  protected direction: 'up' | 'down' = 'up';
   protected minPrice = 1;
   protected includeSealed = false;
 
@@ -84,6 +78,9 @@ export class Movers {
    * answer, never a date comparison here.
    */
   protected readonly modernOnly = signal(false);
+
+  /** The open preview, so a card opened near the bottom can be scrolled into view. */
+  private readonly preview = viewChild<ElementRef<HTMLElement>>('preview');
 
   constructor() {
     this.api.games().subscribe({
@@ -96,6 +93,12 @@ export class Movers {
         this.onGameChange();
       },
       error: () => this.error.set('Could not reach the API. Is ApiServer running on :7070?'),
+    });
+
+    // Runs once the preview row exists. "nearest" only scrolls when the
+    // preview would otherwise hang off the bottom of the screen.
+    effect(() => {
+      this.preview()?.nativeElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   }
 
@@ -180,10 +183,6 @@ export class Movers {
   /**
    * Thumbnails, served off our own disk and never from a TCGplayer host.
    *
-   * Movers was built the same day local images landed and simply never got
-   * them; there was no decision behind their absence. Cheap since Part 38,
-   * when serving an image stopped opening a database connection.
-   *
    * Misses are ordinary rather than exceptional - roughly 40% of Pokemon
    * singles have no counterpart upstream, and sealed product has none at all
    * - so a failure is recorded and the <img> dropped, leaving a sized box.
@@ -204,21 +203,37 @@ export class Movers {
     return this.api.imageUrl(productId);
   }
 
-  /**
-   * A movers row already names its exact variant, so unlike the search
-   * screen there's no variant-picking step, so go straight to the history.
-   */
-  protected select(row: Mover): void {
-    this.selected.set(row);
-    this.history.set([]);
-    this.api.history(row.productId, row.subTypeName).subscribe({
-      next: (h) => this.history.set(h),
-      error: () => this.error.set('Could not load history for that item.'),
-    });
+  protected isSelected(row: Mover): boolean {
+    const sel = this.selected();
+    return sel !== null && sel.productId === row.productId && sel.subTypeName === row.subTypeName;
   }
+
+  /** Clicking the open row again closes it. */
+  protected toggle(row: Mover): void {
+    this.selected.set(this.isSelected(row) ? null : row);
+  }
+
+  /**
+   * The move the open row was listed for, restated at the top of its card.
+   * Computed once per selection rather than built in the template, which
+   * would hand the card a new object on every change-detection pass. Any
+   * change to the window reloads the board and closes the card first, so
+   * `days` can't go stale here.
+   */
+  protected readonly selectedMove = computed<CardMove | null>(() => {
+    const row = this.selected();
+    return row
+      ? {
+          subTypeName: row.subTypeName,
+          thenPrice: row.thenPrice,
+          nowPrice: row.nowPrice,
+          pctChange: row.pctChange,
+          days: this.days,
+        }
+      : null;
+  });
 
   protected clearSelection(): void {
     this.selected.set(null);
-    this.history.set([]);
   }
 }
