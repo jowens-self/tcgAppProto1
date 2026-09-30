@@ -42,6 +42,7 @@ interface GamePanel {
   imports: [FormsModule],
   templateUrl: './settings.html',
   styleUrl: './settings.css',
+  host: { class: 'page' },
 })
 export class Settings {
   private readonly api = inject(CardTrackerApi);

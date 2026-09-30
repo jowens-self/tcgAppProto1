@@ -27,6 +27,13 @@ export class App {
   private readonly api = inject(CardTrackerApi);
 
   protected readonly tab = signal<Tab>('search');
+  protected readonly tabs: readonly { id: Tab; label: string }[] = [
+    { id: 'search', label: 'Search' },
+    { id: 'movers', label: 'Movers' },
+    { id: 'sets', label: 'Sets' },
+    { id: 'collection', label: 'Collection' },
+    { id: 'settings', label: 'Settings' },
+  ];
 
   /**
    * Games whose price data has stopped arriving.

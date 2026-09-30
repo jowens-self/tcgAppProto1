@@ -223,21 +223,21 @@
     <table>
       <thead>
         <tr>
-          <th class="c-card" [attr.aria-sort]="ariaSort('card')">
-            <button type="button" (click)="sortBy('card')">Card</button>
+          <th class="c-card" [attr.aria-sort]="sort.aria('card')">
+            <button type="button" (click)="sort.by('card')">Card</button>
           </th>
           <th>Printing</th>
           <th>Condition</th>
-          <th class="num" [attr.aria-sort]="ariaSort('qty')">
-            <button type="button" (click)="sortBy('qty')">Qty</button>
+          <th class="num" [attr.aria-sort]="sort.aria('qty')">
+            <button type="button" (click)="sort.by('qty')">Qty</button>
           </th>
           <th class="num">Paid</th>
           <th class="num">Now</th>
-          <th class="num" [attr.aria-sort]="ariaSort('value')">
-            <button type="button" (click)="sortBy('value')">Value</button>
+          <th class="num" [attr.aria-sort]="sort.aria('value')">
+            <button type="button" (click)="sort.by('value')">Value</button>
           </th>
-          <th class="num" [attr.aria-sort]="ariaSort('gain')">
-            <button type="button" (click)="sortBy('gain')">Gain</button>
+          <th class="num" [attr.aria-sort]="sort.aria('gain')">
+            <button type="button" (click)="sort.by('gain')">Gain</button>
           </th>
           <th></th>
         </tr>
@@ -247,19 +247,7 @@
           <tr>
             <td class="c-card">
               <div class="card-cell">
-                <!-- Served off our own disk, never a TCGplayer host. A card
-                     with no image is ordinary, so the box stays and the
-                     broken-image glyph never appears. -->
-                <span class="thumb" aria-hidden="true">
-                  @if (hasImage(r.productId)) {
-                    <img
-                      [src]="imageUrl(r.productId)"
-                      alt=""
-                      loading="lazy"
-                      (error)="imageFailed(r.productId)"
-                    />
-                  }
-                </span>
+                <card-thumb class="thumb" [productId]="r.productId" />
                 <div>
                   <!-- Null name = the product left the catalog. The holding
                        survives unnamed rather than vanishing. -->

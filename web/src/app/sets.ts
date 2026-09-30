@@ -12,6 +12,7 @@ import {
 } from './launch-pricing';
 import { UserPrefs } from './user-prefs';
 import { modernRule } from './modern-rule';
+import { TableSort, compareNullable } from './table-sort';
 
 /** Columns the table can be ordered by. */
 type SortKey = 'set' | 'value' | 'change' | 'cards' | 'concentration';
@@ -43,6 +44,7 @@ type SortKey = 'set' | 'value' | 'change' | 'cards' | 'concentration';
   imports: [FormsModule, CurrencyPipe, DecimalPipe],
   templateUrl: './sets.html',
   styleUrl: './sets.css',
+  host: { class: 'page' },
 })
 export class Sets {
   private readonly api = inject(CardTrackerApi);
@@ -81,8 +83,7 @@ export class Sets {
    * cannot check.
    */
   protected readonly despike = signal(true);
-  protected readonly sortKey = signal<SortKey>('value');
-  protected readonly sortAsc = signal(false);
+  protected readonly sort = new TableSort<SortKey>('value', ['set']);
 
   /**
    * Client-side like hideEmpty: every row already says whether its set is
@@ -117,8 +118,8 @@ export class Sets {
     const list = this.rows().filter(
       (r) => (!hideEmpty || r.pctReturn !== null) && (!modernOnly || r.modern),
     );
-    const key = this.sortKey();
-    const dir = this.sortAsc() ? 1 : -1;
+    const key = this.sort.key();
+    const dir = this.sort.dir();
 
     return [...list].sort((a, b) => {
       switch (key) {
@@ -127,11 +128,11 @@ export class Sets {
         case 'cards':
           return dir * (a.nPriced - b.nPriced);
         case 'change':
-          return dir * (nullLast(a.pctReturn) - nullLast(b.pctReturn));
+          return compareNullable(a.pctReturn, b.pctReturn, dir);
         case 'concentration':
-          return dir * (nullLast(a.topShare) - nullLast(b.topShare));
+          return compareNullable(a.topShare, b.topShare, dir);
         default:
-          return dir * (nullLast(a.totalValue) - nullLast(b.totalValue));
+          return compareNullable(a.totalValue, b.totalValue, dir);
       }
     });
   });
@@ -203,22 +204,6 @@ export class Sets {
     );
   }
 
-  /** Click a header to sort by it; click again to reverse. */
-  protected sortBy(key: SortKey): void {
-    if (this.sortKey() === key) {
-      this.sortAsc.update((v) => !v);
-    } else {
-      this.sortKey.set(key);
-      // Text reads naturally A->Z; numbers read naturally biggest-first.
-      this.sortAsc.set(key === 'set');
-    }
-  }
-
-  protected ariaSort(key: SortKey): 'ascending' | 'descending' | null {
-    if (this.sortKey() !== key) return null;
-    return this.sortAsc() ? 'ascending' : 'descending';
-  }
-
   /** What "Modern only" means for the game on screen. */
   protected modernNote(): string {
     return modernRule(this.games(), this.game);
@@ -266,9 +251,4 @@ export class Sets {
   protected notInBasket(r: SetOverview): number {
     return r.nPriced - r.nCommon;
   }
-}
-
-/** Nulls sort last in either direction rather than reading as zero. */
-function nullLast(v: number | null): number {
-  return v === null ? Number.NEGATIVE_INFINITY : v;
 }

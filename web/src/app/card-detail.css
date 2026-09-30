@@ -18,7 +18,6 @@
 .sub {
   margin: 0.25rem 0 0;
   font-size: 0.82rem;
-  color: var(--muted);
 }
 .close {
   display: inline-flex;
@@ -187,16 +186,13 @@
 }
 
 .error {
-  background: var(--danger-fade);
-  color: var(--danger);
   padding: 0.5rem 0.7rem;
-  border-radius: 8px;
   font-size: 0.85rem;
   margin: 0 0 0.75rem;
 }
 .hint {
-  color: var(--muted);
   font-size: 0.85rem;
+  padding: 0;
   margin: 0.4rem 0;
 }
 

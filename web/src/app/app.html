@@ -7,51 +7,18 @@
 }
 
 <nav class="tabs" aria-label="Screens">
-  <button
-    type="button"
-    class="tab"
-    [class.active]="tab() === 'search'"
-    [attr.aria-current]="tab() === 'search' ? 'page' : null"
-    (click)="tab.set('search')"
-  >
-    Search
-  </button>
-  <button
-    type="button"
-    class="tab"
-    [class.active]="tab() === 'movers'"
-    [attr.aria-current]="tab() === 'movers' ? 'page' : null"
-    (click)="tab.set('movers')"
-  >
-    Movers
-  </button>
-  <button
-    type="button"
-    class="tab"
-    [class.active]="tab() === 'sets'"
-    [attr.aria-current]="tab() === 'sets' ? 'page' : null"
-    (click)="tab.set('sets')"
-  >
-    Sets
-  </button>
-  <button
-    type="button"
-    class="tab"
-    [class.active]="tab() === 'collection'"
-    [attr.aria-current]="tab() === 'collection' ? 'page' : null"
-    (click)="tab.set('collection')"
-  >
-    Collection
-  </button>
-  <button
-    type="button"
-    class="tab settings-tab"
-    [class.active]="tab() === 'settings'"
-    [attr.aria-current]="tab() === 'settings' ? 'page' : null"
-    (click)="tab.set('settings')"
-  >
-    Settings
-  </button>
+  @for (t of tabs; track t.id) {
+    <button
+      type="button"
+      class="tab"
+      [class.active]="tab() === t.id"
+      [class.settings-tab]="t.id === 'settings'"
+      [attr.aria-current]="tab() === t.id ? 'page' : null"
+      (click)="tab.set(t.id)"
+    >
+      {{ t.label }}
+    </button>
+  }
 </nav>
 
 @if (tab() === 'search') {

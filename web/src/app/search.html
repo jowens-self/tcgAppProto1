@@ -29,7 +29,7 @@
     }
   </select>
 
-  <label class="sealed">
+  <label class="toggle">
     <input
       type="checkbox"
       name="hideSealed"
@@ -61,27 +61,12 @@
         [class.active]="selected()?.productId === item.productId"
         (click)="select(item)"
       >
-        <!-- Placeholder is always the backdrop; the image fades in over it
-             once it actually loads. Avoids a broken-image flash on the ~40%
-             of cards with no upstream image. -->
         <!-- No variant marker on the thumbnail. It used to carry an amber
              corner wedge, but that marked every labelled product, 12,200 of
              them, to warn about borrowed artwork that, as of 2026-08-19,
              none of our 16 labelled-product images actually is. See
              DEVELOPMENT_HISTORY.md Part 25. -->
-        <span class="thumb-box" aria-hidden="true">
-          @if (!noImage().has(item.productId)) {
-            <img
-              class="thumb"
-              [class.loaded]="loadedImages().has(item.productId)"
-              [src]="imageUrl(item.productId)"
-              alt=""
-              loading="lazy"
-              (load)="imageLoaded(item.productId)"
-              (error)="imageFailed(item.productId)"
-            />
-          }
-        </span>
+        <card-thumb class="thumb" [productId]="item.productId" />
 
         <span class="meta">
           <span class="name">{{ item.name }}</span>
@@ -90,7 +75,7 @@
                  reprints the same card at several rarities across a huge
                  price range. -->
             @if (item.cardNumber) {
-              <span class="tag num">{{ item.cardNumber }}</span>
+              <span class="tag num-tag">{{ item.cardNumber }}</span>
             }
             @if (item.rarity) {
               <span class="tag rarity">{{ item.rarity }}</span>

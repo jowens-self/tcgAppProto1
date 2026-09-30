@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
 import { Game, GameSet, Mover } from './api.models';
 import { CardDetail, CardMove } from './card-detail';
+import { CardThumb } from './card-thumb';
 import { defaultGame } from './game-default';
 import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
 import {
@@ -35,9 +36,10 @@ import { modernRule } from './modern-rule';
  */
 @Component({
   selector: 'app-movers',
-  imports: [FormsModule, CurrencyPipe, DecimalPipe, CardDetail],
+  imports: [FormsModule, CurrencyPipe, DecimalPipe, CardDetail, CardThumb],
   templateUrl: './movers.html',
   styleUrl: './movers.css',
+  host: { class: 'page' },
 })
 export class Movers {
   private readonly api = inject(CardTrackerApi);
@@ -178,29 +180,6 @@ export class Movers {
       this.set = null;
     }
     this.load();
-  }
-
-  /**
-   * Thumbnails, served off our own disk and never from a TCGplayer host.
-   *
-   * Misses are ordinary rather than exceptional - roughly 40% of Pokemon
-   * singles have no counterpart upstream, and sealed product has none at all
-   * - so a failure is recorded and the <img> dropped, leaving a sized box.
-   * Letting the browser handle it would paint a broken-image glyph down a
-   * column of prices.
-   */
-  private readonly noImage = signal(new Set<number>());
-
-  protected hasImage(productId: number): boolean {
-    return !this.noImage().has(productId);
-  }
-
-  protected imageFailed(productId: number): void {
-    this.noImage.update((s) => new Set(s).add(productId));
-  }
-
-  protected imageUrl(productId: number): string {
-    return this.api.imageUrl(productId);
   }
 
   protected isSelected(row: Mover): boolean {

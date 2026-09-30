@@ -1,9 +1,18 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
+import {
+  Observable,
+  Subject,
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  of,
+  switchMap,
+} from 'rxjs';
 import { CardTrackerApi } from './api';
 import { Game, ItemSearchResult } from './api.models';
 import { CardDetail } from './card-detail';
+import { CardThumb } from './card-thumb';
 import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
 import { variantLabelAddsInfo } from './variant-label';
 
@@ -21,9 +30,10 @@ import { variantLabelAddsInfo } from './variant-label';
  */
 @Component({
   selector: 'app-search',
-  imports: [FormsModule, CardDetail],
+  imports: [FormsModule, CardDetail, CardThumb],
   templateUrl: './search.html',
   styleUrl: './search.css',
+  host: { class: 'page' },
 })
 export class Search {
   private readonly api = inject(CardTrackerApi);
@@ -31,12 +41,8 @@ export class Search {
   /**
    * Rows per request, and the page size "Load more" advances by.
    *
-   * 50 rather than the API's 200 ceiling because every row fetches its own
-   * thumbnail and every request opens its own JDBC connection, so a page is
-   * ~50 concurrent connections against Postgres' max_connections of 100.
-   * Measured 2026-08-20: 200 concurrent all succeed, 300 mixed produce 50
-   * `too many clients` failures. Paging keeps each page inside that, where
-   * simply raising the limit would walk toward it.
+   * 50 rather than the API's 200 ceiling: a longer page is more thumbnails
+   * to fetch at once for rows nobody has scrolled to yet.
    */
   private static readonly PAGE = 50;
 
@@ -86,23 +92,6 @@ export class Search {
     HISTORY_WINDOWS[HISTORY_WINDOWS.length - 1],
   );
 
-  /**
-   * product_ids whose thumbnail 404'd. Roughly 40% of Pokemon singles have
-   * no upstream image and One Piece has none at all, so this is the normal
-   * path rather than error handling, so we swap in a placeholder instead
-   * of leaving a broken image icon.
-   */
-  protected readonly noImage = signal<ReadonlySet<number>>(new Set());
-
-  /**
-   * product_ids whose thumbnail has finished loading. The <img> stays
-   * invisible until it lands: relying on (error) alone still lets the
-   * browser paint its broken-image glyph for a frame or two before the
-   * placeholder swaps in, which looks like a bug on every row we have no
-   * image for, and that is about 40% of them.
-   */
-  protected readonly loadedImages = signal<ReadonlySet<number>>(new Set());
-
   protected query = '';
   protected game: number | null = null;
   protected hideSealed = false;
@@ -125,40 +114,34 @@ export class Search {
       .pipe(
         debounceTime(250),
         distinctUntilChanged(),
-        switchMap((q) => {
-          this.searching.set(true);
-          this.error.set(null);
-          return this.api.search(q, {
-            game: this.game,
-            includeSealed: !this.hideSealed,
-            limit: Search.PAGE,
-          });
-        }),
+        switchMap((q) => this.firstPage(q)),
       )
-      .subscribe({
-        next: (r) => {
-          this.setResults(r);
-          this.searching.set(false);
-          this.searched.set(true);
-        },
-        error: () => {
-          this.searching.set(false);
-          this.searched.set(true);
+      .subscribe((rows) => this.showFirstPage(rows));
+  }
+
+  /**
+   * The first page for a query under the current filters, or null if the
+   * request failed. The failure is caught here rather than in subscribe():
+   * an error reaching the typing stream would end it, and the box would
+   * ignore every keystroke after one failed search.
+   */
+  private firstPage(q: string): Observable<ItemSearchResult[] | null> {
+    this.searching.set(true);
+    this.error.set(null);
+    return this.api
+      .search(q, { game: this.game, includeSealed: !this.hideSealed, limit: Search.PAGE })
+      .pipe(
+        catchError(() => {
           this.error.set('Search failed. Is ApiServer running on :7070?');
-        },
-      });
+          return of(null);
+        }),
+      );
   }
 
-  protected imageUrl(productId: number): string {
-    return this.api.imageUrl(productId);
-  }
-
-  protected imageFailed(productId: number): void {
-    this.noImage.update((s) => new Set(s).add(productId));
-  }
-
-  protected imageLoaded(productId: number): void {
-    this.loadedImages.update((s) => new Set(s).add(productId));
+  private showFirstPage(rows: ItemSearchResult[] | null): void {
+    this.searching.set(false);
+    this.searched.set(true);
+    if (rows) this.setResults(rows);
   }
 
   protected onQueryChange(value: string): void {
@@ -181,24 +164,7 @@ export class Search {
       this.setResults([]);
       // distinctUntilChanged would swallow an identical query string, so
       // go straight to the API instead of pushing through the subject.
-      this.searching.set(true);
-      this.api
-        .search(trimmed, {
-          game: this.game,
-          includeSealed: !this.hideSealed,
-          limit: Search.PAGE,
-        })
-        .subscribe({
-          next: (r) => {
-            this.setResults(r);
-            this.searching.set(false);
-            this.searched.set(true);
-          },
-          error: () => {
-            this.searching.set(false);
-            this.error.set('Search failed.');
-          },
-        });
+      this.firstPage(trimmed).subscribe((rows) => this.showFirstPage(rows));
     }
     this.clearSelection();
   }

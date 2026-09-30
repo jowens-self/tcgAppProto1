@@ -139,20 +139,20 @@
     <table>
       <thead>
         <tr>
-          <th class="c-set" [attr.aria-sort]="ariaSort('set')">
-            <button type="button" (click)="sortBy('set')">Set</button>
+          <th class="c-set" [attr.aria-sort]="sort.aria('set')">
+            <button type="button" (click)="sort.by('set')">Set</button>
           </th>
-          <th class="num" [attr.aria-sort]="ariaSort('cards')">
-            <button type="button" (click)="sortBy('cards')">Cards</button>
+          <th class="num" [attr.aria-sort]="sort.aria('cards')">
+            <button type="button" (click)="sort.by('cards')">Cards</button>
           </th>
-          <th class="num" [attr.aria-sort]="ariaSort('value')">
-            <button type="button" (click)="sortBy('value')">Value</button>
+          <th class="num" [attr.aria-sort]="sort.aria('value')">
+            <button type="button" (click)="sort.by('value')">Value</button>
           </th>
-          <th class="num" [attr.aria-sort]="ariaSort('change')">
-            <button type="button" (click)="sortBy('change')">Change</button>
+          <th class="num" [attr.aria-sort]="sort.aria('change')">
+            <button type="button" (click)="sort.by('change')">Change</button>
           </th>
-          <th class="c-top" [attr.aria-sort]="ariaSort('concentration')">
-            <button type="button" (click)="sortBy('concentration')">Driven by</button>
+          <th class="c-top" [attr.aria-sort]="sort.aria('concentration')">
+            <button type="button" (click)="sort.by('concentration')">Driven by</button>
           </th>
         </tr>
       </thead>

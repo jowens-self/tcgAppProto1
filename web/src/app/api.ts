@@ -22,10 +22,9 @@ import {
 /**
  * The only thing in this app that knows a server exists.
  *
- * Every method is one endpoint from the read API. Nothing here talks to
- * Postgres or to tcgcsv. That boundary is deliberate (see CLAUDE.md
- * "Architecture intent"): the mirror has a restrictive CORS policy and
- * asks that data be ingested server-side, so the browser never touches it.
+ * Every method is one endpoint of our own API. Nothing here talks to
+ * Postgres or to tcgcsv: the mirror has a restrictive CORS policy and asks
+ * that data be ingested server-side, so the browser never touches it.
  */
 @Injectable({ providedIn: 'root' })
 export class CardTrackerApi {
@@ -126,11 +125,6 @@ export class CardTrackerApi {
   }
 
   /**
-   * URL of a card's thumbnail on our own server, never a third party. The
-   * browser must not fetch images from anyone else (see CLAUDE.md). Returns
-   * 404 when we have no image, which the caller renders as a placeholder.
-   */
-  /**
    * What you hold now, priced. `asOf` (YYYY-MM-DD) answers as of that day,
    * moving both the holdings AND the prices back, so the total is what the
    * collection was really worth then rather than today's cards at old prices.
@@ -165,13 +159,6 @@ export class CardTrackerApi {
     return this.http.get<HoldingEvent[]>(`${this.base}/holdings/${productId}/history`);
   }
 
-  /**
-   * What the collection was worth each day over the last `days`.
-   *
-   * Its own call rather than part of holdings(): this is an order of
-   * magnitude dearer (roughly 110ms for 200 cards over 90 days, ~800ms for
-   * 1000), and the table should not wait on the chart.
-   */
   /** The user's preferences; the defaults if they have never saved any. */
   settings(): Observable<UserSettings> {
     return this.http.get<UserSettings>(`${this.base}/settings`);
@@ -186,19 +173,31 @@ export class CardTrackerApi {
     return this.http.put<Game>(`${this.base}/games/${categoryId}/rules`, rules);
   }
 
+  /**
+   * What the collection was worth each day over the last `days`.
+   *
+   * Its own call rather than part of holdings(): this is an order of
+   * magnitude dearer (roughly 110ms for 200 cards over 90 days, ~800ms for
+   * 1000), and the table should not wait on the chart.
+   */
   collectionValue(days: number): Observable<CollectionPoint[]> {
     return this.http.get<CollectionPoint[]>(`${this.base}/holdings/value`, {
       params: new HttpParams().set('days', days),
     });
   }
 
+  /**
+   * URL of a card's thumbnail on our own server, never a third party. The
+   * browser must not fetch images from anyone else (see CLAUDE.md). Returns
+   * 404 when we have no image, which the caller renders as a placeholder.
+   */
   imageUrl(productId: number): string {
     return `${this.base}/items/${productId}/image`;
   }
 
   /**
    * Whose artwork this card's thumbnail shows. Its own call rather than part
-   * of item(): it costs ~90ms server-side and only the detail view needs it.
+   * of item(), because only the detail view needs it.
    * 404s when we hold no image, which is ordinary, so callers swallow it.
    */
   imageProvenance(productId: number): Observable<ImageProvenance> {

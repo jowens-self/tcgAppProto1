@@ -1,7 +1,7 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
+import { Subject, catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
 import { CardTrackerApi } from './api';
 import {
   ChartDatum,
@@ -11,9 +11,11 @@ import {
   ItemSearchResult,
   ItemVariant,
 } from './api.models';
+import { CardThumb } from './card-thumb';
 import { PriceChart } from './price-chart';
 import { drawableSeries } from './collection-series';
 import { holdingTotals } from './holding-totals';
+import { TableSort, compareNullable } from './table-sort';
 import { UserPrefs } from './user-prefs';
 
 /** Columns the table can be ordered by. */
@@ -35,9 +37,10 @@ type SortKey = 'card' | 'qty' | 'value' | 'gain';
  */
 @Component({
   selector: 'app-collection',
-  imports: [FormsModule, CurrencyPipe, DecimalPipe, PriceChart],
+  imports: [FormsModule, CurrencyPipe, DecimalPipe, CardThumb, PriceChart],
   templateUrl: './collection.html',
   styleUrl: './collection.css',
+  host: { class: 'page' },
 })
 export class Collection {
   private readonly api = inject(CardTrackerApi);
@@ -70,12 +73,11 @@ export class Collection {
   protected quantity = 1;
   protected costBasis: number | null = null;
 
-  protected readonly sortKey = signal<SortKey>('value');
-  protected readonly sortAsc = signal(false);
+  protected readonly sort = new TableSort<SortKey>('value', ['card']);
 
   protected readonly visible = computed(() => {
-    const key = this.sortKey();
-    const dir = this.sortAsc() ? 1 : -1;
+    const key = this.sort.key();
+    const dir = this.sort.dir();
     return [...this.rows()].sort((a, b) => {
       switch (key) {
         case 'card':
@@ -83,9 +85,9 @@ export class Collection {
         case 'qty':
           return dir * (a.quantity - b.quantity);
         case 'gain':
-          return dir * (nullLast(a.gain) - nullLast(b.gain));
+          return compareNullable(a.gain, b.gain, dir);
         default:
-          return dir * (nullLast(a.positionValue) - nullLast(b.positionValue));
+          return compareNullable(a.positionValue, b.positionValue, dir);
       }
     });
   });
@@ -107,18 +109,19 @@ export class Collection {
         switchMap((q) => {
           this.searching.set(true);
           this.picked.set(null);
-          return this.api.search(q, { limit: 12 });
+          return this.api.search(q, { limit: 12 }).pipe(
+            // Caught per request: an error reaching subscribe() would end the
+            // stream, and the box would ignore every keystroke after it.
+            catchError(() => {
+              this.error.set('Search failed.');
+              return of([]);
+            }),
+          );
         }),
       )
-      .subscribe({
-        next: (r) => {
-          this.results.set(r);
-          this.searching.set(false);
-        },
-        error: () => {
-          this.searching.set(false);
-          this.error.set('Search failed.');
-        },
+      .subscribe((r) => {
+        this.results.set(r);
+        this.searching.set(false);
       });
   }
 
@@ -170,7 +173,7 @@ export class Collection {
         this.variants.set(v);
         if (v.length === 1) this.variant = v[0].subTypeName;
       },
-      error: () => this.error.set('Could not load this card&apos;s variants.'),
+      error: () => this.error.set("Could not load this card's variants."),
     });
   }
 
@@ -198,7 +201,8 @@ export class Collection {
         },
         error: (e) => {
           this.saving.set(false);
-          this.error.set(e?.error ?? 'Could not save that holding.');
+          // The API's refusal says what was wrong; show it, not a generic line.
+          this.error.set(e?.error?.title ?? 'Could not save that holding.');
         },
       });
   }
@@ -237,36 +241,6 @@ export class Collection {
     this.variant = '';
     this.quantity = 1;
     this.costBasis = null;
-  }
-
-  protected sortBy(key: SortKey): void {
-    if (this.sortKey() === key) {
-      this.sortAsc.update((v) => !v);
-    } else {
-      this.sortKey.set(key);
-      this.sortAsc.set(key === 'card');
-    }
-  }
-
-  protected ariaSort(key: SortKey): 'ascending' | 'descending' | null {
-    if (this.sortKey() !== key) return null;
-    return this.sortAsc() ? 'ascending' : 'descending';
-  }
-
-  /**
-   * Cards with no image 404, which is ordinary: roughly 40% of Pokemon
-   * singles have no counterpart upstream. Tracked and hidden rather than left
-   * to the browser, which would otherwise paint a broken-image glyph in the
-   * middle of a table of money. Same pattern as the search screen.
-   */
-  private readonly noImage = signal(new Set<number>());
-
-  protected hasImage(productId: number): boolean {
-    return !this.noImage().has(productId);
-  }
-
-  protected imageFailed(productId: number): void {
-    this.noImage.update((s) => new Set(s).add(productId));
   }
 
   // --- value over time ---
@@ -356,16 +330,7 @@ export class Collection {
     this.events.set([]);
     this.api.holdingHistory(r.productId).subscribe({
       next: (e) => this.events.set(e),
-      error: () => this.error.set('Could not load that card&apos;s history.'),
+      error: () => this.error.set("Could not load that card's history."),
     });
   }
-
-  protected imageUrl(productId: number): string {
-    return this.api.imageUrl(productId);
-  }
-}
-
-/** Nulls sort last in either direction rather than reading as zero. */
-function nullLast(v: number | null): number {
-  return v === null ? Number.NEGATIVE_INFINITY : v;
 }

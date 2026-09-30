@@ -67,7 +67,7 @@
     />
   </label>
 
-  <label class="sealed">
+  <label class="toggle">
     <input
       type="checkbox"
       [(ngModel)]="includeSealed"
@@ -77,7 +77,7 @@
     Include sealed
   </label>
 
-  <label class="sealed" [title]="modernNote()">
+  <label class="toggle" [title]="modernNote()">
     <input
       type="checkbox"
       [ngModel]="modernOnly()"
@@ -89,7 +89,7 @@
 
   <!-- Launch pricing starts unticked: both parts are mostly noise. Shared
        with the other screens and the chart below. -->
-  <label class="sealed" [title]="preReleaseTitle">
+  <label class="toggle" [title]="preReleaseTitle">
     <input
       type="checkbox"
       [ngModel]="launch.includePreRelease()"
@@ -99,7 +99,7 @@
     Include pre-release
   </label>
 
-  <label class="sealed" [title]="earlyTitle()">
+  <label class="toggle" [title]="earlyTitle()">
     <input
       type="checkbox"
       [ngModel]="launch.includeEarly()"
@@ -172,31 +172,21 @@
             [attr.aria-expanded]="isSelected(r)"
           >
             <td class="c-item">
-              <!-- Local file only; the browser never contacts TCGplayer. -->
-              <span class="thumb" aria-hidden="true">
-                @if (hasImage(r.productId)) {
-                  <img
-                    [src]="imageUrl(r.productId)"
-                    alt=""
-                    loading="lazy"
-                    (error)="imageFailed(r.productId)"
-                  />
-                }
-              </span>
+              <card-thumb [productId]="r.productId" />
               <span class="item-text">
-              <span class="name">{{ r.name }}</span>
-              <span class="tags">
-                @if (r.cardNumber) {
-                  <span class="tag num-tag">{{ r.cardNumber }}</span>
-                }
-                @if (r.rarity) {
-                  <span class="tag rarity">{{ r.rarity }}</span>
-                }
-                @if (r.isSealed) {
-                  <span class="tag sealed">Sealed</span>
-                }
-              </span>
-              <span class="set">{{ r.setName }} · {{ r.game }}</span>
+                <span class="name">{{ r.name }}</span>
+                <span class="tags">
+                  @if (r.cardNumber) {
+                    <span class="tag num-tag">{{ r.cardNumber }}</span>
+                  }
+                  @if (r.rarity) {
+                    <span class="tag rarity">{{ r.rarity }}</span>
+                  }
+                  @if (r.isSealed) {
+                    <span class="tag sealed">Sealed</span>
+                  }
+                </span>
+                <span class="set">{{ r.setName }} · {{ r.game }}</span>
               </span>
             </td>
             <td class="c-variant">{{ r.subTypeName }}</td>
