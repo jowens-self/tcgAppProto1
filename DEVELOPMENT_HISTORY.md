@@ -4692,6 +4692,42 @@ trade-off was put to the owner rather than decided here.
 
 ---
 
+### The owner's answer
+
+Put to the owner the same night, and both answered.
+
+**Docker at login.** The on-demand decision is reversed. A new launch agent,
+`com.cardtracker.docker-at-login`, opens Docker in the background at login,
+and `cardtracker-db` now has `restart: unless-stopped`. The policy was applied
+to the live container with `docker update` and written into
+`docker-compose.yml`, so rebuilding the container keeps it. The container
+never restarted to take the change: it has been up since 2026-09-08 and still
+is. Opening Docker from a launch agent, rather than Docker Desktop's own
+"start at login" setting, took effect without restarting Docker and sits in
+the repo next to the jobs that depend on it.
+
+**A fixed 16:30 pull.** tcgcsv asks that no price file be fetched twice in 24
+hours, and "the first hourly tick after the refresh" drifts, so the regular
+pull is now a calendar slot. The August template `com.cardtracker.daily` was
+repurposed to run `hourly.sh` at 16:30 local, about an hour after tcgcsv's
+~20:00 UTC refresh in both CDT and CST. That makes pulls 24 hours apart,
+give or take the two DST mornings a year. The script now decides from the
+clock which day it should hold: yesterday's before `SLOT`, today's from
+`SLOT` on. It pulls only when a tracked game is missing that day. At 16:30
+that is always the case, so the slot pulls. The rest of the time the hourly
+runs pull only to recover from a failed slot, a late refresh or a Mac that
+was off at 16:30, and `App` skips any game that already holds the day. Both
+jobs share the lock, so they never overlap.
+
+Checked before it went live. With the clock pinned to 00:00, 08:59 (not a
+valid octal number, which is why the comparison is written `10#`) and 16:29,
+the script expected 2026-09-29, found it for both games and skipped. At 16:30
+it expected 2026-09-30, found it missing for both, and ran `App`. That was a
+real run: tcgcsv was still serving 2026-09-29, so `App` fetched nothing and
+exited 0. All three agents loaded. The login agent ran once and exited 0,
+and the daily agent's trigger reads Hour 16, Minute 30. The container and the
+API server (200) were untouched throughout.
+
 ## Part 43 — A schema that can change, and holdings that never do
 
 *2026-09-08 to 2026-09-09.*
@@ -5019,39 +5055,3 @@ room for Part 42, and did not rebuild the jar while that uncommitted `App`
 change was in the tree. The hourly job runs that jar, so a rebuild would
 have put someone else's half-finished pull into production. It rebuilt once
 the change was committed.
-
-### The owner's answer
-
-Put to the owner the same night, and both answered.
-
-**Docker at login.** The on-demand decision is reversed. A new launch agent,
-`com.cardtracker.docker-at-login`, opens Docker in the background at login,
-and `cardtracker-db` now has `restart: unless-stopped`. The policy was applied
-to the live container with `docker update` and written into
-`docker-compose.yml`, so rebuilding the container keeps it. The container
-never restarted to take the change: it has been up since 2026-09-08 and still
-is. Opening Docker from a launch agent, rather than Docker Desktop's own
-"start at login" setting, took effect without restarting Docker and sits in
-the repo next to the jobs that depend on it.
-
-**A fixed 16:30 pull.** tcgcsv asks that no price file be fetched twice in 24
-hours, and "the first hourly tick after the refresh" drifts, so the regular
-pull is now a calendar slot. The August template `com.cardtracker.daily` was
-repurposed to run `hourly.sh` at 16:30 local, about an hour after tcgcsv's
-~20:00 UTC refresh in both CDT and CST. That makes pulls 24 hours apart,
-give or take the two DST mornings a year. The script now decides from the
-clock which day it should hold: yesterday's before `SLOT`, today's from
-`SLOT` on. It pulls only when a tracked game is missing that day. At 16:30
-that is always the case, so the slot pulls. The rest of the time the hourly
-runs pull only to recover from a failed slot, a late refresh or a Mac that
-was off at 16:30, and `App` skips any game that already holds the day. Both
-jobs share the lock, so they never overlap.
-
-Checked before it went live. With the clock pinned to 00:00, 08:59 (not a
-valid octal number, which is why the comparison is written `10#`) and 16:29,
-the script expected 2026-09-29, found it for both games and skipped. At 16:30
-it expected 2026-09-30, found it missing for both, and ran `App`. That was a
-real run: tcgcsv was still serving 2026-09-29, so `App` fetched nothing and
-exited 0. All three agents loaded. The login agent ran once and exited 0,
-and the daily agent's trigger reads Hour 16, Minute 30. The container and the
-API server (200) were untouched throughout.
