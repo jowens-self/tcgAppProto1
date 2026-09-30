@@ -301,10 +301,7 @@ class SourceGuardsTest {
      *
      * Adding a name here is a claim that the surrounding prose says it is gone.
      */
-    private static final Set<String> DELETED_AND_CITED_AS_HISTORY = Set.of(
-            // "App and BackfillArchive both compute it this way
-            //  (ProductPullTest did too, until Part 13 deleted it)"
-            "ProductPullTest");
+    private static final Set<String> DELETED_AND_CITED_AS_HISTORY = Set.of();
 
     @Test
     void everyIdentifierCitedInClaudeMdExists() throws IOException {

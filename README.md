@@ -104,11 +104,11 @@ you write one new class.
 
 ## Query functions
 
-`sql/functions.sql` (loaded automatically alongside `schema.sql`) has four
-parameterized SQL functions, the reusable analytical building blocks
-worked out by hand in DEVELOPMENT_HISTORY.md Part 12, formalized in Part
-14 so they don't need retyping per question. All verified to match the
-hand-computed numbers exactly before being trusted.
+`sql/functions.sql` (loaded automatically alongside `schema.sql`) holds every
+query the app runs, so any number on screen can be reproduced in psql. The
+four below are the analytical building blocks worked out by hand in
+DEVELOPMENT_HISTORY.md Part 12 and formalized in Part 14, all verified to
+match the hand-computed numbers before being trusted.
 
 `item_return`/`item_all_time_high` work on any individual product, card
 or sealed, since the math is the same either way, and deliberately return
@@ -133,8 +133,8 @@ SELECT * FROM set_return(23353, '2024-02-08', '2026-08-13');
 --        325 |     1176.92 |   2790.15 |     137.07
 
 -- Current (or as-of) total value of a set. Singles only, same rule.
--- "Current" is the newest day the database holds, not today. Pulls are on
--- demand, so the newest snapshot is routinely yesterday with nothing wrong.
+-- "Current" is the newest day the database holds, not today. The day's pull
+-- lands at 16:30, so the newest snapshot is often yesterday with nothing wrong.
 SELECT * FROM set_value(23353);
 -- n_variants | total_value
 --        326 |     2748.94   (as of 2026-08-21, read 2026-08-22)
@@ -152,9 +152,9 @@ Postgres (or to tcgcsv) directly.
 
 Read-only over PRICE data, and that part is not negotiable: nothing here
 writes `price_snapshots`, and ingestion stays in `App`/`BackfillArchive`
-where the append-only guarantees live. The exception is your own holdings,
-which are your data rather than an observation of the market - and that table
-is append-only too, so a write still cannot destroy anything.
+where the append-only guarantees live. What it does write is your own data:
+holdings (append-only too, so a write still cannot destroy anything), your
+preferences, and each game's rules.
 
 `/api/health` reports whether price data is still ARRIVING, per game, rather
 than whether the process is up. A liveness check that answers "ok" while the

@@ -64,9 +64,11 @@ origin through that date, then continuing forward from there).
 45. [Part 45 — Charts you can read a day off](#part-45--charts-you-can-read-a-day-off)
 46. [Part 46 — The summer slump, and the noise around new sets](#part-46--the-summer-slump-and-the-noise-around-new-sets)
 47. [Part 47 — One card view for two screens](#part-47--one-card-view-for-two-screens)
-48. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-49. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-50. [What's still open](#whats-still-open)
+48. [Part 48 — A settings screen, and two kinds of setting](#part-48--a-settings-screen-and-two-kinds-of-setting)
+49. [Part 49 — Reading the whole thing again](#part-49--reading-the-whole-thing-again)
+50. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+51. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+52. [What's still open](#whats-still-open)
 
 ---
 
@@ -4271,7 +4273,11 @@ Not started. Schema not yet designed.
   (Parts 43–45): hand entry, holdings priced by `current_holdings()` on any
   date, and the collection's value day by day. The CSV above stays open as
   a bulk import beside it, not a prerequisite.
-- **Real scheduling** — the LaunchAgent template still exists
+- ~~**Real scheduling**~~ — done 2026-09-30 (Part 42), for a reason none of
+  the text below anticipated: tcgcsv withdrew its archive, so a missed day is
+  now lost for good. A 16:30 pull slot plus an hourly retry, both launchd
+  jobs. The earlier reasoning is kept as written:
+  the LaunchAgent template still exists
   (`com.cardtracker.daily.plist` in the project root) and can be
   reinstated in two commands once there's an actual front-end that needs
   "always up to date without a manual step."
@@ -4289,9 +4295,9 @@ Not started. Schema not yet designed.
   "two week archive retention window" to justify urgency; archives in fact
   persist to 2024-02-08, which is the whole reason missing a day costs
   nothing. See Part 35's correction.
-- **Docker Desktop autostart** — the owner intended to enable this
-  themselves in Docker Desktop's own settings; worth confirming it's
-  actually on, since it matters more if scheduling is ever reinstated.
+- ~~**Docker Desktop autostart**~~ — done 2026-09-30 (Part 42):
+  `com.cardtracker.docker-at-login` opens Docker at login, and
+  `cardtracker-db` has `restart: unless-stopped`.
 - ~~**Front end**~~ — built (Part 18). Angular 22 in `web/`, Card /
   Product Search working against the read API. Further screens (movers,
   set overview) are the next additions.
@@ -5055,3 +5061,145 @@ room for Part 42, and did not rebuild the jar while that uncommitted `App`
 change was in the tree. The hourly job runs that jar, so a rebuild would
 have put someone else's half-finished pull into production. It rebuilt once
 the change was committed.
+
+---
+
+## Part 48 — A settings screen, and two kinds of setting
+
+Built 2026-09-30 at the owner's request. Two backlog items were waiting on
+it: the collection chart's "what you paid" line (owner, 2026-09-11: "can be
+an option in settings later"), and making the modern cutoff and early-pricing
+length editable from the app instead of by an UPDATE in psql.
+
+### Two kinds of setting, stored apart on purpose
+
+- **Preferences are the user's own**: the paid line, and whether pre-release
+  and early prices count on trend screens. They live in `user_settings`
+  (migration 006), one row per user, **updated in place**. A preference is
+  not history, unlike a holding. They save the moment they change.
+- **Game rules define what the data means**: where "modern" starts and how
+  long early pricing lasts. They stay in `tracked_categories`, shared by every
+  user, and take an explicit Save, whose answer says how many sets the new
+  cutoff takes in.
+
+`UserPrefs` holds the preferences as signals and is loaded by
+`provideAppInitializer` before the first screen draws, so no screen fetches
+under the defaults and then has to fetch again. The launch-pricing boxes on
+Movers and Sets are the same signals, so ticking one anywhere changes it
+everywhere and is saved.
+
+### Details that matter
+
+- **The paid line** comes from `collection_value()`, which now returns
+  `cost` and `uncosted` beside `value`. Holdings with no purchase price are
+  left out of the line and counted in a note, the same rule the Cost total
+  follows, so the line's last point equals that total. The chart draws it
+  dashed on the same scale, matched to the value line by date, and the hover
+  readout shows both numbers.
+- **The cutoff is picked by set**, grouped by year, and saved as that set's
+  release date. A saved date no set was released on (set by hand in psql)
+  is offered as itself rather than silently replaced.
+- **Early pricing is edited in weeks** (0 to 52), the unit every label uses,
+  and stored in days.
+- **Every preference is required on save.** A partial body would mean
+  guessing the rest, and a guessed preference is a changed preference. An
+  unreadable body is a 400, not a 500.
+
+Checked live: moving Pokemon's cutoff to Scarlet & Violet made 39 of 220
+sets modern; restored to Sword & Shield, 70 of 220. The paid line and its
+readout were checked with two temporary holdings, removed afterwards, and
+the preferences were put back to their defaults.
+
+---
+
+## Part 49 — Reading the whole thing again
+
+On 2026-09-30 the owner, now working with a newer model, asked for a pass
+over everything: what could be done better, what is redundant, and whether
+CLAUDE.md was adding unnecessary context or confusion.
+
+### CLAUDE.md: 976 lines to about 345
+
+CLAUDE.md is loaded at the start of every session, so everything in it is
+paid for every time. It had grown to 976 lines and 9,364 words, mostly by
+accretion: each Part added its lesson, and nothing was ever taken out. It is
+now about 2,900 words. Every rule the owner set is kept and marked
+**(owner)**, as its own "Before you cite a rule here" section always asked.
+Every trap that has actually bitten is kept. What went:
+
+- **Narration and measurements that already live in this file.** CLAUDE.md
+  now states each rule with a one-line reason and cites the Part for the
+  evidence.
+- **Rules stated two or three times**: the mirror-dates-the-pull rule three
+  times, the `mvn package` trap and the connection pool twice each, the modern
+  and launch-pricing rules twice.
+- **Claims that had stopped being true**: test counts (126 Java and 16
+  front-end, against 163 and 59), "four screens", "pulls are on demand", a
+  backlog item for the paid line after it shipped, a sentence cut off
+  mid-word, and "search pages at 50 because every thumbnail opens a JDBC
+  connection", untrue since Part 38.
+- **A contradiction.** "This project talks to tcgcsv.com and nothing else"
+  and "all outbound traffic goes to tcgcsv.com only" sat beside a table
+  granting two pokemontcg.io hosts. The table is now the rule.
+
+### Bugs found reading the code
+
+- **The search box died after one failed request**, on Search and on
+  Collection's add-a-card box. The failure reached `subscribe()`, which ends
+  an RxJS stream, so every later keystroke did nothing until a reload. Now
+  each request catches its own failure. Checked by stopping the API
+  mid-session, searching, restarting it and searching again.
+- **Sorting ascending put the blanks first.** Sets and Collection read a
+  missing change or gain as minus infinity, so "Change, ascending" opened on
+  a column of dashes, contradicting the helper's own comment. Nulls now sort
+  last both ways (`compareNullable`, with tests).
+- **Collection printed `card&apos;s`** in two error messages, and
+  "[object Object]" when the API refused a holding: the refusal is a JSON
+  object and the screen showed it whole. It now shows the API's reason.
+- **`POST /api/holdings` answered 500 to an unreadable body**; the settings
+  endpoints already answered 400. Same helper now, and a test.
+- **Id errors named the wrong parameter**: a bad game id said "productId
+  must be an integer".
+
+### Duplication removed
+
+- **The API threaded the database's URL, user and password through every
+  handler**, into three copy-pasted connection helpers. One small `Db`
+  record now, and `Env.connect()` for the three command-line tools that each
+  read the same three environment variables.
+- **Two queries were still written inline in Java**, against the project's
+  own "handlers call SQL functions" rule: `item_product()` and
+  `tracked_games()` replace them. Search now describes each hit through
+  `item_product()`, so a product can't be described two ways. The planner
+  inlines it, the plan is unchanged, and warm "charizard" went 74ms to 46ms.
+- **`game_set_overview()` joined `products` twice** where once did. Same
+  output (checked both ways with `EXCEPT` over every set: zero rows), and
+  ~770ms to ~610ms.
+- **Three screens each tracked which thumbnails had failed**, in three
+  slightly different ways. One `card-thumb` component now.
+- **Sets and Collection each carried the click-to-sort code**; one
+  `TableSort` now.
+- **Page styles were pasted into up to six stylesheets**: page layout,
+  headings, error and hint lines, the filter bar, checkbox labels, card tags.
+  They now live once in `styles.css`, and a screen overrides only what it
+  does differently. 677 lines out, 274 in. On the way, the checkbox labels'
+  `.sealed` class turned out to be styling the orange "Sealed" tag as well,
+  by accident; the labels are `.toggle` now.
+
+Stale comments were fixed as they were found: "about 40% of Pokemon singles
+have no image" (it is about 5%), "read-only", "schedule it for the small
+hours", and archive catch-up that no longer runs.
+
+### Left alone, on purpose
+
+- **`BackfillArchive`**, though the archive it reads is gone: keeping it for
+  the day the archive returns was the owner's call (Part 42). Its header now
+  says it is dormant.
+- **The long comments on the SQL functions.** They are the reason for each
+  choice, at the place someone would change it.
+- **The launch-pricing checkboxes on Movers, Sets and the card view.** They
+  look alike but sit in three differently styled places, and each is a few
+  lines of template over the same shared signals and helpers.
+
+Verified: 163 Java tests, 59 front-end tests, all five SQL checks, and each
+screen in the browser.
