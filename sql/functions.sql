@@ -741,7 +741,11 @@ $$ LANGUAGE sql STABLE;
 --   * a REVERSAL is a return to within 25% of a level held for at least two
 --     days, after at least two days away. A single day, at either level, is
 --     a one-day error, which the Sets screen already despikes;
---   * two or more reversals flags the card.
+--   * two or more reversals flags the card,
+--   * as long as its higher level is $1 or more (owner, 2026-10-04). A card
+--     that never reaches $1 is under Movers' default floor at both levels and
+--     moves a set's change by cents, so the flag only cluttered its page: on
+--     2026-10-04 that was 62 of the 88 flagged cards.
 -- A real move steps once and stays, so it never reverses. The Disclosures
 -- screen states these numbers to users (web/src/app/disclosures.html): change
 -- both together.
@@ -813,7 +817,8 @@ BEGIN
     GROUP BY 1, 2
     HAVING COUNT(*) FILTER (WHERE s.back_price IS NOT NULL AND s.days >= 2 AND s.away_days >= 2
                               AND GREATEST(s.price, s.back_price)
-                                  / NULLIF(LEAST(s.price, s.back_price), 0) <= 1.25) >= 2;
+                                  / NULLIF(LEAST(s.price, s.back_price), 0) <= 1.25) >= 2
+       AND MAX(s.price) >= 1;
 
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RETURN v_n;

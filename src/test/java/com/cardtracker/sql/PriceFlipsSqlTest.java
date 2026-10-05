@@ -24,6 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  *   990505  wiggles: $100 and $60 in turn, never 2x apart
  * Only the first flips. The first two both read +900% over the last week,
  * so the board shows whether the rule, and only the rule, decides.
+ *
+ * And in a cheap set of their own, flipping the same way as 990501:
+ *   990511  between $0.20 and $0.60, never reaching $1
+ *   990512  between $0.40 and exactly $1.00
  */
 @EnabledIf("com.cardtracker.sql.TestDatabase#available")
 @DisplayName("flipping prices")
@@ -44,7 +48,12 @@ class PriceFlipsSqlTest {
                 (990503, 990500, 3, 'Spiky', FALSE),
                 (990504, 990500, 3, 'Stepper', FALSE),
                 (990505, 990500, 3, 'Wiggler', FALSE);
-            """.formatted(Fixtures.TODAY));
+            INSERT INTO groups (group_id, category_id, name, published_on) VALUES
+                (990510, 3, 'Cheap Set', DATE '%s' - 400);
+            INSERT INTO products (product_id, group_id, category_id, name, is_sealed) VALUES
+                (990511, 990510, 3, 'Penny Flipper', FALSE),
+                (990512, 990510, 3, 'Dollar Flipper', FALSE);
+            """.formatted(Fixtures.TODAY, Fixtures.TODAY));
 
         Fixtures.prices(db, 990501, "Holofoil",
                 series(100, "100.00", 5, "10.00", 5, "100.00", 5, "10.00", 5, "100.00"));
@@ -55,8 +64,12 @@ class PriceFlipsSqlTest {
         Fixtures.prices(db, 990504, "Holofoil", series(60, "10.00", 60, "30.00"));
         Fixtures.prices(db, 990505, "Holofoil", series(
                 20, "100.00", 20, "60.00", 20, "100.00", 20, "60.00", 20, "100.00", 20, "60.00"));
+        Fixtures.prices(db, 990511, "Holofoil",
+                series(100, "0.60", 5, "0.20", 5, "0.60", 5, "0.20", 5, "0.60"));
+        Fixtures.prices(db, 990512, "Holofoil",
+                series(100, "1.00", 5, "0.40", 5, "1.00", 5, "0.40", 5, "1.00"));
 
-        assertEquals("1", db.scalar("SELECT refresh_price_flips()::TEXT"));
+        assertEquals("2", db.scalar("SELECT refresh_price_flips()::TEXT"));
     }
 
     @AfterAll
@@ -88,8 +101,17 @@ class PriceFlipsSqlTest {
     void onlyTheCardThatKeepsGoingBackIsFlagged() throws Exception {
         assertEquals("990501|10.00|100.00|3", db.scalar("""
             SELECT string_agg(product_id || '|' || level_low || '|' || level_high || '|' || reversals, ',')
-            FROM price_flips
+            FROM price_flips WHERE product_id < 990510
             """), "two trips out and back is three returns to a level it had left");
+    }
+
+    /** One that never reaches $1 is under Movers' floor either way and moves a set by cents. */
+    @Test
+    void aFlipperIsOnlyFlaggedOnceItsHigherPriceIsADollar() throws Exception {
+        assertEquals("990512|0.40|1.00", db.scalar("""
+            SELECT string_agg(product_id || '|' || level_low || '|' || level_high, ',')
+            FROM price_flips WHERE product_id > 990510
+            """));
     }
 
     /** The hourly job calls it every run; only a new day costs a rebuild. */

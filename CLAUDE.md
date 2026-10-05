@@ -220,10 +220,10 @@ for Pokemon images only; One Piece has no image source yet.
 - **Flipping prices are left out of trends by default** (owner, 2026-09-30).
   A card whose market price keeps jumping between two far-apart levels
   (2x or more, two or more days at each, back and forth at least twice in
-  180 days) is listed in `price_flips`, which is derived: rebuilt by
-  `refresh_price_flips()` from `hourly.sh`, once per new day. Movers and a
-  set's change skip it unless asked; values never do; the card view says so.
-  Migration 007 and Part 50.
+  180 days, the higher level $1 or more) is listed in `price_flips`, which is
+  derived: rebuilt by `refresh_price_flips()` from `hourly.sh`, once per new
+  day. Movers and a set's change skip it unless asked; values never do; the
+  card view says so. Migration 007, Parts 50 and 51.
 - **The three trend exclusions travel together** as `TrendScope` in Java and
   `withTrendScope()` in the front end, each with a box on Movers, Sets and
   Settings that is one saved preference.

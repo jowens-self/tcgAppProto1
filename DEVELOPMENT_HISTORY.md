@@ -67,9 +67,10 @@ origin through that date, then continuing forward from there).
 48. [Part 48 — A settings screen, and two kinds of setting](#part-48--a-settings-screen-and-two-kinds-of-setting)
 49. [Part 49 — Reading the whole thing again](#part-49--reading-the-whole-thing-again)
 50. [Part 50 — Prices that flip, and saying what every number means](#part-50--prices-that-flip-and-saying-what-every-number-means)
-51. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-52. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-53. [What's still open](#whats-still-open)
+51. [Part 51 — Flipping cards under a dollar](#part-51--flipping-cards-under-a-dollar)
+52. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+53. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+54. [What's still open](#whats-still-open)
 
 ---
 
@@ -5289,3 +5290,22 @@ Writing it found two things:
 Verified: 168 Java tests (5 new for flipping), 62 front-end tests, all five
 SQL checks, and each part in the browser. Preferences were left at their
 defaults.
+
+---
+
+## Part 51 — Flipping cards under a dollar
+
+Part 50 flagged every card that met the flipping rule, and noted that most
+of the 41 sets showing a flipping count got it from penny cards moving
+between $0.02 and $0.12. On 2026-10-04 the owner chose to flag only cards
+whose higher price is $1 or more.
+
+A card that never reaches $1 is under Movers' default $1 floor at both of
+its prices, so it was never on the board, and it moves a set's change by
+cents. The flag only added a note to its page and a count to its set.
+
+`refresh_price_flips()` now requires the higher level to be $1 or more, and
+the Disclosures screen lists it as a fifth condition. The list went from 88
+cards in 47 sets to 26 cards in 22 sets; the lowest higher level left is
+exactly $1.00. A new test card flipping between $0.20 and $0.60 isn't
+flagged, and one between $0.40 and exactly $1.00 is.
