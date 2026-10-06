@@ -91,15 +91,16 @@ public class App {
 
     /**
      * One category's full live pull: catalog (category/groups/products) and
-     * today's prices. Failures here are caught by the caller so one
+     * the prices for the mirror's day (snapshotDate, from dataAsOf(), never
+     * this machine's clock). Failures here are caught by the caller so one
      * category failing doesn't stop the others from being attempted.
      */
     private static void pullCategory(PriceSource source, PriceRepository repo, int categoryId,
             LocalDate snapshotDate) throws Exception {
         String runSource = "tcgcsv-" + categoryId;
 
-        // Either ingest path counts, so a day BackfillArchive filled is not
-        // fetched again.
+        // This is what makes the hourly retries free. Any ingest path counts,
+        // including the days BackfillArchive filled before it went dormant.
         if (repo.hasDateCovered(categoryId, snapshotDate)) {
             System.out.printf("[%d] Already have %s - skipping fetch.%n",
                     categoryId, snapshotDate);
