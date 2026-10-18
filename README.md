@@ -339,6 +339,11 @@ cd web && npm install && npx ng serve                             # UI :4200
 All three are needed: the UI talks only to the API, and the API is the
 only thing that talks to Postgres.
 
+In IntelliJ, the **CardTracker** run configuration (in `.run/`) starts the
+API and the UI together; the stop button stops both. Postgres comes up with
+Docker on its own (`restart: unless-stopped`). The API runs from IntelliJ's
+compiled classes, so it is always the current code and never holds the jar.
+
 Structure, all standalone components with signals:
 
 | File | Role |
