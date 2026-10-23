@@ -282,6 +282,13 @@ hold, so the hourly runs are retries. **`SLOT` in the script must match the
 plist's Hour/Minute.** `com.cardtracker.docker-at-login` opens Docker at
 login. `App` is idempotent per day.
 
+**Failures reach the owner as Mac notifications** (owner, 2026-10-23):
+`hourly.sh` hands each check's result to the job-alerts helper
+(`~/Library/Application Support/JobAlerts`, its own repo), which waits out
+the retries meant to fix a problem before telling anyone. A new failure
+path in the script gets an alert next to its log line, and the message is
+written for the owner, not as a log line (Part 52).
+
 **Tests:**
 
 ```

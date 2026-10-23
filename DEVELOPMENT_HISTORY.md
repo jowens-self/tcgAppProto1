@@ -5309,3 +5309,69 @@ the Disclosures screen lists it as a fifth condition. The list went from 88
 cards in 47 sets to 26 cards in 22 sets; the lowest higher level left is
 exactly $1.00. A new test card flipping between $0.20 and $0.60 isn't
 flagged, and one between $0.40 and exactly $1.00 is.
+
+## Part 52 — Telling the owner when the jobs fail
+
+On 2026-10-23 the owner asked for a Mac notification whenever any background
+job fails. Every job on this Mac had failed silently at least once. This
+one couldn't open its own script for five days (Part 40), the archive went
+six days missing a day (Part 41), and phone-app renewals failed for three
+days in October after Xcode dropped the Apple ID. Each time, the only
+evidence was a log line.
+
+### One helper decides when to interrupt
+
+A new repo, job-alerts (`~/Library/Application Support/JobAlerts`), holds the
+helper. Each job hands it a pass or fail for each of its checks. It notifies
+once a problem has lasted as many runs as the job asks, repeats at most
+daily, and says when the problem clears. An hourly watchdog in the same repo
+asks launchd about every job (switched off, can't start, stuck, silent).
+That covers the Part 40 failure, because a job that can't open its own
+script can't report anything.
+
+### What this script reports, and after how long
+
+The thresholds come from this job's own log. Since the 16:30 slot started on
+2026-09-30, 17 days needed one pull, 5 needed two (the first try after the
+Mac wakes often times out), and 2026-10-09 needed three. So the owner hears
+once three pulls in a row have left a day missing. The message says when
+tcgcsv stops serving that day (its next refresh, ~20:00 UTC the day after),
+which still leaves most of a day to act.
+
+The rest:
+- Database unreachable: two runs in a row, so the minutes after login don't
+  count.
+- Flips and export: three runs. Both retry hourly from the database, which
+  still holds the day.
+- Stale prices, or an archive git can't read: at once.
+- A file left uncommitted: two runs, since the exporter re-takes an untracked
+  one on its next pass.
+- Unpushed commits: six runs. A Mac off the network for an afternoon loses
+  nothing, and the exporter pushes again with the next day's commit.
+
+The database guard used to `exit 0` without a word. Since Part 42 the
+database is meant to be up all the time, so a database that's down means
+prices aren't being saved. The guard now logs a line and raises the alert.
+
+### A bug found on the way
+
+The comment on the missing-games query said a failed query leaves the count
+empty, and empty means pull. Under `set -e` that wasn't true: an assignment
+whose command substitution fails ends the script, with no log line. The query
+is now `missing_games()`, which can't end the run, so the comment holds. The
+stale-prices query still ends the run if it fails, on purpose. An empty result
+there would read as "fresh", and the watchdog now reports any run that exits
+non-zero.
+
+### Checked
+
+Against fakes only, never tcgcsv, with the helper in dry-run mode so nothing
+reached the screen:
+- `DB_CONTAINER` set to a container that doesn't exist: told on the second
+  run, and told "running again" when the real one answered.
+- A garbage jar, with `CLOCK_HHMM` past the slot so today counted as missing:
+  told after the third failed pull, naming 3 PM the next day as the cutoff.
+- `DATA_REPO` pointed at a throwaway clone holding a leftover file: told on
+  the second run.
+
+A healthy run afterwards cleared every alert, and nothing was left failing.

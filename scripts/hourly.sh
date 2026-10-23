@@ -24,6 +24,14 @@
 #   3. Check the database is still receiving prices.
 #   4. Check the archive repo is committed and pushed.
 #
+# Anything here that needs the owner becomes a Mac notification through the
+# job-alerts helper (~/Library/Application Support/JobAlerts/alert.sh, its own
+# repo), which waits until a problem has outlasted the retries meant to fix
+# it, repeats at most daily, and says when it clears. Each alert below says
+# how many runs in a row that takes. Without the helper, the alarms that never
+# wait (stale prices, an archive git can't read) still notify directly, every
+# run, as they did before it existed.
+#
 # A day pulled at 14:00 is not exported at 14:00: the exporter leaves a day
 # alone until nothing has been written to it for SETTLE_MINUTES. The 15:00 run
 # takes it. That lag is the guard working, not a delay to tune out.
@@ -37,6 +45,7 @@
 #   SLOT          daily pull time, HHMM local (1630); must match the Hour and
 #                 Minute in com.cardtracker.daily.plist
 #   CLOCK_HHMM    pretend the local time is this HHMM (testing only)
+#   ALERT         the job-alerts helper (testing points it elsewhere)
 
 set -euo pipefail
 
@@ -47,11 +56,45 @@ SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_EXPORT="${SKIP_EXPORT:-false}"
 DATA_REPO="${DATA_REPO:-$(cd "$REPO_ROOT/.." && pwd)/cardtracker-data}"
 SLOT="${SLOT:-1630}"
+ALERT="${ALERT:-$HOME/Library/Application Support/JobAlerts/alert.sh}"
 
 say() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
+# alert fail CHECK MESSAGE [RUNS] / alert pass CHECK MESSAGE. Never fails the run.
+alert() {
+  if [ -x "$ALERT" ]; then
+    "$ALERT" "$1" CardTracker "${@:2}" >/dev/null 2>&1 || true
+  elif [ "$1" = fail ] && [ "${4:-1}" -le 1 ]; then
+    # No helper: what must not wait still reaches the screen, every run.
+    /usr/bin/osascript -e 'on run argv' \
+      -e 'display notification (item 2 of argv) with title (item 1 of argv)' \
+      -e 'end run' CardTracker "$3" >/dev/null 2>&1 || true
+  fi
+}
+
+day() { date -j -f '%Y-%m-%d' "$1" '+%a %b %e' | tr -s ' '; }   # Thu Oct 22
+
+# When tcgcsv stops serving day $1: its next refresh, ~20:00 UTC the day after.
+# Part 42: there is no archive to fetch it from after that.
+gone_after() {
+  local next
+  next="$(date -j -v+1d -f '%Y-%m-%d' "$1" '+%Y-%m-%d')"
+  date -r "$(date -j -u -f '%Y-%m-%d %H:%M' "$next 20:00" +%s)" '+%l %p on %a %b %e' |
+    tr -s ' ' | sed 's/^ //'
+}
+
 # --- the whole point: only when someone else already brought it up -----------
-docker exec "$DB_CONTAINER" true 2>/dev/null || exit 0
+#
+# Since 2026-09-30 Docker opens at login and the container restarts itself, so
+# a database that is still down an hour later means new prices are not being
+# saved -- and a day not pulled by tcgcsv's next refresh is gone (Part 42).
+# Two runs in a row first, so the minutes after login don't count.
+if ! docker exec "$DB_CONTAINER" true 2>/dev/null; then
+  say "database not reachable; nothing to do."
+  alert fail database "The card price database isn't running, so new prices aren't being saved. Make sure Docker is open." 2
+  exit 0
+fi
+alert pass database "The card price database is running again."
 
 # --- one run at a time --------------------------------------------------------
 # launchd will not start a second copy of a job that is still running, but a
@@ -84,19 +127,28 @@ if [ "$SKIP_PULL" != "true" ]; then
   # an earlier version asked whether ANY pull had succeeded today, and a game
   # that failed while another succeeded was then never retried (Part 42). A
   # failed query leaves this empty, and empty means pull -- App is safe to run
-  # with nothing to do.
-  MISSING="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
-    SELECT count(*) FROM tracked_categories tc
-    WHERE NOT EXISTS (
-      SELECT 1 FROM ingest_runs r
-      WHERE r.source IN ('tcgcsv-' || tc.category_id, 'tcgcsv-archive-' || tc.category_id)
-        AND r.status = 'ok'
-        AND r.snapshot_date >= DATE '$EXPECTED');" 2>/dev/null)"
+  # with nothing to do. (Until Part 52 a failed query ended the whole run
+  # instead: under set -e an assignment fails with its command substitution.)
+  missing_games() {
+    docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c "
+      SELECT count(*) FROM tracked_categories tc
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ingest_runs r
+        WHERE r.source IN ('tcgcsv-' || tc.category_id, 'tcgcsv-archive-' || tc.category_id)
+          AND r.status = 'ok'
+          AND r.snapshot_date >= DATE '$EXPECTED');" 2>/dev/null || true
+  }
+  MISSING="$(missing_games)"
 
+  # Most days need one try and some two (a Mac just awake times out); the
+  # 2026-10-09 pull needed three. So the owner hears once three tries in a row
+  # have left the day missing, with most of the day still left to save it.
   if [ "${MISSING:-1}" -eq 0 ] 2>/dev/null; then
     say "pull: every tracked game holds $EXPECTED; skipping."
+    alert pass pull "Card prices for $(day "$EXPECTED") are in."
   elif [ ! -f "$JAR" ]; then
     say "pull: no jar at $JAR; skipping (mvn package)."
+    alert fail pull "Card prices for $(day "$EXPECTED") can't download: the app needs rebuilding. After about $(gone_after "$EXPECTED") they can't be. Ask Claude to look at it." 3
   else
     say "pull: starting (${MISSING:-?} game(s) missing $EXPECTED)."
     # App decides what to fetch and skips what it already holds. A failure
@@ -106,6 +158,13 @@ if [ "$SKIP_PULL" != "true" ]; then
       say "pull: done."
     else
       say "pull: FAILED (exit $?); continuing to export."
+    fi
+    # Asked again rather than read off App's exit: a clean exit before tcgcsv
+    # has refreshed still leaves the day missing.
+    if [ "$(missing_games)" = 0 ]; then
+      alert pass pull "Card prices for $(day "$EXPECTED") are in."
+    else
+      alert fail pull "Card prices for $(day "$EXPECTED") still haven't downloaded, and after about $(gone_after "$EXPECTED") they can't be. Ask Claude to look at it." 3
     fi
   fi
 fi
@@ -118,16 +177,27 @@ fi
 # only after a pull, so a refresh that fails is retried next hour instead of
 # waiting for tomorrow's pull. A failure here never stops the export.
 if [ "$SKIP_PULL" != "true" ]; then
-  FLIPS="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A \
-    -c "SELECT refresh_price_flips();" 2>&1)" \
-    && say "flips: ${FLIPS:-already current}${FLIPS:+ cards flagged}." \
-    || say "flips: FAILED: $FLIPS"
+  if FLIPS="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A \
+      -c "SELECT refresh_price_flips();" 2>&1)"; then
+    say "flips: ${FLIPS:-already current}${FLIPS:+ cards flagged}."
+    alert pass flips "The flipping-prices list is updating again."
+  else
+    say "flips: FAILED: $FLIPS"
+    alert fail flips "The flipping-prices list keeps failing to update. Ask Claude to look at it." 3
+  fi
 fi
 
 # --- 2. export whatever has settled ------------------------------------------
+# A failed export is retried every hour from the database, which still holds
+# the day, so three in a row before anyone hears.
 if [ "$SKIP_EXPORT" != "true" ]; then
   say "export: starting."
-  "$REPO_ROOT/scripts/snapshot-export.sh" || say "export: FAILED (exit $?)."
+  if "$REPO_ROOT/scripts/snapshot-export.sh"; then
+    alert pass export "Card prices are being saved to the archive again."
+  else
+    say "export: FAILED (exit $?)."
+    alert fail export "Card prices keep failing to save to the archive. Ask Claude to look at it." 3
+  fi
 fi
 
 # --- 3. did any of that actually work? ---------------------------------------
@@ -151,12 +221,12 @@ STALE="$(docker exec "$DB_CONTAINER" psql -U cardtracker -d cardtracker -t -A -c
 if [ -n "${STALE//[[:space:]]/}" ]; then
   say "STALE: price data has stopped arriving for $STALE"
   # A log line alone is what failed last time, so also raise something the
-  # owner sees without opening anything. Best-effort: osascript is absent
-  # under some launchd contexts, and a missing notification must never make
-  # an otherwise fine run look failed.
-  /usr/bin/osascript -e "display notification \"Price data stale: $STALE\" with title \"CardTracker\"" 2>/dev/null || true
+  # owner sees without opening anything. Two days stale is already late, so
+  # at once.
+  alert fail stale "Card prices have stopped arriving for $STALE. Ask Claude to look at it."
 else
   say "freshness: ok."
+  alert pass stale "Card prices are arriving again."
 fi
 
 # --- 4. is the ARCHIVE intact, as opposed to the database? --------------------
@@ -171,29 +241,51 @@ fi
 # Uncommitted files under data/ mean a run died mid-day. Unpushed commits mean
 # the off-machine copy -- the only reason this repo exists -- is behind the one
 # on this Mac. Both are cheap to ask and neither shows up anywhere else.
-archive_alarm() {
-  say "ARCHIVE: $1"
-  /usr/bin/osascript -e "display notification \"$1\" with title \"CardTracker\"" 2>/dev/null || true
+#
+# How long each waits before the owner hears: a git that can't run, at once;
+# a leftover file, two runs, since the exporter re-takes an untracked one on
+# its next pass; unpushed commits, six, since a Mac off the network for an
+# afternoon pushes nothing and loses nothing (the exporter pushes again with
+# the next day's commit).
+archive_trouble() {   # what a failed git said, in the owner's words
+  case $1 in
+    *[Ll]icense*) echo "git won't run until Xcode's license is accepted again. Open Xcode once." ;;
+    *) echo "git failed ($(printf '%s' "$1" | head -1)). Ask Claude to look at it." ;;
+  esac
 }
 
 if [ ! -d "$DATA_REPO/.git" ]; then
-  archive_alarm "no repo at $DATA_REPO"
+  say "ARCHIVE: no repo at $DATA_REPO"
+  alert fail archive "The card price archive folder is missing. Ask Claude to look at it."
 # A probe that cannot run must not be read as a pass -- that is the whole
 # mistake this step exists to stop making. git here is /usr/bin/git, the Xcode
 # command-line-tools shim, and it refuses to run at all (exit 69, one line on
 # stderr) for as long as an Xcode update leaves the licence unaccepted. That is
 # not a hypothetical: it is what broke the 2026-09-15 export in the first place.
 elif ! DIRTY="$(git -C "$DATA_REPO" status --porcelain -- data 2>&1)"; then
-  archive_alarm "cannot read the archive -- git: $(printf '%s' "$DIRTY" | head -1)"
+  say "ARCHIVE: cannot read the archive -- git: $(printf '%s' "$DIRTY" | head -1)"
+  alert fail archive "The card price archive can't be checked: $(archive_trouble "$DIRTY")"
 elif ! UNPUSHED="$(git -C "$DATA_REPO" log --oneline '@{u}..' 2>&1)"; then
-  archive_alarm "cannot compare with the remote -- git: $(printf '%s' "$UNPUSHED" | head -1)"
+  say "ARCHIVE: cannot compare with the remote -- git: $(printf '%s' "$UNPUSHED" | head -1)"
+  alert fail archive "The card price archive can't be checked: $(archive_trouble "$UNPUSHED")"
 else
+  alert pass archive "The card price archive can be checked again."
   N_DIRTY="$(printf '%s' "$DIRTY" | grep -c . || true)"
   N_UNPUSHED="$(printf '%s' "$UNPUSHED" | grep -c . || true)"
   if [ "$N_DIRTY" -gt 0 ] || [ "$N_UNPUSHED" -gt 0 ]; then
-    archive_alarm "$N_DIRTY uncommitted file(s), $N_UNPUSHED unpushed commit(s)"
+    say "ARCHIVE: $N_DIRTY uncommitted file(s), $N_UNPUSHED unpushed commit(s)"
   else
     say "archive: in sync."
+  fi
+  if [ "$N_DIRTY" -gt 0 ]; then
+    alert fail archive-saved "$N_DIRTY file(s) of card prices were written but never saved into the archive. Ask Claude to look at it." 2
+  else
+    alert pass archive-saved "Every day of card prices is saved in the archive again."
+  fi
+  if [ "$N_UNPUSHED" -gt 0 ]; then
+    alert fail archive-pushed "$N_UNPUSHED day(s) of the card price archive haven't reached GitHub. Ask Claude to look at it." 6
+  else
+    alert pass archive-pushed "The card price archive is all on GitHub again."
   fi
 fi
 
