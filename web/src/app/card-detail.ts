@@ -111,7 +111,7 @@ export class CardDetail {
     chartablePoints<ChartDatum>(
       this.history().map((p) => ({
         date: p.snapshotDate,
-        value: p.trendablePrice,
+        value: p.marketPrice,
         phase: p.phase,
       })),
       this.launch.includePreRelease(),

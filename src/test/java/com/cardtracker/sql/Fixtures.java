@@ -132,9 +132,9 @@ public final class Fixtures {
               .append("(").append(productId).append(", '").append(subType).append("', ")
               .append("DATE '").append(TODAY).append("' - ").append(days - 1 - i).append(", ")
               .append(value).append(", ")
-              // low/mid track market so fallbacks are exercised only when a
-              // test deliberately nulls market. high is parked absurdly high
-              // on purpose, since nothing may ever compute on it.
+              // low/mid track market; nothing charts or totals them. high is
+              // parked absurdly high on purpose, since nothing may ever
+              // compute on it.
               .append(value).append(", ").append(value).append(", 99999.00)");
         }
         db.exec(sb.toString());

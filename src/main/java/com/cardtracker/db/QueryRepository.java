@@ -130,7 +130,7 @@ public class QueryRepository {
     public List<PricePoint> history(int productId, String subTypeName,
                                     LocalDate from, LocalDate to) throws Exception {
         String sql = "SELECT snapshot_date, market_price, low_price, mid_price, "
-                + "direct_low_price, trendable_price, phase FROM item_history(?, ?, ?, ?)";
+                + "direct_low_price, phase FROM item_history(?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, productId);
             ps.setString(2, subTypeName);
@@ -146,7 +146,6 @@ public class QueryRepository {
                             rs.getBigDecimal("low_price"),
                             rs.getBigDecimal("mid_price"),
                             rs.getBigDecimal("direct_low_price"),
-                            rs.getBigDecimal("trendable_price"),
                             rs.getString("phase")));
                 }
             }

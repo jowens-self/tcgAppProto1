@@ -68,9 +68,11 @@ origin through that date, then continuing forward from there).
 49. [Part 49 — Reading the whole thing again](#part-49--reading-the-whole-thing-again)
 50. [Part 50 — Prices that flip, and saying what every number means](#part-50--prices-that-flip-and-saying-what-every-number-means)
 51. [Part 51 — Flipping cards under a dollar](#part-51--flipping-cards-under-a-dollar)
-52. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-53. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-54. [What's still open](#whats-still-open)
+52. [Part 52 — Telling the owner when the jobs fail](#part-52--telling-the-owner-when-the-jobs-fail)
+53. [Part 53 — Charts and highs from sales only](#part-53--charts-and-highs-from-sales-only)
+54. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+55. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+56. [What's still open](#whats-still-open)
 
 ---
 
@@ -5375,3 +5377,32 @@ reached the screen:
   the second run.
 
 A healthy run afterwards cleared every alert, and nothing was left failing.
+
+---
+
+## Part 53 — Charts and highs from sales only
+
+Part 50 found the market→mid→low fallback putting parked listings on charts:
+on a day with no market price, a card's chart and all-time high used
+TCGplayer's mid price, then its low price, and those are what sellers ask,
+not what anyone paid. The Base Set Shadowless 1st Edition Charizard showed a
+$100,000 all-time high from one listing parked at that price. On 2026-10-29
+the owner chose to drop the fallback rather than cap it.
+
+What it touched, measured on the live data that day:
+- 1.9% of daily readings (861,000 of 45.0M) had a listing price but no
+  market price. They are now skipped: the chart joins the days either side,
+  as it already did for days with no price at all.
+- 10,994 of 53,738 printings have a different all-time high. The Charizard's
+  is now $10,000, its highest market reading.
+- 731 printings have never had a market price. They now show no chart and a
+  dash for the all-time high, rather than a history made of asking prices.
+
+The fallback is gone everywhere: `item_history()` no longer returns
+`trendable_price` (nor the API `trendablePrice`), `item_variants()` and
+`item_all_time_high()` take `MAX(market_price)`, and
+`PriceSnapshot.trendablePrice()` and its test are deleted, since nothing
+else used them. mid and low are still stored and still returned with each
+day's history, to read; nothing charts or totals them. Movers, Sets and
+Collection were market-only already. The Disclosures screen now says
+"Market price only" with no exception, and the open question is closed.

@@ -121,7 +121,7 @@ SELECT * FROM item_return(534919, 'Holofoil', '2024-02-08', '2026-08-13');
 -- name              | is_sealed | start_price | end_price | pct_return
 -- Mew ex - 232/091  | f         |      137.00 |   1013.78 |     639.99
 
--- All-time high for one item, market->mid->low fallback.
+-- All-time high for one item: its highest market price.
 SELECT * FROM item_all_time_high(534919, 'Holofoil');
 -- name              | is_sealed | all_time_high
 -- Mew ex - 232/091  | f         |       1089.18
@@ -258,12 +258,13 @@ how you find the valid values.
 ```bash
 curl "localhost:7070/api/items/534919/history?subType=Holofoil&from=2026-08-11"
 # [{"snapshotDate":"2026-08-11","marketPrice":1013.78,"lowPrice":829.34,
-#   "midPrice":1030.0,"directLowPrice":829.34,"trendablePrice":1013.78}, ...]
+#   "midPrice":1030.0,"directLowPrice":829.34,"phase":null}, ...]
 ```
 
 `high_price` is deliberately absent from every API response. See the
-price-parking note above. `trendablePrice` is the documented
-market→mid→low fallback, precomputed so a chart can't apply it wrong.
+price-parking note above. Charts use `marketPrice` alone: `lowPrice` and
+`midPrice` are listing prices, returned to read and never charted
+(DEVELOPMENT_HISTORY.md Part 53).
 
 Each point also carries a `phase`: `"pre_release"`, `"early"` or `null`.
 This is **launch pricing**, and it's mostly noise. Measured across 14 Pokemon
@@ -370,9 +371,9 @@ chart stays in view while you scroll the list. The results list scrolls
 within its own 70vh box rather than growing the page. Below 800px the
 columns stack.
 
-The chart plots `trendablePrice` (the fallback the server already applied)
-and drops days with no price rather than plotting them as zero. A missing
-observation isn't a price of $0.
+The chart plots `marketPrice` alone and drops days with no market price
+rather than plotting them as zero or filling them from listing prices. A
+missing observation isn't a price of $0, or a price someone asked for.
 
 **Launch pricing** has two checkboxes: "Include pre-release" and "Include
 early pricing". Both start unticked, because both are mostly noise.

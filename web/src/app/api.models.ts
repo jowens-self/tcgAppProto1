@@ -118,8 +118,9 @@ export interface ItemVariant {
 /**
  * One day of price history. There is no highPrice field on purpose, since
  * sellers "price park" (list absurdly high so nothing sells) and the API
- * never returns it. trendablePrice is the market->mid->low fallback already
- * applied server-side, so chart that rather than re-deriving it.
+ * never returns it. Chart marketPrice alone: lowPrice and midPrice are
+ * listing prices, and a day with no sale is skipped rather than filled in
+ * from them (owner, 2026-10-29).
  */
 export interface PricePoint {
   snapshotDate: string;
@@ -127,7 +128,6 @@ export interface PricePoint {
   lowPrice: number | null;
   midPrice: number | null;
   directLowPrice: number | null;
-  trendablePrice: number | null;
   phase: PricePhase | null;
 }
 

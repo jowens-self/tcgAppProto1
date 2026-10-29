@@ -100,7 +100,9 @@
             <span class="v-price">
               {{ v.latestMarket != null ? (v.latestMarket | currency) : '—' }}
             </span>
-            <span class="v-ath">ATH {{ v.allTimeHigh | currency }}</span>
+            <span class="v-ath">
+              ATH {{ v.allTimeHigh != null ? (v.allTimeHigh | currency) : '—' }}
+            </span>
           </button>
         }
       </div>

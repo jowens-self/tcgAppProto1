@@ -97,8 +97,10 @@ for Pokemon images only; One Piece has no image source yet.
   (2026-08-20). "It looked wrong" is not a reason.
 - **Never compute on `high_price`** (owner: sellers price-park). Store it,
   ignore it; no API response carries it (`PricePoint` has no field for it).
-  Trend on `market_price`. The market→mid→low fallback (`trendable_price`)
-  is for charts and all-time highs only, never for a two-point comparison.
+  Every number and chart uses `market_price` alone (owner, 2026-10-29). Mid
+  and low are listing prices: filling a day with no sale from them put
+  parked listings on charts and all-time highs, so a missing day is skipped,
+  never filled in. Part 53.
 - **The live pull is dated by the mirror, not a clock**:
   `PriceSource.dataAsOf()`, from tcgcsv's `last-updated.txt`. The live
   endpoints carry no date, and dating from our own clock is what wrote the
@@ -351,13 +353,6 @@ deleted"); those are what a diff can't show.
   can't be derived (Part 27).
 - **Should the provenance band appear in the search grid?** Cost is no longer
   the obstacle (~5ms); it would band about a fifth of every page (Part 29).
-- **The mid/low fallback picks up parked listings.** On a day with no
-  market price, charts and all-time highs fall back to mid, then low, and
-  those are listing prices. Base Set Shadowless Charizard 1st Edition charts
-  at $100,000 from 2026-09-20 and has a $100,000 all-time high, both from one
-  parked listing; 4,456 printings have an all-time high over 3x their highest
-  market price, or none at all. Keep the fallback, drop it, or cap it? The
-  Disclosures screen already says the fallback exists (Part 50).
 - **Community art showcase** (owner's idea, 2026-08-16): themed votes on card
   art. Read DEVELOPMENT_HISTORY.md "What's still open" first; the open
   question is redistributing card art publicly.

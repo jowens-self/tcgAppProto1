@@ -12,10 +12,10 @@ import java.time.LocalDate;
  * is why firstDate is reported rather than assumed (Altaria 83514's Normal
  * variant starts 2025-03-28 while its Holofoil goes back to 2024-02-08).
  *
- * latestMarket is raw market_price with no fallback, so "no market price
- * that day" reads as null instead of silently becoming a mid or low price.
- * allTimeHigh does use the documented market->mid->low fallback, matching
- * item_all_time_high() exactly.
+ * latestMarket and allTimeHigh are market price only, so "no market price"
+ * reads as null instead of silently becoming a mid or low listing price.
+ * allTimeHigh matches item_all_time_high() exactly; null when the variant has
+ * never had a market price.
  *
  * flipLow, flipHigh and flipReversals are set when this variant's price keeps
  * flipping between two levels (price_flips): the two levels, and how many

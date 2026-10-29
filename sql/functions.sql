@@ -50,10 +50,10 @@ CREATE OR REPLACE FUNCTION item_return(
 $$ LANGUAGE sql STABLE;
 
 -- All-time high for one product+variant, card or sealed, with the same naming and
--- visibility reasoning as item_return above. Uses the market->mid->low
--- fallback (see PriceSnapshot.trendablePrice / CLAUDE.md "Data invariants")
--- since this is a MAX() over the whole history, not a two-point comparison -
--- the anchor-bias risk from Part 12 doesn't apply here the same way.
+-- visibility reasoning as item_return above. Market price only (owner,
+-- 2026-10-29): mid and low are listing prices, and a MAX over them picks up
+-- parked listings, e.g. a $100,000 high for a Charizard nobody paid that for.
+-- NULL when the printing has never had a market price. Part 53.
 CREATE OR REPLACE FUNCTION item_all_time_high(
     p_product_id INTEGER,
     p_sub_type_name TEXT
@@ -62,7 +62,7 @@ CREATE OR REPLACE FUNCTION item_all_time_high(
     is_sealed BOOLEAN,
     all_time_high NUMERIC
 ) AS $$
-    SELECT p.name, p.is_sealed, MAX(COALESCE(ps.market_price, ps.mid_price, ps.low_price))
+    SELECT p.name, p.is_sealed, MAX(ps.market_price)
     FROM price_snapshots ps
     JOIN products p ON p.product_id = ps.product_id
     WHERE ps.product_id = p_product_id AND ps.sub_type_name = p_sub_type_name
@@ -594,11 +594,10 @@ $$ LANGUAGE plpgsql STABLE;
 -- Holofoil goes back to 2024-02-08, which is why first_date is returned
 -- rather than assumed).
 --
--- all_time_high uses the same market->mid->low fallback as
--- item_all_time_high() and cross-checks against it exactly; latest_market
--- is deliberately raw market_price with no fallback, so "no market price
--- recorded that day" reads as NULL instead of quietly substituting a
--- different, less reliable number.
+-- all_time_high is market price only, as item_all_time_high() is, and
+-- cross-checks against it exactly; latest_market is raw market_price too, so
+-- "no market price recorded that day" reads as NULL instead of quietly
+-- substituting a listing price.
 --
 -- flip_* are set when the variant's price keeps flipping between two levels
 -- (price_flips), so the card view can say so. NULL otherwise. Dropped first
@@ -620,7 +619,7 @@ CREATE OR REPLACE FUNCTION item_variants(
         SELECT ps.sub_type_name AS stn,
                MIN(ps.snapshot_date) AS first_date,
                MAX(ps.snapshot_date) AS latest_date,
-               MAX(COALESCE(ps.market_price, ps.mid_price, ps.low_price)) AS ath
+               MAX(ps.market_price) AS ath
         FROM price_snapshots ps
         WHERE ps.product_id = p_product_id
         GROUP BY ps.sub_type_name
@@ -834,9 +833,9 @@ $$ LANGUAGE plpgsql;
 -- the same way set_return() hardcodes sealed product out instead of
 -- offering a parameter.
 --
--- trendable_price is the documented market->mid->low fallback (see
--- PriceSnapshot.trendablePrice) precomputed, so a chart doesn't have to
--- re-derive the fallback rule, and can't get it wrong.
+-- A chart plots market_price alone (owner, 2026-10-29). mid and low are
+-- returned for reading, never charted: they are listing prices, and a day
+-- with no sale filled in from them put parked listings on the chart. Part 53.
 --
 -- phase marks each day as pre-release, early or settled (price_phase()), so a
 -- chart can shade or hide launch pricing. Nothing is filtered here; the
@@ -844,8 +843,8 @@ $$ LANGUAGE plpgsql;
 --
 -- NULL dates mean "no bound": both NULL gives the item's full history.
 --
--- Dropped first because phase changed the return type, which CREATE OR
--- REPLACE cannot do.
+-- Dropped first because its return type changes (phase added, the
+-- market->mid->low trendable_price removed), which CREATE OR REPLACE cannot do.
 DROP FUNCTION IF EXISTS item_history(INTEGER, TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION item_history(
     p_product_id INTEGER,
@@ -858,7 +857,6 @@ CREATE OR REPLACE FUNCTION item_history(
     low_price NUMERIC,
     mid_price NUMERIC,
     direct_low_price NUMERIC,
-    trendable_price NUMERIC,
     phase TEXT
 ) AS $$
     WITH card AS (
@@ -874,7 +872,6 @@ CREATE OR REPLACE FUNCTION item_history(
     )
     SELECT ps.snapshot_date, ps.market_price, ps.low_price, ps.mid_price,
            ps.direct_low_price,
-           COALESCE(ps.market_price, ps.mid_price, ps.low_price),
            price_phase(ps.snapshot_date, card.released, card.early_days)
     FROM price_snapshots ps
     LEFT JOIN card ON TRUE

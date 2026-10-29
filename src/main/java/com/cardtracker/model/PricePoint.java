@@ -13,8 +13,9 @@ import java.time.LocalDate;
  * to remember, the same way set_return() hardcodes sealed product out rather
  * than offering a parameter.
  *
- * trendablePrice is the documented market->mid->low fallback precomputed, so
- * a caller charting this data cannot get the fallback rule wrong.
+ * A chart plots marketPrice alone. lowPrice and midPrice are listing
+ * prices, here to read, never to chart (owner, 2026-10-29: filling a day with
+ * no sale from them put parked listings on charts).
  *
  * phase is "pre_release", "early" or null (settled), from price_phase(), so a
  * chart can shade or hide launch pricing without knowing the rule.
@@ -25,6 +26,5 @@ public record PricePoint(
         BigDecimal lowPrice,
         BigDecimal midPrice,
         BigDecimal directLowPrice,
-        BigDecimal trendablePrice,
         String phase) {
 }

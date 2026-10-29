@@ -97,17 +97,26 @@ class PriceMathSqlTest {
     // ------------------------------------------------------------------
 
     /**
-     * Uses the market -> mid -> low fallback deliberately: a MAX over all
-     * history has no anchor-bias risk, unlike a two-point comparison. But it
-     * must never reach high_price, which the fixtures park at 99,999.
+     * Market price only: mid and low are listing prices, and a MAX over them
+     * picked up parked listings (owner, 2026-10-29, Part 53). Nor may it reach
+     * high_price, which the fixtures park at 99,999.
      */
     @Test
-    void allTimeHighUsesTheFallbackButNeverTheParkedHighPrice() throws Exception {
-        String ath = db.scalar("SELECT all_time_high::TEXT FROM item_all_time_high(42385, 'Holofoil')");
-        assertNotNull(ath);
-        double value = Double.parseDouble(ath);
-        assertTrue(value < 100, "must not read the parked high_price of 99999, got " + value);
-        assertEquals(26.00, value, 0.001, "highest usable price in the series is 26.00");
+    void allTimeHighIsMarketPriceOnly() throws Exception {
+        db.exec("""
+            INSERT INTO price_snapshots (product_id, sub_type_name, snapshot_date,
+                                         market_price, low_price, mid_price, high_price)
+            VALUES (42385, 'Holofoil', DATE '%s' - 401, NULL, 400.00, 500.00, 99999.00)
+            """.formatted(Fixtures.TODAY));
+        try {
+            String ath = db.scalar("SELECT all_time_high::TEXT FROM item_all_time_high(42385, 'Holofoil')");
+            assertNotNull(ath);
+            assertEquals(26.00, Double.parseDouble(ath), 0.001,
+                    "a day with only listing prices ($500 mid, $400 low) must not set the high");
+        } finally {
+            db.exec("DELETE FROM price_snapshots WHERE product_id = 42385 AND snapshot_date = DATE '"
+                    + Fixtures.TODAY + "' - 401");
+        }
     }
 
     /**
