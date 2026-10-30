@@ -407,6 +407,8 @@ class ApiContractTest {
         String body = get("/items/search?q=Charizard&limit=10").body();
         assertTrue(body.contains("\"cardNumber\":\"4/102\""), body);
         assertTrue(body.contains("\"rarity\":\"Holo Rare\""), body);
+        // The sole claimant of its picture: its own art, so no warning.
+        assertTrue(body.contains("\"artBorrowed\":false"), body);
     }
 
     /** One hit per product carrying variantCount, never one row per variant. */

@@ -256,7 +256,9 @@ for Pokemon images only; One Piece has no image source yet.
 - **`δ`, `α`, `β` and `γ` are deliberately not folded** by `fold()`: they are
   card identity the owner classified.
 - **Whose artwork a card shows is computed, never stored**
-  (`card_image_provenance()`), and only `base_art` is shown to the user.
+  (`card_image_provenance()`), and only `base_art` is shown to the user: a
+  band on the card's artwork and a chip on its search row (owner,
+  2026-10-29). Search asks once per page, through `item_products()`.
   Qualifier classes in `image_qualifier_class` are the owner's domain calls:
   explicit word lists, stored already normalized; an unclassified qualifier
   falls back to the structural test (Part 27). Invariants:
@@ -351,8 +353,6 @@ deleted"); those are what a diff can't show.
   worth a decision: different artwork in the Platinum `SH` and Call of
   Legends `SL` subsets (identity), a foil treatment elsewhere. That split
   can't be derived (Part 27).
-- **Should the provenance band appear in the search grid?** Cost is no longer
-  the obstacle (~5ms); it would band about a fifth of every page (Part 29).
 - **Community art showcase** (owner's idea, 2026-08-16): themed votes on card
   art. Read DEVELOPMENT_HISTORY.md "What's still open" first; the open
   question is redistributing card art publicly.

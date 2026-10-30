@@ -96,13 +96,13 @@ public class QueryRepository {
      * image for it (no row, or the match failed), which is an ordinary
      * outcome, not an error.
      *
-     * About 5ms. Whether to show it on every search row is a product
-     * question, not a cost one; see Part 29.
+     * About 5ms. Search rows carry the verdict too, as artBorrowed, from one
+     * call per page inside item_products() (Part 54).
      */
     public ImageProvenance imageProvenance(int productId) throws Exception {
         String sql = "SELECT product_id, name, source_id, stripped_qualifier, "
                 + "qualifier_class, claimants, provenance, owner_product_id, owner_name "
-                + "FROM card_image_provenance(NULL, ?)";
+                + "FROM card_image_provenance(NULL, ARRAY[?])";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, productId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -170,7 +170,8 @@ public class QueryRepository {
 
     /** What item_search() and item_product() both return, in that order. */
     private static final String SEARCH_COLUMNS = "product_id, name, card_number, rarity, "
-            + "variant_label, set_name, game, is_sealed, variant_count, latest_date, url, image_url";
+            + "variant_label, set_name, game, is_sealed, variant_count, latest_date, url, image_url, "
+            + "art_borrowed, art_owner_name";
 
     private static ItemSearchResult searchResult(ResultSet rs) throws Exception {
         return new ItemSearchResult(
@@ -185,7 +186,9 @@ public class QueryRepository {
                 rs.getInt("variant_count"),
                 localDate(rs.getDate("latest_date")),
                 rs.getString("url"),
-                rs.getString("image_url"));
+                rs.getString("image_url"),
+                rs.getBoolean("art_borrowed"),
+                rs.getString("art_owner_name"));
     }
 
     /** The games actually being tracked, for the screens' game filters. */

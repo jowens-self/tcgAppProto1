@@ -11,6 +11,7 @@ import {
 } from 'rxjs';
 import { CardTrackerApi } from './api';
 import { Game, ItemSearchResult } from './api.models';
+import { borrowedArtNote } from './borrowed-art';
 import { CardDetail } from './card-detail';
 import { CardThumb } from './card-thumb';
 import { HISTORY_WINDOWS, HistoryWindow } from './history-window';
@@ -52,6 +53,7 @@ export class Search {
    * labels must agree on when one is worth showing.
    */
   protected readonly variantLabelAddsInfo = variantLabelAddsInfo;
+  protected readonly borrowedArtNote = borrowedArtNote;
 
   protected readonly games = signal<Game[]>([]);
   protected readonly results = signal<ItemSearchResult[]>([]);

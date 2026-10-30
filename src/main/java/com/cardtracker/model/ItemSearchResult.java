@@ -32,6 +32,10 @@ import java.time.LocalDate;
  * and the name is the only place TCGplayer records the distinction. The UI
  * also uses it to mark a card whose image may be the base printing rather
  * than this exact variant (DEVELOPMENT_HISTORY.md Part 21).
+ *
+ * artBorrowed is true when our picture is provably another printing's
+ * (card_image_provenance() 'base_art'), and artOwnerName names that printing
+ * when one is listed, null otherwise. The search row says so (Part 54).
  */
 public record ItemSearchResult(
         int productId,
@@ -45,5 +49,7 @@ public record ItemSearchResult(
         int variantCount,
         LocalDate latestDate,
         String url,
-        String imageUrl) {
+        String imageUrl,
+        boolean artBorrowed,
+        String artOwnerName) {
 }

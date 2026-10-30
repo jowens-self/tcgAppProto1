@@ -76,12 +76,9 @@ export interface ItemSearchResult {
    * "Cracked Ice Holo", "Poke Ball Pattern" or "2016 World Championship".
    * Null for an ordinary printing.
    *
-   * It does two jobs. Like cardNumber it is part of the card's identity,
-   * since a variant is a separate product at a separate price. It also
-   * marks cards whose thumbnail may be the base printing rather than this
-   * exact variant, because the image matcher resolves some variants to
-   * their original set (DEVELOPMENT_HISTORY.md Part 21). Show this label
-   * wherever a variant's image is shown.
+   * Like cardNumber it is part of the card's identity, since a variant is
+   * a separate product at a separate price. Whether its picture is really
+   * this printing's is artBorrowed's job, not this label's.
    */
   variantLabel: string | null;
   setName: string;
@@ -95,6 +92,13 @@ export interface ItemSearchResult {
    * TCGplayer themselves as they would anyway.
    */
   url: string | null;
+  /**
+   * True when our picture is provably another printing's (the image source
+   * has no photo of this one), from card_image_provenance(). The row says so.
+   */
+  artBorrowed: boolean;
+  /** The product whose picture is shown instead, when one is listed. */
+  artOwnerName: string | null;
 }
 
 /** One variant of a product, from GET /api/items/{id}/variants. */

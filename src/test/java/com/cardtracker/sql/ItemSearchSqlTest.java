@@ -168,4 +168,32 @@ class ItemSearchSqlTest {
                 + "WHERE product_id = 42382");
         assertEquals("2", variants, "the row must report how many variants exist");
     }
+
+    /**
+     * A picture that is provably another printing's says so on its row, and
+     * names whose it is; the printing it belongs to says nothing (Part 54).
+     * Both claim one catalog picture, and only one is qualified.
+     */
+    @Test
+    void aBorrowedPictureIsMarkedOnItsRowOnly() throws Exception {
+        db.exec("""
+            INSERT INTO products (product_id, group_id, category_id, name, is_sealed, url) VALUES
+              (990600, 604, 3, 'Zapdos', FALSE, 'https://x/z'),
+              (990601, 604, 3, 'Zapdos (Prerelease)', FALSE, 'https://x/zp');
+            INSERT INTO card_images (product_id, source_id, status, file_path, bytes, stripped_qualifier) VALUES
+              (990600, 'base1-16', 'ok', '3/990600.jpg', 5, NULL),
+              (990601, 'base1-16', 'ok', '3/990601.jpg', 5, 'Prerelease');
+            """);
+        Fixtures.prices(db, 990600, "Holofoil", "10.00", "10.00");
+        Fixtures.prices(db, 990601, "Holofoil", "10.00", "10.00");
+
+        assertEquals("Zapdos|false|-,Zapdos (Prerelease)|true|Zapdos", db.scalar("""
+            SELECT string_agg(name || '|' || art_borrowed || '|' || COALESCE(art_owner_name, '-'),
+                              ',' ORDER BY product_id)
+            FROM item_search('Zapdos', NULL, TRUE, 50, 0)
+            """));
+        assertEquals("true|Zapdos", db.scalar(
+                "SELECT art_borrowed || '|' || art_owner_name FROM item_product(990601)"),
+                "a product looked up by id is described the same way");
+    }
 }

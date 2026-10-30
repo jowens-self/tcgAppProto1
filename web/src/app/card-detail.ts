@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CardTrackerApi } from './api';
+import { borrowedArtNote } from './borrowed-art';
 import { ChartDatum, Game, ImageProvenance, ItemVariant, PricePoint } from './api.models';
 import { HISTORY_WINDOWS, HistoryWindow, windowStart } from './history-window';
 import {
@@ -230,13 +231,7 @@ export class CardDetail {
   protected provenanceTooltip(): string {
     const p = this.provenance();
     if (!p || p.provenance !== 'base_art') return '';
-    const printing = p.strippedQualifier ? ` (${p.strippedQualifier})` : '';
-    const shown = p.ownerName ? `"${p.ownerName}"` : 'another printing';
-    return (
-      `Our image source has no photo of this printing${printing}, ` +
-      `so ${shown} is shown instead. The prices are this card's; ` +
-      `the picture may not be.`
-    );
+    return borrowedArtNote(p.strippedQualifier, p.ownerName);
   }
 
   /**

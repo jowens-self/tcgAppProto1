@@ -103,10 +103,11 @@
    which made it the loudest thing in the row while usually just repeating
    the card's own name, and implied doubt about artwork that is correct.
    --warn is reserved for a real caution: a picture that is genuinely
-   another printing's art. That reservation is now spent, but NOT here: it
-   went to .art-warn-band on the detail artwork (card-detail.css), where
-   card_image_provenance() can prove the picture is borrowed. This chip still
-   says nothing about artwork. Parts 25, 27. */
+   another printing's art. That reservation is spent, but NOT here: it went
+   to .art-warn-band on the detail artwork (card-detail.css) and the
+   .tag.art-warn chip on these rows, both only where card_image_provenance()
+   proves the picture is borrowed. This chip still says nothing about
+   artwork. Parts 25, 27, 54. */
 .tag.variant {
   border-color: var(--line);
   color: var(--muted);

@@ -61,11 +61,9 @@
         [class.active]="selected()?.productId === item.productId"
         (click)="select(item)"
       >
-        <!-- No variant marker on the thumbnail. It used to carry an amber
-             corner wedge, but that marked every labelled product, 12,200 of
-             them, to warn about borrowed artwork that, as of 2026-08-19,
-             none of our 16 labelled-product images actually is. See
-             DEVELOPMENT_HISTORY.md Part 25. -->
+        <!-- No marker on the thumbnail itself: it is 34px wide and hidden
+             from screen readers, so a borrowed picture is said in words, in
+             the tags below. -->
         <card-thumb class="thumb" [productId]="item.productId" />
 
         <span class="meta">
@@ -92,6 +90,17 @@
             }
             @if (item.variantCount > 1) {
               <span class="tag variant-count">{{ item.variantCount }} variants</span>
+            }
+            <!-- Only when card_image_provenance() proves the picture is
+                 another printing's, never because a card merely has a label:
+                 that is the mistake Part 25 removed. About a fifth of
+                 pictures qualify. Part 54. -->
+            @if (item.artBorrowed) {
+              <span
+                class="tag art-warn"
+                [title]="borrowedArtNote(item.variantLabel, item.artOwnerName)"
+                >Base printing's art</span
+              >
             }
           </span>
           <span class="set">{{ item.setName }} · {{ item.game }}</span>

@@ -70,9 +70,10 @@ origin through that date, then continuing forward from there).
 51. [Part 51 — Flipping cards under a dollar](#part-51--flipping-cards-under-a-dollar)
 52. [Part 52 — Telling the owner when the jobs fail](#part-52--telling-the-owner-when-the-jobs-fail)
 53. [Part 53 — Charts and highs from sales only](#part-53--charts-and-highs-from-sales-only)
-54. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
-55. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
-56. [What's still open](#whats-still-open)
+54. [Part 54 — Borrowed pictures marked in search](#part-54--borrowed-pictures-marked-in-search)
+55. [Key design decisions — quick reference](#key-design-decisions--quick-reference)
+56. [Recurring patterns worth internalizing](#recurring-patterns-worth-internalizing)
+57. [What's still open](#whats-still-open)
 
 ---
 
@@ -5406,3 +5407,40 @@ else used them. mid and low are still stored and still returned with each
 day's history, to read; nothing charts or totals them. Movers, Sets and
 Collection were market-only already. The Disclosures screen now says
 "Market price only" with no exception, and the open question is closed.
+
+---
+
+## Part 54 — Borrowed pictures marked in search
+
+Part 29 put the "Base printing's art" band on the detail artwork only, and
+left the search rows open as a product question: about a fifth of pictures
+are another printing's (5,011 of 26,618 Pokemon on 2026-10-29), so the
+marker would sit on roughly a fifth of every page. On 2026-10-29 the owner
+chose to show it. Example: "Charizard - 100/97 (National Championships)"
+displays the plain Charizard 100/97 picture, and its row looked exactly like
+a picture of the stamped card.
+
+### Asking once per page
+
+Per row, `card_image_provenance()` (~5ms) took a 50-row page from ~60ms to
+~250ms. So the function now takes a list, `p_product_ids INTEGER[]`, in
+place of one id, and narrows to those products' picture groups before
+grouping, the same narrowing Part 31 proved for one id. Verified against a
+snapshot of all 26,618 verdicts taken before the change: the full call, all
+ids passed at once, and three random pages of 50 are byte-identical.
+
+Search rows are described by `item_products()`, which takes the whole page
+of ids and makes one provenance call for it; `item_product()` is that for a
+single id, so a product is still described one way. Both return
+`art_borrowed` and `art_owner_name`. A warm page costs ~30-50ms, as before.
+`normalize_qualifier()` and `card_image_provenance()` moved up the file
+ahead of `item_products()`: a SQL function's body is checked when it is
+created, so a fresh database would otherwise fail to load.
+
+### On screen
+
+A `--warn` chip, "Base printing's art", among the row's tags, only for
+`base_art`. Words rather than a mark on the 34px thumbnail, which screen
+readers skip. `unknown` stays silent, as in Part 29, and a label alone never
+earns the chip, which is the Part 25 mistake. The tooltip is the detail
+band's sentence, now one function (`borrowedArtNote`) for both places.
